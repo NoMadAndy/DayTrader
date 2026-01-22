@@ -1,0 +1,40 @@
+# Ignore git
+.git
+.gitignore
+
+# Ignore node_modules - dependencies are installed fresh in container
+node_modules
+
+# Ignore build output - built in container
+dist
+build
+out
+
+# Ignore development files
+*.log
+*.md
+.env
+.env.local
+.env.*.local
+coverage
+
+# Ignore editor/IDE files
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore test files
+*.test.*
+*.spec.*
+__tests__
+
+# Ignore Docker files (not needed in build context recursively)
+Dockerfile*
+docker-compose*
+.dockerignore
