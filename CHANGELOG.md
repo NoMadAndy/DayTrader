@@ -8,6 +8,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Real-time market data integration**
+  - Multi-provider data service with automatic fallback
+  - Finnhub API integration (quotes, candles, company news)
+  - Alpha Vantage API integration (quotes, daily data)
+  - Twelve Data API integration (quotes, time series)
+  - Yahoo Finance integration (no API key required)
+  - Unified data service that orchestrates multiple providers
+  - Data caching with configurable duration
+  - Symbol search across all providers
+- **Financial news integration**
+  - NewsAPI integration for stock-related news
+  - Finnhub company news support
+  - News panel component with time-ago formatting
+  - News images and source attribution
+- **API configuration UI**
+  - In-app API key configuration panel
+  - LocalStorage persistence for API keys
+  - Environment variable support for API keys
+  - Visual indicator for live data status
+- **Data source selector**
+  - UI to switch between data sources (mock, Finnhub, Alpha Vantage, Twelve Data, Yahoo Finance)
+  - Live data indicator badge on price header
+  - Refresh button to reload data
+- **React hooks for data fetching**
+  - `useStockData` for historical candle data
+  - `useQuote` for real-time quotes with auto-refresh
+  - `useNews` for stock news
+  - `useSymbolSearch` for symbol lookup
+  - `DataServiceProvider` context for app-wide configuration
+- Updated .env.example with API key configuration
+- Updated README with real-time data documentation
 - **Docker Compose v2 deployment support**
   - Multi-stage Dockerfile for optimized production builds
   - Development Dockerfile with Vite hot reload

@@ -13,6 +13,8 @@ A modern, AI-powered stock technical analysis platform for day trading education
 - 🤖 **AI-Powered Forecasting**: Weighted analysis of multiple indicators with confidence scoring
 - 📱 **Modern, Responsive UI**: Works on desktop and mobile devices
 - 📝 **Documented Analysis**: Each forecast explains the reasoning behind signals
+- 🌐 **Real-Time Data**: Connect to multiple market data providers (Finnhub, Alpha Vantage, Twelve Data, Yahoo Finance)
+- 📰 **Financial News**: Integrated news feeds for selected stocks
 
 ## Getting Started
 
@@ -42,6 +44,59 @@ npm run dev
 cd frontend
 npm run build
 ```
+
+## Real-Time Data Configuration
+
+DayTrader supports multiple market data providers. By default, the app runs with simulated (mock) data for demo purposes. To enable real-time data:
+
+### Option 1: Configure API Keys via UI
+
+1. Click the ⚙️ settings icon in the app header
+2. Enter your API keys for the data providers you want to use
+3. Click "Save & Apply"
+4. Keys are stored locally in your browser
+
+### Option 2: Configure via Environment Variables
+
+Create a `.env` file in the `frontend` directory:
+
+```bash
+# Copy the example file
+cp .env.example .env
+```
+
+Add your API keys:
+
+```bash
+# Finnhub - Real-time stock quotes and news
+# Get your free key at: https://finnhub.io/register
+VITE_FINNHUB_API_KEY=your_finnhub_api_key
+
+# Alpha Vantage - Stock data API
+# Get your free key at: https://www.alphavantage.co/support/#api-key
+VITE_ALPHA_VANTAGE_API_KEY=your_alpha_vantage_api_key
+
+# Twelve Data - Financial data platform
+# Get your free key at: https://twelvedata.com/register
+VITE_TWELVE_DATA_API_KEY=your_twelve_data_api_key
+
+# NewsAPI - Financial news
+# Get your free key at: https://newsapi.org/register
+VITE_NEWS_API_KEY=your_newsapi_key
+
+# Preferred data source (mock, finnhub, alphaVantage, twelveData, yahoo)
+VITE_PREFERRED_DATA_SOURCE=finnhub
+```
+
+### Supported Data Providers
+
+| Provider | API Key Required | Features | Free Tier Limits |
+|----------|-----------------|----------|------------------|
+| **Finnhub** | Yes | Quotes, Candles, News | 60 calls/min |
+| **Alpha Vantage** | Yes | Quotes, Daily Data | 5 calls/min, 500/day |
+| **Twelve Data** | Yes | Quotes, Time Series | 8 calls/min, 800/day |
+| **Yahoo Finance** | No | Quotes, Historical Data | May have CORS issues |
+| **Mock Data** | No | Simulated data | Unlimited (demo only) |
 
 ## Docker Deployment
 

@@ -1,19 +1,17 @@
-import { useState, useEffect, useMemo } from 'react';
-import { StockChart, ForecastPanel, StockSelector, IndicatorControls } from './components';
-import { getStockData } from './utils/mockData';
+import { useState, useMemo } from 'react';
+import { StockChart, ForecastPanel, StockSelector, IndicatorControls, DataSourceSelector, NewsPanel, ApiConfigPanel } from './components';
+import { DataServiceProvider, useStockData, useDataService } from './hooks';
 import { generateForecast } from './utils/forecast';
-import type { StockData, ForecastResult } from './types/stock';
 
 // Build info from Vite config
 declare const __BUILD_VERSION__: string;
 declare const __BUILD_COMMIT__: string;
 declare const __BUILD_TIME__: string;
 
-function App() {
+function AppContent() {
   const [selectedSymbol, setSelectedSymbol] = useState('AAPL');
-  const [stockData, setStockData] = useState<StockData | null>(null);
-  const [forecast, setForecast] = useState<ForecastResult | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { data: stockData, isLoading, source, refetch } = useStockData(selectedSymbol);
+  const { preferredSource } = useDataService();
 
   // Chart indicator toggles
   const [showSMA20, setShowSMA20] = useState(true);
@@ -25,22 +23,13 @@ function App() {
   const [showRSI, setShowRSI] = useState(true);
   const [showVolume, setShowVolume] = useState(true);
 
-  // Load stock data
-  useEffect(() => {
-    setIsLoading(true);
-    // Simulate API call delay
-    const timer = setTimeout(() => {
-      const data = getStockData(selectedSymbol);
-      setStockData(data);
-      if (data) {
-        const forecastResult = generateForecast(data.data);
-        setForecast(forecastResult);
-      }
-      setIsLoading(false);
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [selectedSymbol]);
+  // Generate forecast when stock data changes (derived state)
+  const forecast = useMemo(() => {
+    if (stockData && stockData.data.length > 0) {
+      return generateForecast(stockData.data);
+    }
+    return null;
+  }, [stockData]);
 
   const handleIndicatorToggle = (indicator: string, value: boolean) => {
     switch (indicator) {
@@ -86,8 +75,9 @@ function App() {
               </div>
               <span className="text-xs text-gray-500 hidden sm:block">Technical Analysis Platform</span>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <StockSelector selectedSymbol={selectedSymbol} onSelect={setSelectedSymbol} />
+              <ApiConfigPanel />
             </div>
           </div>
         </div>
@@ -111,6 +101,12 @@ function App() {
                   <div className="flex items-center gap-3 mb-1">
                     <h2 className="text-2xl font-bold">{stockData.symbol}</h2>
                     <span className="text-gray-400">{stockData.name}</span>
+                    {preferredSource !== 'mock' && (
+                      <span className="px-2 py-0.5 bg-green-600/20 text-green-400 text-xs rounded-full flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                        Live ({source})
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-baseline gap-3">
                     <span className="text-4xl font-bold">${currentPrice.toFixed(2)}</span>
@@ -119,11 +115,22 @@ function App() {
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 text-sm text-gray-400">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>Last updated: {new Date().toLocaleTimeString()}</span>
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={refetch}
+                    className="p-2 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-gray-400 hover:text-white transition-colors"
+                    title="Refresh data"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
+                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>Last updated: {new Date().toLocaleTimeString()}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -166,6 +173,19 @@ function App() {
               {/* Forecast Panel */}
               <div className="lg:col-span-1">
                 <ForecastPanel forecast={forecast} currentPrice={currentPrice} />
+              </div>
+            </div>
+
+            {/* News and Data Source Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+              {/* News Panel */}
+              <div className="lg:col-span-2">
+                <NewsPanel symbol={selectedSymbol} />
+              </div>
+
+              {/* Data Source Selector */}
+              <div className="lg:col-span-1">
+                <DataSourceSelector />
               </div>
             </div>
 
@@ -224,6 +244,14 @@ function App() {
         </div>
       </footer>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <DataServiceProvider>
+      <AppContent />
+    </DataServiceProvider>
   );
 }
 
