@@ -19,5 +19,12 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // Allow exports other than components in hooks files
+      'react-refresh/only-export-components': [
+        'warn',
+        { allowExportNames: ['useDataService', 'useStockData', 'useQuote', 'useNews', 'useSymbolSearch', 'DataServiceProvider'] }
+      ],
+    },
   },
 ])
