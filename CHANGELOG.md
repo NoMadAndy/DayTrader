@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Docker Compose v2 deployment support**
+  - Multi-stage Dockerfile for optimized production builds
+  - Development Dockerfile with Vite hot reload
+  - docker-compose.yml for standard deployment
+  - docker-compose.override.yml for development with auto-rebuild on code changes
+  - docker-compose.prod.yml for production deployment
+  - nginx configuration with gzip, security headers, and SPA routing
+  - Health checks for container orchestration
+  - .dockerignore for optimized build context
 - **AI-powered stock technical analysis WebApp**
   - React/TypeScript frontend with Vite
   - Interactive TradingView-style candlestick charts (lightweight-charts)

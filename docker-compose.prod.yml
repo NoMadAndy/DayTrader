@@ -1,0 +1,13 @@
+# Production docker-compose configuration
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# This explicitly uses production Dockerfile and disables development overrides
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${APP_PORT:-3000}:80"
+    restart: unless-stopped
+    environment:
+      - APP_ENV=production
