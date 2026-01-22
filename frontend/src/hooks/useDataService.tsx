@@ -29,7 +29,7 @@ function getEnvConfig(): DataServiceConfig {
     alphaVantageApiKey: import.meta.env.VITE_ALPHA_VANTAGE_API_KEY as string | undefined,
     twelveDataApiKey: import.meta.env.VITE_TWELVE_DATA_API_KEY as string | undefined,
     newsApiKey: import.meta.env.VITE_NEWS_API_KEY as string | undefined,
-    preferredSource: (import.meta.env.VITE_PREFERRED_DATA_SOURCE as DataSourceType) || 'mock',
+    preferredSource: (import.meta.env.VITE_PREFERRED_DATA_SOURCE as DataSourceType) || 'yahoo',
   };
 }
 

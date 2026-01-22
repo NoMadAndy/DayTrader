@@ -93,7 +93,7 @@ export function ApiConfigPanel() {
       newsApiKey: config.newsApiKey || undefined,
       preferredSource: config.finnhubApiKey ? 'finnhub' : 
                        config.twelveDataApiKey ? 'twelveData' :
-                       config.alphaVantageApiKey ? 'alphaVantage' : 'mock',
+                       config.alphaVantageApiKey ? 'alphaVantage' : 'yahoo',
     };
     setConfig(serviceConfig);
   }, [setConfig]);
@@ -125,7 +125,7 @@ export function ApiConfigPanel() {
     };
     setLocalConfig(empty);
     saveConfig(empty);
-    setConfig({ preferredSource: 'mock' });
+    setConfig({ preferredSource: 'yahoo' });
   };
 
   const hasAnyKey = localConfig.finnhubApiKey || localConfig.alphaVantageApiKey || 
