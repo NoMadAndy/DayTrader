@@ -5,6 +5,9 @@ import tailwindcss from '@tailwindcss/vite'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  server: {
+    allowedHosts: true,  // Erlaubt alle Hosts (für Reverseproxy)
+  },
   define: {
     __BUILD_VERSION__: JSON.stringify(process.env.BUILD_VERSION || '0.1.0'),
     __BUILD_COMMIT__: JSON.stringify(process.env.BUILD_COMMIT || 'dev'),
