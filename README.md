@@ -47,7 +47,7 @@ npm run build
 
 ## Real-Time Data Configuration
 
-DayTrader supports multiple market data providers. By default, the app runs with simulated (mock) data for demo purposes. To enable real-time data:
+DayTrader supports multiple market data providers. By default, the app uses Yahoo Finance (requires no API key) for real-time data. To use other providers or configure API keys:
 
 ### Option 1: Configure API Keys via UI
 
@@ -84,7 +84,8 @@ VITE_TWELVE_DATA_API_KEY=your_twelve_data_api_key
 # Get your free key at: https://newsapi.org/register
 VITE_NEWS_API_KEY=your_newsapi_key
 
-# Preferred data source (mock, finnhub, alphaVantage, twelveData, yahoo)
+# Preferred data source (yahoo, finnhub, alphaVantage, twelveData, mock)
+# Default is 'yahoo' if not specified
 VITE_PREFERRED_DATA_SOURCE=finnhub
 ```
 
