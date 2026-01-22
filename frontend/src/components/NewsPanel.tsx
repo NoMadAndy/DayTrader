@@ -4,10 +4,29 @@
  * Displays financial news for the selected stock.
  */
 
+import { useState } from 'react';
 import { useNews } from '../hooks';
 
 interface NewsPanelProps {
   symbol: string;
+}
+
+// Image component with error fallback using React state
+function NewsImage({ src, className }: { src: string; className: string }) {
+  const [hasError, setHasError] = useState(false);
+  
+  if (hasError) {
+    return null;
+  }
+  
+  return (
+    <img
+      src={src}
+      alt=""
+      className={className}
+      onError={() => setHasError(true)}
+    />
+  );
 }
 
 export function NewsPanel({ symbol }: NewsPanelProps) {
@@ -102,13 +121,9 @@ export function NewsPanel({ symbol }: NewsPanelProps) {
           >
             <div className="flex gap-3">
               {item.image && (
-                <img
-                  src={item.image}
-                  alt=""
-                  className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
+                <NewsImage 
+                  src={item.image} 
+                  className="w-16 h-16 rounded-lg object-cover flex-shrink-0" 
                 />
               )}
               <div className="flex-1 min-w-0">

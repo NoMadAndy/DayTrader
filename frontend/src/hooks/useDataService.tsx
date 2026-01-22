@@ -36,6 +36,7 @@ function getEnvConfig(): DataServiceConfig {
 export function DataServiceProvider({ children }: { children: React.ReactNode }) {
   const [config, setConfigState] = useState<DataServiceConfig>(() => getEnvConfig());
   const [dataService, setDataService] = useState(() => new DataService(config));
+  const [, forceUpdate] = useState(0);
 
   const setConfig = useCallback((newConfig: DataServiceConfig) => {
     setConfigState(newConfig);
@@ -46,10 +47,12 @@ export function DataServiceProvider({ children }: { children: React.ReactNode })
   const preferredSource = dataService.getPreferredSource();
 
   const setPreferredSource = useCallback((source: DataSourceType) => {
+    // Update the service's preferred source without recreating
     dataService.setPreferredSource(source);
-    // Force re-render by creating new service with same config
-    setDataService(new DataService({ ...config, preferredSource: source }));
-  }, [config, dataService]);
+    dataService.clearCache();
+    // Force re-render to update dependents
+    forceUpdate(n => n + 1);
+  }, [dataService]);
 
   const value = useMemo(() => ({
     config,

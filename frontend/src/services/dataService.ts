@@ -175,7 +175,7 @@ export class DataService {
     if (this.preferredSource === 'mock') {
       // Return mock quote
       const mockData = getMockData(symbol);
-      if (mockData && mockData.data.length > 0) {
+      if (mockData && mockData.data.length >= 2) {
         const latest = mockData.data[mockData.data.length - 1];
         const previous = mockData.data[mockData.data.length - 2];
         const quote: QuoteData = {
@@ -263,9 +263,9 @@ export class DataService {
 
     const allNews: NewsItem[] = [];
 
-    // Try Finnhub news first
-    const finnhub = this.providers.get('finnhub') as FinnhubProvider | undefined;
-    if (finnhub?.isConfigured() && 'fetchNews' in finnhub) {
+    // Try Finnhub news first (FinnhubProvider always has fetchNews method)
+    const finnhub = this.providers.get('finnhub');
+    if (finnhub?.isConfigured() && finnhub instanceof FinnhubProvider) {
       try {
         const finnhubNews = await finnhub.fetchNews(symbol);
         allNews.push(...finnhubNews);
@@ -287,10 +287,15 @@ export class DataService {
       }
     }
 
-    // Remove duplicates by headline
-    const uniqueNews = allNews.filter((item, index, self) => 
-      index === self.findIndex(t => t.headline === item.headline)
-    );
+    // Remove duplicates by headline using Set for O(n) complexity
+    const seenHeadlines = new Set<string>();
+    const uniqueNews = allNews.filter((item) => {
+      if (seenHeadlines.has(item.headline)) {
+        return false;
+      }
+      seenHeadlines.add(item.headline);
+      return true;
+    });
 
     // Sort by date (newest first)
     uniqueNews.sort((a, b) => b.datetime - a.datetime);

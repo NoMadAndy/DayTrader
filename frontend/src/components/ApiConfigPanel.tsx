@@ -18,21 +18,38 @@ interface ApiConfig {
   newsApiKey: string;
 }
 
+function isValidApiConfig(obj: unknown): obj is ApiConfig {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    typeof (obj as Record<string, unknown>).finnhubApiKey === 'string' &&
+    typeof (obj as Record<string, unknown>).alphaVantageApiKey === 'string' &&
+    typeof (obj as Record<string, unknown>).twelveDataApiKey === 'string' &&
+    typeof (obj as Record<string, unknown>).newsApiKey === 'string'
+  );
+}
+
 function loadStoredConfig(): ApiConfig {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch (e) {
-    console.warn('Failed to load stored API config:', e);
-  }
-  return {
+  const defaultConfig: ApiConfig = {
     finnhubApiKey: '',
     alphaVantageApiKey: '',
     twelveDataApiKey: '',
     newsApiKey: '',
   };
+  
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed: unknown = JSON.parse(stored);
+      if (isValidApiConfig(parsed)) {
+        return parsed;
+      }
+      console.warn('Invalid stored API config format, using defaults');
+    }
+  } catch (e) {
+    console.warn('Failed to load stored API config:', e);
+  }
+  return defaultConfig;
 }
 
 function saveConfig(config: ApiConfig): void {

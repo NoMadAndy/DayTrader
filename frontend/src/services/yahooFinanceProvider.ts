@@ -149,22 +149,27 @@ export class YahooFinanceProvider implements DataProvider {
 
     const candles: OHLCV[] = [];
     for (let i = 0; i < timestamp.length; i++) {
-      // Skip if any value is null
+      const openVal = quote.open[i];
+      const highVal = quote.high[i];
+      const lowVal = quote.low[i];
+      const closeVal = quote.close[i];
+      
+      // Skip if any value is null or undefined
       if (
-        quote.open[i] == null ||
-        quote.high[i] == null ||
-        quote.low[i] == null ||
-        quote.close[i] == null
+        openVal === null || openVal === undefined ||
+        highVal === null || highVal === undefined ||
+        lowVal === null || lowVal === undefined ||
+        closeVal === null || closeVal === undefined
       ) {
         continue;
       }
 
       candles.push({
         time: timestamp[i],
-        open: quote.open[i]!,
-        high: quote.high[i]!,
-        low: quote.low[i]!,
-        close: quote.close[i]!,
+        open: openVal,
+        high: highVal,
+        low: lowVal,
+        close: closeVal,
         volume: quote.volume[i] ?? 0
       });
     }
