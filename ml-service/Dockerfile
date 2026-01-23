@@ -4,7 +4,7 @@
 # =============================================================================
 # Stage 1: Base with CUDA and Python
 # =============================================================================
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS base
+FROM nvidia/cuda:13.0.2-cudnn-runtime-ubuntu22.04 AS base
 
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
@@ -38,7 +38,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt .
 
 # Install PyTorch with CUDA support first
-RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu124
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu130
 
 # Install remaining dependencies
 RUN pip install --no-cache-dir -r requirements.txt
