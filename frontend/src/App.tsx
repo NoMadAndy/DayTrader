@@ -183,9 +183,9 @@ function AppContent() {
             />
 
             {/* AI Forecast and News Row */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6 items-stretch">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 items-stretch">
               {/* Forecast Panels */}
-              <div className="lg:col-span-2 space-y-4">
+              <div className="space-y-4">
                 <ForecastPanel forecast={forecast} currentPrice={currentPrice} />
                 <MLForecastPanel 
                   symbol={selectedSymbol} 
@@ -195,7 +195,7 @@ function AppContent() {
               </div>
 
               {/* News Panel */}
-              <div className="lg:col-span-1 h-full">
+              <div className="h-full">
                 <NewsPanel 
                   symbol={selectedSymbol} 
                   className="h-full"
