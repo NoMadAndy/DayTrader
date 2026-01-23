@@ -1,0 +1,250 @@
+/**
+ * ML Service Client
+ * 
+ * Client for the ML prediction service. Provides methods for:
+ * - Training models on historical data
+ * - Getting price predictions
+ * - Managing trained models
+ */
+
+import type { OHLCV } from '../types/stock';
+
+// Use backend proxy for ML service
+const ML_API_BASE = '/api/ml';
+
+export interface MLPrediction {
+  date: string;
+  day: number;
+  predicted_price: number;
+  confidence: number;
+  change_pct: number;
+}
+
+export interface MLPredictResponse {
+  symbol: string;
+  current_price: number;
+  predictions: MLPrediction[];
+  model_info: {
+    symbol: string;
+    trained_at: string;
+    training_duration_seconds: number;
+    epochs_completed: number;
+    final_val_loss: number;
+    device: string;
+    data_points: number;
+  };
+  generated_at: string;
+}
+
+export interface MLTrainStatus {
+  symbol: string;
+  status: 'starting' | 'training' | 'completed' | 'failed';
+  progress: number;
+  message: string;
+  result?: {
+    success: boolean;
+    metadata: Record<string, unknown>;
+    history: Array<{ epoch: number; train_loss: number; val_loss: number }>;
+  };
+}
+
+export interface MLModelInfo {
+  symbol: string;
+  is_trained: boolean;
+  metadata?: Record<string, unknown>;
+  device?: string;
+}
+
+export interface MLServiceHealth {
+  status: string;
+  timestamp: string;
+  version: string;
+  commit: string;
+  build_time: string;
+  device_info: {
+    device: string;
+    cuda_available: boolean;
+    cuda_enabled: boolean;
+    cuda_device_name?: string;
+    cuda_memory_total?: string;
+  };
+}
+
+class MLServiceClient {
+  /**
+   * Check ML service health and GPU status
+   */
+  async getHealth(): Promise<MLServiceHealth | null> {
+    try {
+      const response = await fetch(`${ML_API_BASE}/health`);
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (error) {
+      console.warn('ML Service health check failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if ML service is available
+   */
+  async isAvailable(): Promise<boolean> {
+    const health = await this.getHealth();
+    return health?.status === 'healthy';
+  }
+
+  /**
+   * Get list of trained models
+   */
+  async listModels(): Promise<MLModelInfo[]> {
+    try {
+      const response = await fetch(`${ML_API_BASE}/models`);
+      if (!response.ok) return [];
+      const data = await response.json();
+      return data.models || [];
+    } catch (error) {
+      console.warn('Failed to list ML models:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get info about a specific model
+   */
+  async getModelInfo(symbol: string): Promise<MLModelInfo | null> {
+    try {
+      const response = await fetch(`${ML_API_BASE}/models/${symbol}`);
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (error) {
+      console.warn(`Failed to get model info for ${symbol}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if a model exists for a symbol
+   */
+  async hasModel(symbol: string): Promise<boolean> {
+    const info = await this.getModelInfo(symbol);
+    return info?.is_trained ?? false;
+  }
+
+  /**
+   * Start training a model
+   * Training happens asynchronously - poll getTrainingStatus for progress
+   */
+  async startTraining(
+    symbol: string,
+    data: OHLCV[],
+    options?: { epochs?: number; learningRate?: number }
+  ): Promise<{ success: boolean; message: string; statusUrl?: string }> {
+    try {
+      const response = await fetch(`${ML_API_BASE}/train`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol,
+          data: data.map(d => ({
+            timestamp: d.timestamp,
+            open: d.open,
+            high: d.high,
+            low: d.low,
+            close: d.close,
+            volume: d.volume
+          })),
+          epochs: options?.epochs,
+          learning_rate: options?.learningRate
+        })
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        return { 
+          success: false, 
+          message: result.detail || result.error || 'Training failed to start' 
+        };
+      }
+
+      return {
+        success: true,
+        message: result.message,
+        statusUrl: result.status_url
+      };
+    } catch (error) {
+      console.error('Failed to start training:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Failed to start training' 
+      };
+    }
+  }
+
+  /**
+   * Get training status for a symbol
+   */
+  async getTrainingStatus(symbol: string): Promise<MLTrainStatus | null> {
+    try {
+      const response = await fetch(`${ML_API_BASE}/train/${symbol}/status`);
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (error) {
+      console.warn(`Failed to get training status for ${symbol}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Get price predictions for a symbol
+   * Requires a trained model
+   */
+  async predict(symbol: string, data: OHLCV[]): Promise<MLPredictResponse | null> {
+    try {
+      const response = await fetch(`${ML_API_BASE}/predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol,
+          data: data.map(d => ({
+            timestamp: d.timestamp,
+            open: d.open,
+            high: d.high,
+            low: d.low,
+            close: d.close,
+            volume: d.volume
+          }))
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.warn(`Prediction failed for ${symbol}:`, error);
+        return null;
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Prediction error:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Delete a trained model
+   */
+  async deleteModel(symbol: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${ML_API_BASE}/models/${symbol}`, {
+        method: 'DELETE'
+      });
+      return response.ok;
+    } catch (error) {
+      console.warn(`Failed to delete model for ${symbol}:`, error);
+      return false;
+    }
+  }
+}
+
+// Export singleton instance
+export const mlService = new MLServiceClient();

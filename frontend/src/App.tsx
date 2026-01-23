@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { StockChart, ForecastPanel, StockSelector, IndicatorControls, DataSourceSelector, NewsPanel, ApiConfigPanel } from './components';
+import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, DataSourceSelector, NewsPanel, ApiConfigPanel } from './components';
 import { DataServiceProvider, useStockData, useDataService } from './hooks';
 import { generateForecast } from './utils/forecast';
 
@@ -171,8 +171,12 @@ function AppContent() {
               </div>
 
               {/* Forecast Panel */}
-              <div className="lg:col-span-1">
+              <div className="lg:col-span-1 space-y-4">
                 <ForecastPanel forecast={forecast} currentPrice={currentPrice} />
+                <MLForecastPanel 
+                  symbol={selectedSymbol} 
+                  stockData={stockData ?? []} 
+                />
               </div>
             </div>
 

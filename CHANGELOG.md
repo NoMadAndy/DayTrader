@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **ML-based Price Prediction Service** - New Python/PyTorch service for LSTM-based stock price predictions
+  - Multi-layer LSTM neural network trained on historical OHLCV data
+  - Automatic technical indicator calculation (20+ features)
+  - CUDA/GPU acceleration support for fast training
+  - REST API endpoints for training, prediction, and model management
+  - Background training with progress tracking
+  - 14-day price forecast with confidence intervals
+  - Model persistence (save/load trained models)
+- **ML Forecast Panel** in frontend to display AI predictions alongside technical analysis
+- **Backend proxy** for ML service requests
+
 ### Fixed
 - **Production deployment: Fixed container port mapping** - Frontend container was mapping to Vite dev server port (5173) instead of nginx production port (80), causing 500 errors on `/api/*` endpoints because requests weren't being proxied to the backend
 - **Docker Compose port conflict** - Moved `ports` and `healthcheck` from base `docker-compose.yml` to override files to prevent array merging that caused duplicate port bindings

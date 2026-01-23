@@ -28,3 +28,14 @@ services:
     environment:
       - NODE_ENV=production
       - CORS_ORIGIN=${CORS_ORIGIN:-*}
+      - ML_SERVICE_URL=http://ml-service:8000
+
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    ports:
+      - "${ML_SERVICE_PORT:-8000}:8000"
+    restart: unless-stopped
+    environment:
+      - USE_CUDA=true

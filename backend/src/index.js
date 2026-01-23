@@ -202,6 +202,155 @@ app.get('/api/news/everything', async (req, res) => {
   }
 });
 
+// ML Service proxy endpoints
+const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://ml-service:8000';
+
+/**
+ * Proxy ML Service health check
+ */
+app.get('/api/ml/health', async (req, res) => {
+  try {
+    const response = await fetch(`${ML_SERVICE_URL}/health`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('ML Service health check error:', error);
+    res.status(503).json({ 
+      error: 'ML Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy ML Service version
+ */
+app.get('/api/ml/version', async (req, res) => {
+  try {
+    const response = await fetch(`${ML_SERVICE_URL}/api/ml/version`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('ML Service version error:', error);
+    res.status(503).json({ 
+      error: 'ML Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy ML Service models list
+ */
+app.get('/api/ml/models', async (req, res) => {
+  try {
+    const response = await fetch(`${ML_SERVICE_URL}/api/ml/models`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('ML Service models error:', error);
+    res.status(503).json({ 
+      error: 'ML Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy ML Service model info
+ */
+app.get('/api/ml/models/:symbol', async (req, res) => {
+  try {
+    const response = await fetch(`${ML_SERVICE_URL}/api/ml/models/${req.params.symbol}`);
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('ML Service model info error:', error);
+    res.status(503).json({ 
+      error: 'ML Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy ML Service training
+ */
+app.post('/api/ml/train', express.json({ limit: '50mb' }), async (req, res) => {
+  try {
+    const response = await fetch(`${ML_SERVICE_URL}/api/ml/train`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('ML Service training error:', error);
+    res.status(503).json({ 
+      error: 'ML Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy ML Service training status
+ */
+app.get('/api/ml/train/:symbol/status', async (req, res) => {
+  try {
+    const response = await fetch(`${ML_SERVICE_URL}/api/ml/train/${req.params.symbol}/status`);
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('ML Service training status error:', error);
+    res.status(503).json({ 
+      error: 'ML Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy ML Service prediction
+ */
+app.post('/api/ml/predict', express.json({ limit: '10mb' }), async (req, res) => {
+  try {
+    const response = await fetch(`${ML_SERVICE_URL}/api/ml/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('ML Service prediction error:', error);
+    res.status(503).json({ 
+      error: 'ML Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy ML Service model deletion
+ */
+app.delete('/api/ml/models/:symbol', async (req, res) => {
+  try {
+    const response = await fetch(`${ML_SERVICE_URL}/api/ml/models/${req.params.symbol}`, {
+      method: 'DELETE'
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('ML Service model deletion error:', error);
+    res.status(503).json({ 
+      error: 'ML Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });

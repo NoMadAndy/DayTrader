@@ -38,3 +38,20 @@ services:
     environment:
       - NODE_ENV=development
       - CORS_ORIGIN=*
+      - ML_SERVICE_URL=http://ml-service:8000
+
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile.dev
+    ports:
+      - "${ML_SERVICE_PORT:-8000}:8000"
+    volumes:
+      - ./ml-service/app:/app/app:ro
+      - ml-models-dev:/app/models
+    environment:
+      - USE_CUDA=false
+      - DEBUG=true
+
+volumes:
+  ml-models-dev:

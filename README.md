@@ -101,7 +101,7 @@ VITE_PREFERRED_DATA_SOURCE=finnhub
 
 ## Architecture
 
-DayTrader consists of two services:
+DayTrader consists of three services:
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
@@ -111,17 +111,57 @@ DayTrader consists of two services:
                         └─────────────────┘     └────────┬────────┘
                                │                         │
                                │  /api/* requests        │
-                               └─────────────────────────┘
+                               └─────────────────────────┤
                                                          │
-                                                         ▼
-                                              ┌─────────────────┐
-                                              │  Yahoo Finance  │
-                                              │      API        │
-                                              └─────────────────┘
+                        ┌────────────────────────────────┼─────────────────┐
+                        │                                │                 │
+                        ▼                                ▼                 ▼
+              ┌─────────────────┐            ┌─────────────────┐  ┌─────────────────┐
+              │  Yahoo Finance  │            │     NewsAPI     │  │   ML Service    │
+              │      API        │            │                 │  │   (PyTorch)     │
+              └─────────────────┘            └─────────────────┘  │   Port 8000     │
+                                                                  │   CUDA/GPU      │
+                                                                  └─────────────────┘
 ```
 
 - **Frontend**: React SPA served by nginx (production) or Vite (development)
 - **Backend**: Express.js proxy server that handles external API calls to avoid CORS issues
+- **ML Service**: Python/FastAPI service with PyTorch LSTM model for price predictions
+
+## ML-Based Price Prediction
+
+The ML Service provides LSTM-based stock price predictions using historical data:
+
+### Features
+- **LSTM Neural Network**: Multi-layer LSTM trained on 60 days of historical data
+- **20+ Technical Indicators**: Automatically calculated features (RSI, MACD, Bollinger Bands, etc.)
+- **14-Day Forecast**: Predictions with confidence intervals
+- **GPU Acceleration**: CUDA support for fast training (falls back to CPU if not available)
+
+### Usage
+
+1. Select a stock in the frontend
+2. Click "Train Model" in the ML Prediction panel
+3. Wait for training to complete (progress is shown)
+4. View predictions with confidence scores
+
+### GPU Requirements (Optional)
+
+For CUDA acceleration:
+- NVIDIA GPU with CUDA Compute Capability 3.5+
+- NVIDIA Driver 525.60.13+
+- NVIDIA Container Toolkit (for Docker GPU passthrough)
+
+```bash
+# Install NVIDIA Container Toolkit (Ubuntu)
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
 
 ## Docker Deployment
 

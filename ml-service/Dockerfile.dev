@@ -1,0 +1,36 @@
+# Development Dockerfile for ML Service (CPU fallback)
+# Uses standard Python image for development without CUDA
+
+FROM python:3.11-slim
+
+# Build arguments
+ARG BUILD_VERSION=0.1.0
+ARG BUILD_COMMIT=dev
+ARG BUILD_TIME=unknown
+
+# Set environment variables
+ENV BUILD_VERSION=${BUILD_VERSION}
+ENV BUILD_COMMIT=${BUILD_COMMIT}
+ENV BUILD_TIME=${BUILD_TIME}
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV USE_CUDA=false
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY app/ /app/app/
+
+# Create models directory
+RUN mkdir -p /app/models
+
+# Expose port
+EXPOSE 8000
+
+# Run with hot reload for development
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

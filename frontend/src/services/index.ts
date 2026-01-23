@@ -10,6 +10,8 @@ export { TwelveDataProvider } from './twelveDataProvider';
 export { YahooFinanceProvider } from './yahooFinanceProvider';
 export { NewsApiProvider } from './newsApiProvider';
 export { DataService, getDataService, configureDataService } from './dataService';
+export { mlService } from './mlService';
+export type { MLPrediction, MLPredictResponse, MLTrainStatus, MLModelInfo, MLServiceHealth } from './mlService';
 
 export type {
   DataProvider,
