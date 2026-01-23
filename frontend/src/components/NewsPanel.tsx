@@ -11,10 +11,25 @@ import { useNews } from '../hooks';
 import { analyzeSentiment, getSentimentLabel, type SentimentResult } from '../utils/sentimentAnalysis';
 import { analyzeBatchWithFallback, checkMLSentimentAvailable, resetMLServiceCache } from '../services/mlSentimentService';
 import { TradingSignalPanel } from './TradingSignalPanel';
+import type { ForecastResult, OHLCV } from '../types/stock';
+
+// ML Prediction Interface
+interface MLPrediction {
+  date: string;
+  day: number;
+  predicted_price: number;
+  confidence: number;
+  change_pct: number;
+}
 
 interface NewsPanelProps {
   symbol: string;
   className?: string;
+  // Neue Props für kombinierte Trading-Signale
+  forecast?: ForecastResult;
+  stockData?: OHLCV[];
+  mlPredictions?: MLPrediction[];
+  currentPrice?: number;
 }
 
 interface NewsItemWithSentiment {
@@ -46,7 +61,14 @@ function NewsImage({ src, className }: { src: string; className: string }) {
   );
 }
 
-export function NewsPanel({ symbol, className = '' }: NewsPanelProps) {
+export function NewsPanel({ 
+  symbol, 
+  className = '',
+  forecast,
+  stockData,
+  mlPredictions,
+  currentPrice
+}: NewsPanelProps) {
   const { news, isLoading, error, refetch } = useNews(symbol);
   const [newsWithSentiment, setNewsWithSentiment] = useState<NewsItemWithSentiment[]>([]);
   const [sentimentLoading, setSentimentLoading] = useState(false);
@@ -237,8 +259,8 @@ export function NewsPanel({ symbol, className = '' }: NewsPanelProps) {
         </div>
       </div>
 
-      {/* Trading Signal Summary */}
-      {newsWithSentiment.length > 0 && (
+      {/* Trading Signal Summary - zeigt kombinierte Signale aus allen Datenquellen */}
+      {(newsWithSentiment.length > 0 || forecast || (mlPredictions && mlPredictions.length > 0)) && (
         <TradingSignalPanel 
           newsItems={newsWithSentiment.map(item => ({
             sentimentResult: item.sentimentResult,
@@ -246,6 +268,10 @@ export function NewsPanel({ symbol, className = '' }: NewsPanelProps) {
           }))}
           symbol={symbol}
           className="mb-4"
+          forecast={forecast}
+          stockData={stockData}
+          mlPredictions={mlPredictions}
+          currentPrice={currentPrice}
         />
       )}
 

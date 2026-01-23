@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Combined Trading Signals** - Trading-Signale kombinieren jetzt alle Datenquellen für präzisere Empfehlungen
+  - Multi-Quellen-Analyse: News-Sentiment + Technische Indikatoren + ML-Preisprognosen
+  - Adaptive Gewichtung je nach Zeitraum:
+    - Kurzfristig (1h): 55% Sentiment, 35% Technisch, 10% ML
+    - Täglich: 40% Sentiment, 40% Technisch, 20% ML
+    - Wöchentlich: 25% Sentiment, 45% Technisch, 30% ML
+    - Langfristig: 15% Sentiment, 45% Technisch, 40% ML
+  - Beitrag jeder Datenquelle pro Signal sichtbar (📰 News, 📊 Technisch, 🤖 ML)
+  - Intelligentes Reasoning basierend auf Quellenübereinstimmung
+  - Automatische Normalisierung bei fehlenden Datenquellen
 - **Trading Signal Summary** - Aggregierte Kauf-/Verkaufsempfehlungen basierend auf News-Sentiment
   - Signale für 4 Haltedauern: 1 Stunde (Scalping), 1 Tag (Daytrading), Wochen (Swing), Langfristig (Investment)
   - Gewichtete Sentiment-Aggregation (neuere News haben mehr Gewicht)

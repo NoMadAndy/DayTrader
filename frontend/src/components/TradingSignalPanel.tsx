@@ -2,17 +2,29 @@
  * Trading Signal Summary Component
  * 
  * Displays aggregated trading signals for different holding periods
- * based on news sentiment analysis.
+ * combining news sentiment, technical indicators, and ML predictions.
  */
 
 import { useMemo } from 'react';
 import { 
-  calculateTradingSignals, 
+  calculateCombinedTradingSignals, 
   getSignalDisplay, 
   getTimePeriodLabel,
-  type TradingSignal 
+  type TradingSignal,
+  type CombinedSignalInput,
+  type SignalContribution
 } from '../utils/tradingSignals';
 import type { SentimentResult } from '../utils/sentimentAnalysis';
+import type { ForecastResult, OHLCV } from '../types/stock';
+
+// ML Prediction Interface
+interface MLPrediction {
+  date: string;
+  day: number;
+  predicted_price: number;
+  confidence: number;
+  change_pct: number;
+}
 
 interface TradingSignalPanelProps {
   newsItems: Array<{
@@ -21,17 +33,31 @@ interface TradingSignalPanelProps {
   }>;
   symbol: string;
   className?: string;
+  // Neue Props für kombinierte Analyse
+  forecast?: ForecastResult;
+  stockData?: OHLCV[];
+  mlPredictions?: MLPrediction[];
+  currentPrice?: number;
 }
 
 function SignalCard({ 
   period, 
-  signal 
+  signal,
+  contributions
 }: { 
   period: 'hourly' | 'daily' | 'weekly' | 'longTerm'; 
   signal: TradingSignal;
+  contributions?: SignalContribution[];
 }) {
   const periodInfo = getTimePeriodLabel(period);
   const display = getSignalDisplay(signal.signal);
+  
+  // Source icons
+  const sourceIcon: Record<string, string> = {
+    sentiment: '📰',
+    technical: '📊',
+    ml: '🤖'
+  };
   
   return (
     <div className={`p-3 rounded-lg ${display.bgColor} border border-slate-700/50`}>
@@ -58,6 +84,26 @@ function SignalCard({
           {signal.score > 0 ? '+' : ''}{signal.score}
         </span>
       </div>
+      
+      {/* Contributions breakdown */}
+      {contributions && contributions.length > 0 && (
+        <div className="mt-2 flex gap-1 flex-wrap">
+          {contributions.map((contrib, idx) => (
+            <span 
+              key={idx}
+              className={`text-xs px-1.5 py-0.5 rounded ${
+                contrib.score >= 20 ? 'bg-green-500/20 text-green-400' :
+                contrib.score <= -20 ? 'bg-red-500/20 text-red-400' :
+                'bg-slate-600/50 text-gray-400'
+              }`}
+              title={`${contrib.description} (Gewicht: ${Math.round(contrib.weight * 100)}%)`}
+            >
+              {sourceIcon[contrib.source]} {contrib.score > 0 ? '+' : ''}{contrib.score}
+            </span>
+          ))}
+        </div>
+      )}
+      
       <p className="text-xs text-gray-500 mt-2 line-clamp-2" title={signal.reasoning}>
         {signal.reasoning}
       </p>
@@ -65,12 +111,28 @@ function SignalCard({
   );
 }
 
-export function TradingSignalPanel({ newsItems, symbol, className = '' }: TradingSignalPanelProps) {
+export function TradingSignalPanel({ 
+  newsItems, 
+  symbol, 
+  className = '',
+  forecast,
+  stockData,
+  mlPredictions,
+  currentPrice
+}: TradingSignalPanelProps) {
   const signals = useMemo(() => {
-    return calculateTradingSignals(newsItems);
-  }, [newsItems]);
+    const input: CombinedSignalInput = {
+      newsItems,
+      forecast,
+      stockData,
+      mlPredictions,
+      currentPrice
+    };
+    return calculateCombinedTradingSignals(input);
+  }, [newsItems, forecast, stockData, mlPredictions, currentPrice]);
 
-  if (newsItems.length === 0) {
+  // Show panel if we have any data source
+  if (newsItems.length === 0 && !forecast && (!mlPredictions || mlPredictions.length === 0)) {
     return null;
   }
 
@@ -109,21 +171,42 @@ export function TradingSignalPanel({ newsItems, symbol, className = '' }: Tradin
 
       {/* Signal Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <SignalCard period="hourly" signal={signals.hourly} />
-        <SignalCard period="daily" signal={signals.daily} />
-        <SignalCard period="weekly" signal={signals.weekly} />
-        <SignalCard period="longTerm" signal={signals.longTerm} />
+        <SignalCard period="hourly" signal={signals.hourly} contributions={signals.contributions?.hourly} />
+        <SignalCard period="daily" signal={signals.daily} contributions={signals.contributions?.daily} />
+        <SignalCard period="weekly" signal={signals.weekly} contributions={signals.contributions?.weekly} />
+        <SignalCard period="longTerm" signal={signals.longTerm} contributions={signals.contributions?.longTerm} />
       </div>
 
       {/* Footer */}
-      <div className="mt-3 pt-3 border-t border-slate-700/50 flex items-center justify-between text-xs text-gray-500">
-        <span>Basiert auf {signals.newsCount} News-Artikeln</span>
-        <span>
-          Ø Sentiment: {' '}
-          <span className={signals.avgSentiment >= 0 ? 'text-green-400' : 'text-red-400'}>
-            {signals.avgSentiment >= 0 ? '+' : ''}{(signals.avgSentiment * 100).toFixed(0)}%
+      <div className="mt-3 pt-3 border-t border-slate-700/50 flex flex-col gap-2 text-xs text-gray-500">
+        <div className="flex items-center justify-between">
+          <span>
+            Datenquellen: {signals.dataSourcesUsed.length > 0 
+              ? signals.dataSourcesUsed.map((source, idx) => (
+                <span key={idx} className="inline-flex items-center gap-1">
+                  {idx > 0 && ', '}
+                  <span className="text-blue-400">{source}</span>
+                </span>
+              ))
+              : 'Keine'
+            }
           </span>
-        </span>
+          {signals.newsCount > 0 && (
+            <span>
+              Ø Sentiment: {' '}
+              <span className={signals.avgSentiment >= 0 ? 'text-green-400' : 'text-red-400'}>
+                {signals.avgSentiment >= 0 ? '+' : ''}{(signals.avgSentiment * 100).toFixed(0)}%
+              </span>
+            </span>
+          )}
+        </div>
+        
+        {/* Legend */}
+        <div className="flex items-center gap-3 text-gray-600">
+          <span>📰 News</span>
+          <span>📊 Technisch</span>
+          <span>🤖 ML-Prognose</span>
+        </div>
       </div>
 
       {/* Disclaimer */}

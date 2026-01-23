@@ -1,7 +1,16 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, DataSourceSelector, NewsPanel, ApiConfigPanel } from './components';
 import { DataServiceProvider, useStockData, useDataService } from './hooks';
 import { generateForecast } from './utils/forecast';
+
+// ML Prediction type for trading signals
+interface MLPrediction {
+  date: string;
+  day: number;
+  predicted_price: number;
+  confidence: number;
+  change_pct: number;
+}
 
 // Build info from Vite config
 declare const __BUILD_VERSION__: string;
@@ -12,6 +21,14 @@ function AppContent() {
   const [selectedSymbol, setSelectedSymbol] = useState('AAPL');
   const { data: stockData, isLoading, source, refetch } = useStockData(selectedSymbol);
   const { preferredSource } = useDataService();
+
+  // State for ML predictions (shared with NewsPanel for combined trading signals)
+  const [mlPredictions, setMlPredictions] = useState<MLPrediction[] | null>(null);
+
+  // Callback to receive ML predictions from MLForecastPanel
+  const handleMLPredictionsChange = useCallback((predictions: MLPrediction[] | null) => {
+    setMlPredictions(predictions);
+  }, []);
 
   // Collapsible section states (default: collapsed)
   const [showIndicators, setShowIndicators] = useState(false);
@@ -151,12 +168,20 @@ function AppContent() {
                 <MLForecastPanel 
                   symbol={selectedSymbol} 
                   stockData={stockData?.data ?? []} 
+                  onPredictionsChange={handleMLPredictionsChange}
                 />
               </div>
 
               {/* News Panel */}
               <div className="lg:col-span-1 h-full">
-                <NewsPanel symbol={selectedSymbol} className="h-full" />
+                <NewsPanel 
+                  symbol={selectedSymbol} 
+                  className="h-full"
+                  forecast={forecast ?? undefined}
+                  stockData={stockData?.data}
+                  mlPredictions={mlPredictions ?? undefined}
+                  currentPrice={currentPrice}
+                />
               </div>
             </div>
 

@@ -15,9 +15,11 @@ import type { OHLCV } from '../types/stock';
 interface MLForecastPanelProps {
   symbol: string;
   stockData: OHLCV[];
+  /** Optional callback to notify parent when predictions are available */
+  onPredictionsChange?: (predictions: MLPredictResponse['predictions'] | null) => void;
 }
 
-export function MLForecastPanel({ symbol, stockData }: MLForecastPanelProps) {
+export function MLForecastPanel({ symbol, stockData, onPredictionsChange }: MLForecastPanelProps) {
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
   const [health, setHealth] = useState<MLServiceHealth | null>(null);
   const [hasModel, setHasModel] = useState(false);
@@ -87,12 +89,15 @@ export function MLForecastPanel({ symbol, stockData }: MLForecastPanelProps) {
     
     if (result) {
       setPrediction(result);
+      // Notify parent about new predictions
+      onPredictionsChange?.(result.predictions);
     } else {
       setError('Failed to get prediction');
+      onPredictionsChange?.(null);
     }
     
     setIsLoading(false);
-  }, [symbol, stockData]);
+  }, [symbol, stockData, onPredictionsChange]);
 
   const startTraining = async () => {
     if (!stockData || stockData.length < 150) {
