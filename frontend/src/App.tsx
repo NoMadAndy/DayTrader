@@ -175,7 +175,7 @@ function AppContent() {
                 <ForecastPanel forecast={forecast} currentPrice={currentPrice} />
                 <MLForecastPanel 
                   symbol={selectedSymbol} 
-                  stockData={stockData ?? []} 
+                  stockData={stockData?.data ?? []} 
                 />
               </div>
             </div>

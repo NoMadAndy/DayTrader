@@ -14,11 +14,10 @@ import type { OHLCV } from '../types/stock';
 
 interface MLForecastPanelProps {
   symbol: string;
-  companyName?: string;
   stockData: OHLCV[];
 }
 
-export function MLForecastPanel({ symbol, companyName, stockData }: MLForecastPanelProps) {
+export function MLForecastPanel({ symbol, stockData }: MLForecastPanelProps) {
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
   const [health, setHealth] = useState<MLServiceHealth | null>(null);
   const [hasModel, setHasModel] = useState(false);

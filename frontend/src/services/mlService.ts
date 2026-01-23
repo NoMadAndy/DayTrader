@@ -146,7 +146,7 @@ class MLServiceClient {
         body: JSON.stringify({
           symbol,
           data: data.map(d => ({
-            timestamp: d.timestamp,
+            timestamp: d.time * 1000,
             open: d.open,
             high: d.high,
             low: d.low,
@@ -207,7 +207,7 @@ class MLServiceClient {
         body: JSON.stringify({
           symbol,
           data: data.map(d => ({
-            timestamp: d.timestamp,
+            timestamp: d.time * 1000,
             open: d.open,
             high: d.high,
             low: d.low,
