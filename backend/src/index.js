@@ -145,6 +145,63 @@ app.get('/api/yahoo/search', async (req, res) => {
   }
 });
 
+// NewsAPI proxy endpoints
+const NEWS_API_BASE_URL = 'https://newsapi.org/v2';
+
+/**
+ * Proxy NewsAPI everything endpoint
+ * GET /api/news/everything
+ * Query params: q, language, sortBy, pageSize, apiKey
+ * 
+ * NewsAPI requires server-side requests for free tier (426 error from browser)
+ */
+app.get('/api/news/everything', async (req, res) => {
+  const { q, language = 'en', sortBy = 'publishedAt', pageSize = '10', apiKey } = req.query;
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'API key is required' });
+  }
+  
+  if (!q) {
+    return res.status(400).json({ error: 'Search query (q) is required' });
+  }
+  
+  try {
+    const url = new URL(`${NEWS_API_BASE_URL}/everything`);
+    url.searchParams.set('apiKey', apiKey);
+    url.searchParams.set('q', q);
+    url.searchParams.set('language', language);
+    url.searchParams.set('sortBy', sortBy);
+    url.searchParams.set('pageSize', pageSize);
+    
+    const response = await fetch(url.toString(), {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; DayTrader/1.0)',
+        'Accept': 'application/json',
+      },
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      console.error(`NewsAPI error: ${response.status} ${data.message || response.statusText}`);
+      return res.status(response.status).json({ 
+        error: 'NewsAPI error',
+        status: response.status,
+        message: data.message || response.statusText
+      });
+    }
+    
+    res.json(data);
+  } catch (error) {
+    console.error('NewsAPI proxy error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch from NewsAPI',
+      message: error.message 
+    });
+  }
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });

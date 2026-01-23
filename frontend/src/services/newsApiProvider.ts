@@ -1,17 +1,16 @@
 /**
- * NewsAPI Provider for Financial News
+ * NewsAPI Provider for Financial News (via backend proxy)
  * 
- * Provides news articles from various sources.
+ * Uses the backend proxy server to fetch news from NewsAPI,
+ * because NewsAPI requires server-side requests for free tier.
  * 
  * API Documentation: https://newsapi.org/docs
- * 
- * Endpoints used:
- * - /everything: Search news articles
  */
 
 import type { NewsItem } from './types';
 
-const NEWS_API_BASE_URL = 'https://newsapi.org/v2';
+// Use backend proxy API endpoint (relative URLs work with nginx proxy in prod, vite proxy in dev)
+const NEWS_API_PROXY_URL = '/api/news';
 
 export class NewsApiProvider {
   name = 'NewsAPI';
@@ -27,7 +26,8 @@ export class NewsApiProvider {
 
   private async fetch<T>(endpoint: string, params: Record<string, string> = {}): Promise<T | null> {
     try {
-      const url = new URL(`${NEWS_API_BASE_URL}${endpoint}`);
+      const url = new URL(`${NEWS_API_PROXY_URL}${endpoint}`, window.location.origin);
+      // Pass API key to backend proxy
       url.searchParams.set('apiKey', this.apiKey);
       Object.entries(params).forEach(([key, value]) => {
         url.searchParams.set(key, value);
