@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # CUDA settings
     use_cuda: bool = os.getenv("USE_CUDA", "true").lower() == "true"
     
+    # FinBERT settings
+    preload_finbert: bool = os.getenv("PRELOAD_FINBERT", "false").lower() == "true"
+    
     @property
     def device(self) -> torch.device:
         """Get the compute device (CUDA if available and enabled)"""

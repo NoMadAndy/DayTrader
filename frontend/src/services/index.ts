@@ -13,6 +13,18 @@ export { DataService, getDataService, configureDataService } from './dataService
 export { mlService } from './mlService';
 export type { MLPrediction, MLPredictResponse, MLTrainStatus, MLModelInfo, MLServiceHealth } from './mlService';
 
+// ML Sentiment Service
+export {
+  checkMLSentimentAvailable,
+  getMLSentimentStatus,
+  analyzeMLSentiment,
+  analyzeMLSentimentBatch,
+  analyzeSentimentWithFallback,
+  analyzeBatchWithFallback,
+  resetMLServiceCache,
+} from './mlSentimentService';
+export type { MLSentimentResult, MLSentimentStatus } from './mlSentimentService';
+
 export type {
   DataProvider,
   DataProviderConfig,

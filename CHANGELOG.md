@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **FinBERT ML Sentiment Analysis** - Enhanced news sentiment with transformer-based analysis
+  - ProsusAI/finbert model for accurate financial sentiment classification
+  - REST API endpoints: `/api/ml/sentiment/analyze` and `/api/ml/sentiment/analyze/batch`
+  - CUDA/GPU acceleration for fast batch processing
+  - Toggle between FinBERT (🤖) and keyword-based (📝) analysis in UI
+  - Automatic fallback to keyword analysis when ML service unavailable
+  - Lazy model loading to reduce startup time (optional PRELOAD_FINBERT env)
 - **News Sentiment Analysis** - Financial news now includes sentiment tags (Bullish/Bearish/Neutral)
   - Keyword-based sentiment analysis optimized for financial news
   - Domain-specific word lists (150+ positive/negative financial terms)

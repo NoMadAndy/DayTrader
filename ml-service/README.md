@@ -2,14 +2,15 @@
 
 # DayTrader ML Service
 
-LSTM-based stock price prediction service with CUDA/GPU acceleration.
+LSTM-based stock price prediction and FinBERT sentiment analysis with CUDA/GPU acceleration.
 
 ## Features
 
 - **LSTM Neural Network**: Multi-layer LSTM for time series forecasting
+- **FinBERT Sentiment**: Transformer-based financial sentiment analysis
 - **Technical Indicators**: Automatically calculates 20+ indicators as features
 - **CUDA Support**: GPU acceleration for fast training and inference
-- **REST API**: FastAPI-based endpoints for training and prediction
+- **REST API**: FastAPI-based endpoints for training, prediction, and sentiment
 - **Model Persistence**: Save/load trained models
 
 ## Architecture
@@ -88,6 +89,46 @@ GET /api/ml/models
 DELETE /api/ml/models/{symbol}
 ```
 
+### Sentiment Analysis
+
+#### Get Status
+```
+GET /api/ml/sentiment/status
+```
+
+#### Analyze Single Text
+```
+POST /api/ml/sentiment/analyze
+{
+  "text": "Apple shares surge on strong earnings report"
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "result": {
+    "sentiment": "positive",
+    "score": 0.85,
+    "confidence": 0.92,
+    "probabilities": {
+      "positive": 0.92,
+      "negative": 0.03,
+      "neutral": 0.05
+    }
+  }
+}
+```
+
+#### Batch Analysis
+```
+POST /api/ml/sentiment/analyze/batch
+{
+  "texts": ["headline 1", "headline 2", ...]
+}
+```
+
 ## CUDA/GPU Requirements
 
 For GPU acceleration:
@@ -109,6 +150,7 @@ The service automatically falls back to CPU if CUDA is not available.
 | `EPOCHS` | `100` | Default training epochs |
 | `BATCH_SIZE` | `32` | Training batch size |
 | `LEARNING_RATE` | `0.001` | Default learning rate |
+| `PRELOAD_FINBERT` | `false` | Preload FinBERT model on startup |
 
 ## Running Locally
 

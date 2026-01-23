@@ -4,6 +4,7 @@ FastAPI Application for ML Service
 Provides REST API endpoints for:
 - Training models on historical stock data
 - Generating price predictions
+- FinBERT-based news sentiment analysis
 - Model management (save/load/delete)
 - Health and status checks
 """
@@ -18,6 +19,7 @@ from contextlib import asynccontextmanager
 
 from .config import settings
 from .model import StockPredictor
+from . import sentiment as finbert
 
 # Store for active predictors
 predictors: Dict[str, StockPredictor] = {}
@@ -29,13 +31,22 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler"""
     print(f"Starting {settings.service_name} v{settings.version}")
     print(f"Device: {settings.device_info}")
+    
+    # Optionally preload FinBERT model
+    if settings.preload_finbert:
+        print("Preloading FinBERT model...")
+        if finbert.preload_model():
+            print("FinBERT model loaded successfully")
+        else:
+            print("FinBERT model loading deferred (will load on first request)")
+    
     yield
     print("Shutting down ML Service")
 
 
 app = FastAPI(
     title="DayTrader ML Service",
-    description="LSTM-based stock price prediction with CUDA acceleration",
+    description="LSTM-based stock price prediction and FinBERT sentiment analysis with CUDA acceleration",
     version=settings.version,
     lifespan=lifespan
 )
@@ -102,6 +113,7 @@ class HealthResponse(BaseModel):
     commit: str
     build_time: str
     device_info: dict
+    finbert_status: Optional[dict] = None
 
 
 class TrainStatusResponse(BaseModel):
@@ -111,6 +123,42 @@ class TrainStatusResponse(BaseModel):
     progress: Optional[float] = None
     message: Optional[str] = None
     result: Optional[dict] = None
+
+
+# ============== Sentiment Models ==============
+
+class SentimentRequest(BaseModel):
+    """Request for sentiment analysis"""
+    text: str = Field(..., description="Text to analyze (headline or summary)")
+
+
+class SentimentBatchRequest(BaseModel):
+    """Request for batch sentiment analysis"""
+    texts: List[str] = Field(..., description="List of texts to analyze")
+    
+
+class SentimentResultModel(BaseModel):
+    """Single sentiment analysis result"""
+    text: str
+    sentiment: str  # 'positive', 'negative', 'neutral'
+    score: float  # -1 to 1
+    confidence: float  # 0 to 1
+    probabilities: Dict[str, float]
+
+
+class SentimentResponse(BaseModel):
+    """Response for single sentiment analysis"""
+    success: bool
+    result: Optional[SentimentResultModel] = None
+    error: Optional[str] = None
+
+
+class SentimentBatchResponse(BaseModel):
+    """Response for batch sentiment analysis"""
+    success: bool
+    results: List[Optional[SentimentResultModel]]
+    processed: int
+    failed: int
 
 
 # ============== Endpoints ==============
@@ -124,7 +172,8 @@ async def health_check():
         "version": settings.version,
         "commit": settings.commit,
         "build_time": settings.build_time,
-        "device_info": settings.device_info
+        "device_info": settings.device_info,
+        "finbert_status": finbert.get_model_status()
     }
 
 
@@ -343,6 +392,108 @@ async def delete_model(symbol: str):
         return {"message": f"Model deleted for {symbol}"}
     
     raise HTTPException(status_code=404, detail=f"Model not found for {symbol}")
+
+
+# ============== Sentiment Endpoints ==============
+
+@app.get("/api/ml/sentiment/status")
+async def get_sentiment_status():
+    """Get FinBERT model status"""
+    return finbert.get_model_status()
+
+
+@app.post("/api/ml/sentiment/load")
+async def load_sentiment_model():
+    """Explicitly load the FinBERT model"""
+    success = finbert.preload_model()
+    if success:
+        return {"message": "FinBERT model loaded successfully", "status": finbert.get_model_status()}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to load FinBERT model")
+
+
+@app.post("/api/ml/sentiment/analyze", response_model=SentimentResponse)
+async def analyze_sentiment(request: SentimentRequest):
+    """
+    Analyze sentiment of a single text using FinBERT.
+    
+    The model will be loaded on first request if not already loaded.
+    
+    Returns sentiment (positive/negative/neutral), score (-1 to 1), and confidence.
+    """
+    if not request.text.strip():
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+    
+    result = finbert.analyze_sentiment(request.text)
+    
+    if result is None:
+        status = finbert.get_model_status()
+        return {
+            "success": False,
+            "result": None,
+            "error": status.get("error", "Failed to analyze sentiment")
+        }
+    
+    return {
+        "success": True,
+        "result": {
+            "text": result.text,
+            "sentiment": result.sentiment,
+            "score": result.score,
+            "confidence": result.confidence,
+            "probabilities": result.probabilities
+        }
+    }
+
+
+@app.post("/api/ml/sentiment/analyze/batch", response_model=SentimentBatchResponse)
+async def analyze_sentiment_batch(request: SentimentBatchRequest):
+    """
+    Analyze sentiment of multiple texts in batch using FinBERT.
+    
+    More efficient than calling /analyze multiple times.
+    Empty texts will return null in the results array.
+    """
+    if not request.texts:
+        raise HTTPException(status_code=400, detail="Texts list cannot be empty")
+    
+    if len(request.texts) > 100:
+        raise HTTPException(status_code=400, detail="Maximum 100 texts per batch")
+    
+    # Filter out empty texts and track indices
+    valid_indices = []
+    valid_texts = []
+    for i, text in enumerate(request.texts):
+        if text.strip():
+            valid_indices.append(i)
+            valid_texts.append(text)
+    
+    # Analyze valid texts
+    results_list = finbert.analyze_batch(valid_texts)
+    
+    # Reconstruct full results list with None for empty texts
+    full_results: List[Optional[SentimentResultModel]] = [None] * len(request.texts)
+    failed_count = 0
+    
+    for i, result in enumerate(results_list):
+        original_idx = valid_indices[i]
+        if result is not None:
+            full_results[original_idx] = SentimentResultModel(
+                text=result.text,
+                sentiment=result.sentiment,
+                score=result.score,
+                confidence=result.confidence,
+                probabilities=result.probabilities
+            )
+        else:
+            failed_count += 1
+    
+    return {
+        "success": True,
+        "results": full_results,
+        "processed": len(valid_texts) - failed_count,
+        "failed": failed_count + (len(request.texts) - len(valid_texts))
+    }
 
 
 # ============== Main ==============

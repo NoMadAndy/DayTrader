@@ -351,6 +351,84 @@ app.delete('/api/ml/models/:symbol', async (req, res) => {
   }
 });
 
+/**
+ * Proxy ML Service sentiment status
+ */
+app.get('/api/ml/sentiment/status', async (req, res) => {
+  try {
+    const response = await fetch(`${ML_SERVICE_URL}/api/ml/sentiment/status`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('ML Service sentiment status error:', error);
+    res.status(503).json({ 
+      error: 'ML Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy ML Service sentiment load
+ */
+app.post('/api/ml/sentiment/load', async (req, res) => {
+  try {
+    const response = await fetch(`${ML_SERVICE_URL}/api/ml/sentiment/load`, {
+      method: 'POST'
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('ML Service sentiment load error:', error);
+    res.status(503).json({ 
+      error: 'ML Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy ML Service sentiment analyze (single)
+ */
+app.post('/api/ml/sentiment/analyze', express.json(), async (req, res) => {
+  try {
+    const response = await fetch(`${ML_SERVICE_URL}/api/ml/sentiment/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('ML Service sentiment analyze error:', error);
+    res.status(503).json({ 
+      error: 'ML Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy ML Service sentiment analyze batch
+ */
+app.post('/api/ml/sentiment/analyze/batch', express.json({ limit: '5mb' }), async (req, res) => {
+  try {
+    const response = await fetch(`${ML_SERVICE_URL}/api/ml/sentiment/analyze/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('ML Service sentiment batch analyze error:', error);
+    res.status(503).json({ 
+      error: 'ML Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });

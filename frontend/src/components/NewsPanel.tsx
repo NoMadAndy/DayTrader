@@ -2,15 +2,28 @@
  * News Panel Component
  * 
  * Displays financial news for the selected stock with sentiment analysis.
+ * Uses ML-based FinBERT sentiment when available, falls back to keyword-based analysis.
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNews } from '../hooks';
-import { analyzeSentiment, getSentimentLabel } from '../utils/sentimentAnalysis';
+import { analyzeSentiment, getSentimentLabel, type SentimentResult } from '../utils/sentimentAnalysis';
+import { analyzeBatchWithFallback, checkMLSentimentAvailable, resetMLServiceCache } from '../services/mlSentimentService';
 
 interface NewsPanelProps {
   symbol: string;
   className?: string;
+}
+
+interface NewsItemWithSentiment {
+  id: string;
+  headline: string;
+  summary?: string;
+  source: string;
+  url: string;
+  datetime: number;
+  image?: string;
+  sentimentResult: SentimentResult & { source?: 'ml' | 'local' };
 }
 
 // Image component with error fallback using React state
@@ -33,14 +46,70 @@ function NewsImage({ src, className }: { src: string; className: string }) {
 
 export function NewsPanel({ symbol, className = '' }: NewsPanelProps) {
   const { news, isLoading, error, refetch } = useNews(symbol);
-  
-  // Analyze sentiment for all news items
-  const newsWithSentiment = useMemo(() => {
-    return news.map(item => ({
-      ...item,
-      sentimentResult: analyzeSentiment(`${item.headline} ${item.summary || ''}`),
-    }));
-  }, [news]);
+  const [newsWithSentiment, setNewsWithSentiment] = useState<NewsItemWithSentiment[]>([]);
+  const [sentimentLoading, setSentimentLoading] = useState(false);
+  const [useMLSentiment, setUseMLSentiment] = useState(true);
+  const [mlAvailable, setMlAvailable] = useState<boolean | null>(null);
+
+  // Check ML availability on mount
+  useEffect(() => {
+    checkMLSentimentAvailable().then(setMlAvailable);
+  }, []);
+
+  // Analyze sentiment when news changes
+  useEffect(() => {
+    if (news.length === 0) {
+      setNewsWithSentiment([]);
+      return;
+    }
+
+    const analyzeNews = async () => {
+      setSentimentLoading(true);
+      
+      try {
+        if (useMLSentiment && mlAvailable) {
+          // Use ML batch analysis
+          const texts = news.map(item => `${item.headline} ${item.summary || ''}`);
+          const results = await analyzeBatchWithFallback(texts, true);
+          
+          setNewsWithSentiment(news.map((item, index) => ({
+            ...item,
+            sentimentResult: results[index],
+          })));
+        } else {
+          // Use local analysis only
+          setNewsWithSentiment(news.map(item => ({
+            ...item,
+            sentimentResult: {
+              ...analyzeSentiment(`${item.headline} ${item.summary || ''}`),
+              source: 'local' as const,
+            },
+          })));
+        }
+      } catch (err) {
+        console.error('Sentiment analysis failed:', err);
+        // Fallback to local
+        setNewsWithSentiment(news.map(item => ({
+          ...item,
+          sentimentResult: {
+            ...analyzeSentiment(`${item.headline} ${item.summary || ''}`),
+            source: 'local' as const,
+          },
+        })));
+      } finally {
+        setSentimentLoading(false);
+      }
+    };
+
+    analyzeNews();
+  }, [news, useMLSentiment, mlAvailable]);
+
+  // Toggle ML sentiment
+  const toggleMLSentiment = useCallback(() => {
+    setUseMLSentiment(prev => !prev);
+    resetMLServiceCache();
+    checkMLSentimentAvailable().then(setMlAvailable);
+  }, []);
 
   // Calculate overall sentiment summary
   const sentimentSummary = useMemo(() => {
@@ -126,8 +195,26 @@ export function NewsPanel({ symbol, className = '' }: NewsPanelProps) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
           </svg>
           <h3 className="font-semibold text-white">News for {symbol}</h3>
+          {sentimentLoading && (
+            <div className="w-3 h-3 border border-purple-400 border-t-transparent rounded-full animate-spin" />
+          )}
         </div>
         <div className="flex items-center gap-2">
+          {/* ML/Local Toggle */}
+          <button
+            onClick={toggleMLSentiment}
+            className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+              useMLSentiment && mlAvailable
+                ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30'
+                : 'bg-slate-700/50 text-gray-400 hover:bg-slate-700'
+            }`}
+            title={mlAvailable 
+              ? (useMLSentiment ? 'Using FinBERT ML (click for keyword-based)' : 'Using keyword-based (click for FinBERT ML)')
+              : 'ML service not available'
+            }
+          >
+            {useMLSentiment && mlAvailable ? '🤖 FinBERT' : '📝 Keywords'}
+          </button>
           {/* Sentiment Summary */}
           {sentimentSummary && (
             <div className="flex items-center gap-1.5 text-xs">
@@ -180,7 +267,7 @@ export function NewsPanel({ symbol, className = '' }: NewsPanelProps) {
                           ? 'bg-red-500/20 text-red-400'
                           : 'bg-gray-500/20 text-gray-400'
                       }`}
-                      title={`Score: ${item.sentimentResult.score.toFixed(2)}, Confidence: ${(item.sentimentResult.confidence * 100).toFixed(0)}%`}
+                      title={`Score: ${item.sentimentResult.score.toFixed(2)}, Confidence: ${(item.sentimentResult.confidence * 100).toFixed(0)}%${item.sentimentResult.source ? ` (${item.sentimentResult.source === 'ml' ? 'FinBERT' : 'Keywords'})` : ''}`}
                     >
                       {sentimentInfo.emoji} {sentimentInfo.label}
                     </span>
