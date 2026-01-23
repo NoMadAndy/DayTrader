@@ -1,11 +1,12 @@
 /**
  * News Panel Component
  * 
- * Displays financial news for the selected stock.
+ * Displays financial news for the selected stock with sentiment analysis.
  */
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNews } from '../hooks';
+import { analyzeSentiment, getSentimentLabel } from '../utils/sentimentAnalysis';
 
 interface NewsPanelProps {
   symbol: string;
@@ -32,6 +33,32 @@ function NewsImage({ src, className }: { src: string; className: string }) {
 
 export function NewsPanel({ symbol, className = '' }: NewsPanelProps) {
   const { news, isLoading, error, refetch } = useNews(symbol);
+  
+  // Analyze sentiment for all news items
+  const newsWithSentiment = useMemo(() => {
+    return news.map(item => ({
+      ...item,
+      sentimentResult: analyzeSentiment(`${item.headline} ${item.summary || ''}`),
+    }));
+  }, [news]);
+
+  // Calculate overall sentiment summary
+  const sentimentSummary = useMemo(() => {
+    if (newsWithSentiment.length === 0) return null;
+    
+    const counts = { positive: 0, negative: 0, neutral: 0 };
+    let totalScore = 0;
+    
+    newsWithSentiment.forEach(item => {
+      counts[item.sentimentResult.sentiment]++;
+      totalScore += item.sentimentResult.score;
+    });
+    
+    const avgScore = totalScore / newsWithSentiment.length;
+    const dominantSentiment = avgScore > 0.1 ? 'positive' : avgScore < -0.1 ? 'negative' : 'neutral';
+    
+    return { counts, avgScore, dominantSentiment };
+  }, [newsWithSentiment]);
 
   if (isLoading) {
     return (
@@ -100,51 +127,87 @@ export function NewsPanel({ symbol, className = '' }: NewsPanelProps) {
           </svg>
           <h3 className="font-semibold text-white">News for {symbol}</h3>
         </div>
-        <button
-          onClick={refetch}
-          className="p-1.5 rounded-lg hover:bg-slate-700/50 text-gray-400 hover:text-white transition-colors"
-          title="Refresh news"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Sentiment Summary */}
+          {sentimentSummary && (
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-green-400" title="Bullish">📈 {sentimentSummary.counts.positive}</span>
+              <span className="text-gray-400" title="Neutral">➖ {sentimentSummary.counts.neutral}</span>
+              <span className="text-red-400" title="Bearish">📉 {sentimentSummary.counts.negative}</span>
+            </div>
+          )}
+          <button
+            onClick={refetch}
+            className="p-1.5 rounded-lg hover:bg-slate-700/50 text-gray-400 hover:text-white transition-colors"
+            title="Refresh news"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div className="space-y-3 flex-1 overflow-y-auto">
-        {news.map((item) => (
-          <a
-            key={item.id}
-            href={item.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block p-3 rounded-lg bg-slate-900/50 hover:bg-slate-700/50 transition-colors border border-slate-700/50"
-          >
-            <div className="flex gap-3">
-              {item.image && (
-                <NewsImage 
-                  src={item.image} 
-                  className="w-16 h-16 rounded-lg object-cover flex-shrink-0" 
-                />
-              )}
-              <div className="flex-1 min-w-0">
-                <h4 className="font-medium text-white text-sm line-clamp-2 mb-1">
-                  {item.headline}
-                </h4>
-                {item.summary && (
-                  <p className="text-xs text-gray-400 line-clamp-2 mb-2">
-                    {item.summary}
-                  </p>
+        {newsWithSentiment.map((item) => {
+          const sentimentInfo = getSentimentLabel(item.sentimentResult.sentiment);
+          return (
+            <a
+              key={item.id}
+              href={item.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block p-3 rounded-lg bg-slate-900/50 hover:bg-slate-700/50 transition-colors border border-slate-700/50"
+            >
+              <div className="flex gap-3">
+                {item.image && (
+                  <NewsImage 
+                    src={item.image} 
+                    className="w-16 h-16 rounded-lg object-cover flex-shrink-0" 
+                  />
                 )}
-                <div className="flex items-center gap-2 text-xs text-gray-500">
-                  <span>{item.source}</span>
-                  <span>•</span>
-                  <span>{formatTimeAgo(item.datetime)}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <h4 className="font-medium text-white text-sm line-clamp-2 flex-1">
+                      {item.headline}
+                    </h4>
+                    {/* Sentiment Tag */}
+                    <span 
+                      className={`flex-shrink-0 px-2 py-0.5 rounded text-xs font-medium ${
+                        item.sentimentResult.sentiment === 'positive' 
+                          ? 'bg-green-500/20 text-green-400' 
+                          : item.sentimentResult.sentiment === 'negative'
+                          ? 'bg-red-500/20 text-red-400'
+                          : 'bg-gray-500/20 text-gray-400'
+                      }`}
+                      title={`Score: ${item.sentimentResult.score.toFixed(2)}, Confidence: ${(item.sentimentResult.confidence * 100).toFixed(0)}%`}
+                    >
+                      {sentimentInfo.emoji} {sentimentInfo.label}
+                    </span>
+                  </div>
+                  {item.summary && (
+                    <p className="text-xs text-gray-400 line-clamp-2 mb-2">
+                      {item.summary}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    <span>{item.source}</span>
+                    <span>•</span>
+                    <span>{formatTimeAgo(item.datetime)}</span>
+                    {item.sentimentResult.keywords.positive.length > 0 || item.sentimentResult.keywords.negative.length > 0 ? (
+                      <>
+                        <span>•</span>
+                        <span className="truncate max-w-[150px]" title={[...item.sentimentResult.keywords.positive, ...item.sentimentResult.keywords.negative].join(', ')}>
+                          {[...item.sentimentResult.keywords.positive.slice(0, 2), ...item.sentimentResult.keywords.negative.slice(0, 2)].join(', ')}
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-            </div>
-          </a>
-        ))}
+            </a>
+          );
+        })}
       </div>
     </div>
   );

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **News Sentiment Analysis** - Financial news now includes sentiment tags (Bullish/Bearish/Neutral)
+  - Keyword-based sentiment analysis optimized for financial news
+  - Domain-specific word lists (150+ positive/negative financial terms)
+  - Negation handling and intensity modifiers for accurate scoring
+  - Visual sentiment tags with emoji indicators (📈 Bullish, 📉 Bearish, ➖ Neutral)
+  - Sentiment summary in news panel header showing distribution
+  - Detected keywords displayed for transparency
 - **Custom Stock Symbols** - Users can now add and manage custom stock/ticker symbols
   - Add new symbols via the stock selector dropdown
   - Custom symbols are persisted in localStorage
