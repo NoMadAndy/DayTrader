@@ -178,10 +178,9 @@ function AppContent() {
               </div>
             </div>
 
-            {/* Main Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Chart - Collapsible */}
-              <div className="lg:col-span-2 bg-slate-800/50 rounded-xl border border-slate-700">
+            {/* Chart - Collapsible, Full Width */}
+            <div className="mb-6">
+              <div className="bg-slate-800/50 rounded-xl border border-slate-700">
                 <button
                   onClick={() => setShowChart(!showChart)}
                   className="w-full flex items-center justify-between p-6 text-left"
@@ -215,11 +214,11 @@ function AppContent() {
                   </div>
                 )}
               </div>
+            </div>
 
-              {/* News Panel */}
-              <div className="lg:col-span-1">
-                <NewsPanel symbol={selectedSymbol} />
-              </div>
+            {/* News Panel - Full Width */}
+            <div className="mb-6">
+              <NewsPanel symbol={selectedSymbol} />
             </div>
 
             {/* AI Forecast and Data Source Row */}
