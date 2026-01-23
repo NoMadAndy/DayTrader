@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Trading Signal Summary** - Aggregierte Kauf-/Verkaufsempfehlungen basierend auf News-Sentiment
+  - Signale für 4 Haltedauern: 1 Stunde (Scalping), 1 Tag (Daytrading), Wochen (Swing), Langfristig (Investment)
+  - Gewichtete Sentiment-Aggregation (neuere News haben mehr Gewicht)
+  - Momentum-Analyse (Trend der Stimmungsänderung)
+  - Volatilitätsindikator (Streuung der Meinungen)
+  - 5-Stufen-Signale: Stark Kaufen, Kaufen, Halten, Verkaufen, Stark Verkaufen
+  - Visuelle Score-Balken und Begründungen pro Zeitraum
+  - Disclaimer für nicht-Anlageberatung
 - **FinBERT ML Sentiment Analysis** - Enhanced news sentiment with transformer-based analysis
   - ProsusAI/finbert model for accurate financial sentiment classification
   - REST API endpoints: `/api/ml/sentiment/analyze` and `/api/ml/sentiment/analyze/batch`

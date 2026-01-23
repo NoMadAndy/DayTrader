@@ -3,12 +3,14 @@
  * 
  * Displays financial news for the selected stock with sentiment analysis.
  * Uses ML-based FinBERT sentiment when available, falls back to keyword-based analysis.
+ * Includes trading signal summary for different holding periods.
  */
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNews } from '../hooks';
 import { analyzeSentiment, getSentimentLabel, type SentimentResult } from '../utils/sentimentAnalysis';
 import { analyzeBatchWithFallback, checkMLSentimentAvailable, resetMLServiceCache } from '../services/mlSentimentService';
+import { TradingSignalPanel } from './TradingSignalPanel';
 
 interface NewsPanelProps {
   symbol: string;
@@ -234,6 +236,18 @@ export function NewsPanel({ symbol, className = '' }: NewsPanelProps) {
           </button>
         </div>
       </div>
+
+      {/* Trading Signal Summary */}
+      {newsWithSentiment.length > 0 && (
+        <TradingSignalPanel 
+          newsItems={newsWithSentiment.map(item => ({
+            sentimentResult: item.sentimentResult,
+            datetime: item.datetime
+          }))}
+          symbol={symbol}
+          className="mb-4"
+        />
+      )}
 
       <div className="space-y-3 flex-1 overflow-y-auto">
         {newsWithSentiment.map((item) => {

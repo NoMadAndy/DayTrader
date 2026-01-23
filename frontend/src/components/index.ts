@@ -6,3 +6,4 @@ export { IndicatorControls } from './IndicatorControls';
 export { DataSourceSelector } from './DataSourceSelector';
 export { NewsPanel } from './NewsPanel';
 export { ApiConfigPanel } from './ApiConfigPanel';
+export { TradingSignalPanel } from './TradingSignalPanel';
