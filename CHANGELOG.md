@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Custom Stock Symbols** - Users can now add and manage custom stock/ticker symbols
+  - Add new symbols via the stock selector dropdown
+  - Custom symbols are persisted in localStorage
+  - Visual distinction for custom symbols (green badge)
+  - Remove custom symbols with delete button
+  - Works with both mock data and live API providers
 - **ML-based Price Prediction Service** - New Python/PyTorch service for LSTM-based stock price predictions
   - Multi-layer LSTM neural network trained on historical OHLCV data
   - Automatic technical indicator calculation (20+ features)

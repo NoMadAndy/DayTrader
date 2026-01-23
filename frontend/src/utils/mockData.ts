@@ -7,7 +7,14 @@
 
 import type { OHLCV, StockData } from '../types/stock';
 
-const POPULAR_STOCKS = [
+interface StockInfo {
+  symbol: string;
+  name: string;
+  basePrice: number;
+  isCustom?: boolean;
+}
+
+const DEFAULT_STOCKS: StockInfo[] = [
   { symbol: 'AAPL', name: 'Apple Inc.', basePrice: 175 },
   { symbol: 'GOOGL', name: 'Alphabet Inc.', basePrice: 140 },
   { symbol: 'MSFT', name: 'Microsoft Corporation', basePrice: 380 },
@@ -17,6 +24,38 @@ const POPULAR_STOCKS = [
   { symbol: 'META', name: 'Meta Platforms Inc.', basePrice: 500 },
   { symbol: 'JPM', name: 'JPMorgan Chase & Co.', basePrice: 195 },
 ];
+
+const CUSTOM_STOCKS_KEY = 'daytrader_custom_stocks';
+
+// Load custom stocks from localStorage
+function loadCustomStocks(): StockInfo[] {
+  try {
+    const stored = localStorage.getItem(CUSTOM_STOCKS_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error('Failed to load custom stocks:', e);
+  }
+  return [];
+}
+
+// Save custom stocks to localStorage
+function saveCustomStocks(stocks: StockInfo[]): void {
+  try {
+    localStorage.setItem(CUSTOM_STOCKS_KEY, JSON.stringify(stocks));
+  } catch (e) {
+    console.error('Failed to save custom stocks:', e);
+  }
+}
+
+// Custom stocks loaded from localStorage
+let customStocks: StockInfo[] = loadCustomStocks();
+
+// Get all stocks (default + custom)
+function getAllStocks(): StockInfo[] {
+  return [...DEFAULT_STOCKS, ...customStocks];
+}
 
 /**
  * Generate random walk with trend and volatility
@@ -72,7 +111,8 @@ function generateOHLCV(
  * Get stock data for a specific symbol
  */
 export function getStockData(symbol: string, days: number = 365): StockData | null {
-  const stock = POPULAR_STOCKS.find(s => s.symbol === symbol);
+  const allStocks = getAllStocks();
+  const stock = allStocks.find(s => s.symbol.toUpperCase() === symbol.toUpperCase());
   if (!stock) return null;
   
   // Vary volatility and trend by stock
@@ -111,17 +151,65 @@ export function getStockData(symbol: string, days: number = 365): StockData | nu
 /**
  * Get list of available stocks
  */
-export function getAvailableStocks(): Array<{ symbol: string; name: string }> {
-  return POPULAR_STOCKS.map(s => ({ symbol: s.symbol, name: s.name }));
+export function getAvailableStocks(): Array<{ symbol: string; name: string; isCustom?: boolean }> {
+  return getAllStocks().map(s => ({ symbol: s.symbol, name: s.name, isCustom: s.isCustom }));
 }
 
 /**
  * Search stocks by symbol or name
  */
-export function searchStocks(query: string): Array<{ symbol: string; name: string }> {
+export function searchStocks(query: string): Array<{ symbol: string; name: string; isCustom?: boolean }> {
   const lowerQuery = query.toLowerCase();
-  return POPULAR_STOCKS.filter(
+  return getAllStocks().filter(
     s => s.symbol.toLowerCase().includes(lowerQuery) ||
          s.name.toLowerCase().includes(lowerQuery)
-  ).map(s => ({ symbol: s.symbol, name: s.name }));
+  ).map(s => ({ symbol: s.symbol, name: s.name, isCustom: s.isCustom }));
+}
+
+/**
+ * Add a custom stock symbol
+ * @returns true if added successfully, false if already exists
+ */
+export function addCustomStock(symbol: string, name?: string, basePrice?: number): boolean {
+  const upperSymbol = symbol.toUpperCase().trim();
+  
+  // Check if already exists
+  if (getAllStocks().some(s => s.symbol.toUpperCase() === upperSymbol)) {
+    return false;
+  }
+  
+  const newStock: StockInfo = {
+    symbol: upperSymbol,
+    name: name || upperSymbol,
+    basePrice: basePrice || 100 + Math.random() * 200, // Random base price between 100-300
+    isCustom: true
+  };
+  
+  customStocks.push(newStock);
+  saveCustomStocks(customStocks);
+  return true;
+}
+
+/**
+ * Remove a custom stock symbol
+ * @returns true if removed successfully, false if not found or is a default stock
+ */
+export function removeCustomStock(symbol: string): boolean {
+  const upperSymbol = symbol.toUpperCase();
+  const index = customStocks.findIndex(s => s.symbol.toUpperCase() === upperSymbol);
+  
+  if (index === -1) {
+    return false;
+  }
+  
+  customStocks.splice(index, 1);
+  saveCustomStocks(customStocks);
+  return true;
+}
+
+/**
+ * Check if a stock symbol exists (default or custom)
+ */
+export function stockExists(symbol: string): boolean {
+  return getAllStocks().some(s => s.symbol.toUpperCase() === symbol.toUpperCase().trim());
 }
