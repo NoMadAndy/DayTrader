@@ -103,7 +103,8 @@ export function ApiConfigPanel() {
     if (!hasAppliedInitialRef.current) {
       hasAppliedInitialRef.current = true;
       const initial = getInitialConfig();
-      if (initial.finnhubApiKey || initial.alphaVantageApiKey || initial.twelveDataApiKey) {
+      // Apply config if any API key is set (including newsApiKey)
+      if (initial.finnhubApiKey || initial.alphaVantageApiKey || initial.twelveDataApiKey || initial.newsApiKey) {
         applyConfig(initial);
       }
     }

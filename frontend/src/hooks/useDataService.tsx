@@ -22,6 +22,8 @@ interface DataServiceContextValue {
 
 const DataServiceContext = createContext<DataServiceContextValue | null>(null);
 
+const STORAGE_KEY = 'daytrader_api_config';
+
 // Get environment variables for API keys
 function getEnvConfig(): DataServiceConfig {
   return {
@@ -33,8 +35,33 @@ function getEnvConfig(): DataServiceConfig {
   };
 }
 
+// Get stored config from localStorage (merged with env config)
+function getInitialConfig(): DataServiceConfig {
+  const envConfig = getEnvConfig();
+  
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      // Merge: env variables take precedence, then localStorage
+      return {
+        finnhubApiKey: envConfig.finnhubApiKey || parsed.finnhubApiKey || undefined,
+        alphaVantageApiKey: envConfig.alphaVantageApiKey || parsed.alphaVantageApiKey || undefined,
+        twelveDataApiKey: envConfig.twelveDataApiKey || parsed.twelveDataApiKey || undefined,
+        newsApiKey: envConfig.newsApiKey || parsed.newsApiKey || undefined,
+        preferredSource: envConfig.preferredSource,
+      };
+    }
+  } catch (e) {
+    console.warn('Failed to load stored API config:', e);
+  }
+  
+  return envConfig;
+}
+
 export function DataServiceProvider({ children }: { children: React.ReactNode }) {
-  const [config, setConfigState] = useState<DataServiceConfig>(() => getEnvConfig());
+  // Initialize with merged config from env and localStorage
+  const [config, setConfigState] = useState<DataServiceConfig>(() => getInitialConfig());
   const [dataService, setDataService] = useState(() => new DataService(config));
   const [, forceUpdate] = useState(0);
 
