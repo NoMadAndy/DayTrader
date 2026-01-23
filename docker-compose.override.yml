@@ -22,6 +22,11 @@ services:
       - APP_ENV=development
       - CHOKIDAR_USEPOLLING=true
       - VITE_API_BASE_URL=http://backend:3001
+      - VITE_FINNHUB_API_KEY=${VITE_FINNHUB_API_KEY:-}
+      - VITE_ALPHA_VANTAGE_API_KEY=${VITE_ALPHA_VANTAGE_API_KEY:-}
+      - VITE_TWELVE_DATA_API_KEY=${VITE_TWELVE_DATA_API_KEY:-}
+      - VITE_NEWS_API_KEY=${VITE_NEWS_API_KEY:-}
+      - VITE_PREFERRED_DATA_SOURCE=${VITE_PREFERRED_DATA_SOURCE:-yahoo}
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5173/"]
       interval: 30s
