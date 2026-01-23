@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, DataSourceSelector, NewsPanel, ApiConfigPanel } from './components';
+import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, DataSourceSelector, NewsPanel, ApiConfigPanel, TradingSignalPanel, type NewsItemWithSentiment } from './components';
 import { DataServiceProvider, useStockData, useDataService } from './hooks';
 import { generateForecast } from './utils/forecast';
 
@@ -24,10 +24,18 @@ function AppContent() {
 
   // State for ML predictions (shared with NewsPanel for combined trading signals)
   const [mlPredictions, setMlPredictions] = useState<MLPrediction[] | null>(null);
+  
+  // State for news sentiment (from NewsPanel callback)
+  const [newsWithSentiment, setNewsWithSentiment] = useState<NewsItemWithSentiment[]>([]);
 
   // Callback to receive ML predictions from MLForecastPanel
   const handleMLPredictionsChange = useCallback((predictions: MLPrediction[] | null) => {
     setMlPredictions(predictions);
+  }, []);
+
+  // Callback to receive sentiment data from NewsPanel
+  const handleSentimentChange = useCallback((items: NewsItemWithSentiment[]) => {
+    setNewsWithSentiment(items);
   }, []);
 
   // Collapsible section states (default: collapsed)
@@ -160,6 +168,20 @@ function AppContent() {
               </div>
             </div>
 
+            {/* Trading Signals - Full Width at Top */}
+            <TradingSignalPanel 
+              newsItems={newsWithSentiment.map(item => ({
+                sentimentResult: item.sentimentResult,
+                datetime: item.datetime
+              }))}
+              symbol={selectedSymbol}
+              className="mb-6"
+              forecast={forecast ?? undefined}
+              stockData={stockData?.data}
+              mlPredictions={mlPredictions ?? undefined}
+              currentPrice={currentPrice}
+            />
+
             {/* AI Forecast and News Row */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6 items-stretch">
               {/* Forecast Panels */}
@@ -177,10 +199,7 @@ function AppContent() {
                 <NewsPanel 
                   symbol={selectedSymbol} 
                   className="h-full"
-                  forecast={forecast ?? undefined}
-                  stockData={stockData?.data}
-                  mlPredictions={mlPredictions ?? undefined}
-                  currentPrice={currentPrice}
+                  onSentimentChange={handleSentimentChange}
                 />
               </div>
             </div>

@@ -3,36 +3,15 @@
  * 
  * Displays financial news for the selected stock with sentiment analysis.
  * Uses ML-based FinBERT sentiment when available, falls back to keyword-based analysis.
- * Includes trading signal summary for different holding periods.
  */
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNews } from '../hooks';
 import { analyzeSentiment, getSentimentLabel, type SentimentResult } from '../utils/sentimentAnalysis';
 import { analyzeBatchWithFallback, checkMLSentimentAvailable, resetMLServiceCache } from '../services/mlSentimentService';
-import { TradingSignalPanel } from './TradingSignalPanel';
-import type { ForecastResult, OHLCV } from '../types/stock';
 
-// ML Prediction Interface
-interface MLPrediction {
-  date: string;
-  day: number;
-  predicted_price: number;
-  confidence: number;
-  change_pct: number;
-}
-
-interface NewsPanelProps {
-  symbol: string;
-  className?: string;
-  // Neue Props für kombinierte Trading-Signale
-  forecast?: ForecastResult;
-  stockData?: OHLCV[];
-  mlPredictions?: MLPrediction[];
-  currentPrice?: number;
-}
-
-interface NewsItemWithSentiment {
+// Export type for parent components
+export interface NewsItemWithSentiment {
   id: string;
   headline: string;
   summary?: string;
@@ -41,6 +20,13 @@ interface NewsItemWithSentiment {
   datetime: number;
   image?: string;
   sentimentResult: SentimentResult & { source?: 'ml' | 'local' };
+}
+
+interface NewsPanelProps {
+  symbol: string;
+  className?: string;
+  /** Callback when sentiment analysis completes */
+  onSentimentChange?: (items: NewsItemWithSentiment[]) => void;
 }
 
 // Image component with error fallback using React state
@@ -64,10 +50,7 @@ function NewsImage({ src, className }: { src: string; className: string }) {
 export function NewsPanel({ 
   symbol, 
   className = '',
-  forecast,
-  stockData,
-  mlPredictions,
-  currentPrice
+  onSentimentChange
 }: NewsPanelProps) {
   const { news, isLoading, error, refetch } = useNews(symbol);
   const [newsWithSentiment, setNewsWithSentiment] = useState<NewsItemWithSentiment[]>([]);
@@ -84,6 +67,7 @@ export function NewsPanel({
   useEffect(() => {
     if (news.length === 0) {
       setNewsWithSentiment([]);
+      onSentimentChange?.([]);
       return;
     }
 
@@ -91,42 +75,49 @@ export function NewsPanel({
       setSentimentLoading(true);
       
       try {
+        let analyzedNews: NewsItemWithSentiment[];
+        
         if (useMLSentiment && mlAvailable) {
           // Use ML batch analysis
           const texts = news.map(item => `${item.headline} ${item.summary || ''}`);
           const results = await analyzeBatchWithFallback(texts, true);
           
-          setNewsWithSentiment(news.map((item, index) => ({
+          analyzedNews = news.map((item, index) => ({
             ...item,
             sentimentResult: results[index],
-          })));
+          }));
         } else {
           // Use local analysis only
-          setNewsWithSentiment(news.map(item => ({
+          analyzedNews = news.map(item => ({
             ...item,
             sentimentResult: {
               ...analyzeSentiment(`${item.headline} ${item.summary || ''}`),
               source: 'local' as const,
             },
-          })));
+          }));
         }
+        
+        setNewsWithSentiment(analyzedNews);
+        onSentimentChange?.(analyzedNews);
       } catch (err) {
         console.error('Sentiment analysis failed:', err);
         // Fallback to local
-        setNewsWithSentiment(news.map(item => ({
+        const fallbackNews = news.map(item => ({
           ...item,
           sentimentResult: {
             ...analyzeSentiment(`${item.headline} ${item.summary || ''}`),
             source: 'local' as const,
           },
-        })));
+        }));
+        setNewsWithSentiment(fallbackNews);
+        onSentimentChange?.(fallbackNews);
       } finally {
         setSentimentLoading(false);
       }
     };
 
     analyzeNews();
-  }, [news, useMLSentiment, mlAvailable]);
+  }, [news, useMLSentiment, mlAvailable, onSentimentChange]);
 
   // Toggle ML sentiment
   const toggleMLSentiment = useCallback(() => {
@@ -258,22 +249,6 @@ export function NewsPanel({
           </button>
         </div>
       </div>
-
-      {/* Trading Signal Summary - zeigt kombinierte Signale aus allen Datenquellen */}
-      {(newsWithSentiment.length > 0 || forecast || (mlPredictions && mlPredictions.length > 0)) && (
-        <TradingSignalPanel 
-          newsItems={newsWithSentiment.map(item => ({
-            sentimentResult: item.sentimentResult,
-            datetime: item.datetime
-          }))}
-          symbol={symbol}
-          className="mb-4"
-          forecast={forecast}
-          stockData={stockData}
-          mlPredictions={mlPredictions}
-          currentPrice={currentPrice}
-        />
-      )}
 
       <div className="space-y-3 flex-1 overflow-y-auto">
         {newsWithSentiment.map((item) => {

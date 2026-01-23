@@ -4,6 +4,6 @@ export { MLForecastPanel } from './MLForecastPanel';
 export { StockSelector } from './StockSelector';
 export { IndicatorControls } from './IndicatorControls';
 export { DataSourceSelector } from './DataSourceSelector';
-export { NewsPanel } from './NewsPanel';
+export { NewsPanel, type NewsItemWithSentiment } from './NewsPanel';
 export { ApiConfigPanel } from './ApiConfigPanel';
 export { TradingSignalPanel } from './TradingSignalPanel';
