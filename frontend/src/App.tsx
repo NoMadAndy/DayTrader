@@ -13,6 +13,12 @@ function AppContent() {
   const { data: stockData, isLoading, source, refetch } = useStockData(selectedSymbol);
   const { preferredSource } = useDataService();
 
+  // Collapsible section states (default: collapsed)
+  const [showIndicators, setShowIndicators] = useState(false);
+  const [showChart, setShowChart] = useState(false);
+  const [showDataSource, setShowDataSource] = useState(false);
+  const [showTechnicalMethods, setShowTechnicalMethods] = useState(false);
+
   // Chart indicator toggles
   const [showSMA20, setShowSMA20] = useState(true);
   const [showSMA50, setShowSMA50] = useState(true);
@@ -75,9 +81,11 @@ function AppContent() {
               </div>
               <span className="text-xs text-gray-500 hidden sm:block">Technical Analysis Platform</span>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
               <StockSelector selectedSymbol={selectedSymbol} onSelect={setSelectedSymbol} />
-              <ApiConfigPanel />
+              <div className="flex-shrink-0">
+                <ApiConfigPanel />
+              </div>
             </div>
           </div>
         </div>
@@ -135,39 +143,77 @@ function AppContent() {
               </div>
             </div>
 
-            {/* Indicator Controls */}
+            {/* Indicator Controls - Collapsible */}
             <div className="mb-6">
-              <IndicatorControls
-                showSMA20={showSMA20}
-                showSMA50={showSMA50}
-                showEMA12={showEMA12}
-                showEMA26={showEMA26}
-                showBollingerBands={showBollingerBands}
-                showMACD={showMACD}
-                showRSI={showRSI}
-                showVolume={showVolume}
-                onToggle={handleIndicatorToggle}
-              />
+              <div className="bg-slate-800/50 rounded-xl border border-slate-700">
+                <button
+                  onClick={() => setShowIndicators(!showIndicators)}
+                  className="w-full flex items-center justify-between p-4 text-left"
+                >
+                  <h3 className="text-white font-semibold">Chart Indicators</h3>
+                  <svg
+                    className={`w-5 h-5 text-gray-400 transition-transform ${showIndicators ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {showIndicators && (
+                  <div className="px-4 pb-4">
+                    <IndicatorControls
+                      showSMA20={showSMA20}
+                      showSMA50={showSMA50}
+                      showEMA12={showEMA12}
+                      showEMA26={showEMA26}
+                      showBollingerBands={showBollingerBands}
+                      showMACD={showMACD}
+                      showRSI={showRSI}
+                      showVolume={showVolume}
+                      onToggle={handleIndicatorToggle}
+                    />
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Main Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Chart */}
-              <div className="lg:col-span-2 bg-slate-800/50 rounded-xl p-6 border border-slate-700">
-                <StockChart
-                  data={stockData.data}
-                  symbol={stockData.symbol}
-                  showSMA20={showSMA20}
-                  showSMA50={showSMA50}
-                  showEMA12={showEMA12}
-                  showEMA26={showEMA26}
-                  showBollingerBands={showBollingerBands}
-                  showMACD={showMACD}
-                  showRSI={showRSI}
-                  showVolume={showVolume}
-                  supportLevel={forecast.supportLevel}
-                  resistanceLevel={forecast.resistanceLevel}
-                />
+              {/* Chart - Collapsible */}
+              <div className="lg:col-span-2 bg-slate-800/50 rounded-xl border border-slate-700">
+                <button
+                  onClick={() => setShowChart(!showChart)}
+                  className="w-full flex items-center justify-between p-6 text-left"
+                >
+                  <h3 className="text-white font-semibold">Chart</h3>
+                  <svg
+                    className={`w-5 h-5 text-gray-400 transition-transform ${showChart ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {showChart && (
+                  <div className="px-6 pb-6">
+                    <StockChart
+                      data={stockData.data}
+                      symbol={stockData.symbol}
+                      showSMA20={showSMA20}
+                      showSMA50={showSMA50}
+                      showEMA12={showEMA12}
+                      showEMA26={showEMA26}
+                      showBollingerBands={showBollingerBands}
+                      showMACD={showMACD}
+                      showRSI={showRSI}
+                      showVolume={showVolume}
+                      supportLevel={forecast.supportLevel}
+                      resistanceLevel={forecast.resistanceLevel}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Forecast Panel */}
@@ -187,15 +233,55 @@ function AppContent() {
                 <NewsPanel symbol={selectedSymbol} />
               </div>
 
-              {/* Data Source Selector */}
+              {/* Data Source Selector - Collapsible */}
               <div className="lg:col-span-1">
-                <DataSourceSelector />
+                <div className="bg-slate-800/50 rounded-xl border border-slate-700">
+                  <button
+                    onClick={() => setShowDataSource(!showDataSource)}
+                    className="w-full flex items-center justify-between p-4 text-left"
+                  >
+                    <div className="flex items-center gap-2">
+                      <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+                      </svg>
+                      <h3 className="font-semibold text-white">Data Source</h3>
+                    </div>
+                    <svg
+                      className={`w-5 h-5 text-gray-400 transition-transform ${showDataSource ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {showDataSource && (
+                    <div className="px-4 pb-4">
+                      <DataSourceSelector collapsed />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Technical Analysis Documentation */}
-            <div className="mt-6 bg-slate-800/50 rounded-xl p-6 border border-slate-700">
-              <h3 className="text-xl font-bold mb-4">Technical Analysis Methods Used</h3>
+            {/* Technical Analysis Documentation - Collapsible */}
+            <div className="mt-6 bg-slate-800/50 rounded-xl border border-slate-700">
+              <button
+                onClick={() => setShowTechnicalMethods(!showTechnicalMethods)}
+                className="w-full flex items-center justify-between p-6 text-left"
+              >
+                <h3 className="text-xl font-bold">Technical Analysis Methods Used</h3>
+                <svg
+                  className={`w-5 h-5 text-gray-400 transition-transform ${showTechnicalMethods ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {showTechnicalMethods && (
+              <div className="px-6 pb-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="bg-slate-900/50 rounded-lg p-4">
                   <h4 className="font-semibold text-blue-400 mb-2">Trend Indicators</h4>
@@ -221,6 +307,8 @@ function AppContent() {
                   </ul>
                 </div>
               </div>
+              </div>
+              )}
             </div>
           </>
         ) : (

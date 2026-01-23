@@ -33,24 +33,21 @@ export function IndicatorControls({
   ];
 
   return (
-    <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
-      <h3 className="text-white font-semibold mb-3">Chart Indicators</h3>
-      <div className="flex flex-wrap gap-2">
-        {indicators.map((indicator) => (
-          <button
-            key={indicator.key}
-            onClick={() => onToggle(indicator.key, !indicator.value)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-              indicator.value
-                ? 'bg-slate-700 text-white'
-                : 'bg-slate-900/50 text-gray-400 hover:bg-slate-700/50'
-            }`}
-          >
-            <span className={`w-3 h-3 rounded-full ${indicator.value ? indicator.color : 'bg-gray-600'}`} />
-            {indicator.label}
-          </button>
-        ))}
-      </div>
+    <div className="flex flex-wrap gap-2">
+      {indicators.map((indicator) => (
+        <button
+          key={indicator.key}
+          onClick={() => onToggle(indicator.key, !indicator.value)}
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+            indicator.value
+              ? 'bg-slate-700 text-white'
+              : 'bg-slate-900/50 text-gray-400 hover:bg-slate-700/50'
+          }`}
+        >
+          <span className={`w-3 h-3 rounded-full ${indicator.value ? indicator.color : 'bg-gray-600'}`} />
+          {indicator.label}
+        </button>
+      ))}
     </div>
   );
 }
