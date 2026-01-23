@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Hamburger Menu** - Neues Hauptmenü links oben ersetzt das Zahnrad-Icon
+  - API Settings mit allen Provider-Konfigurationen
+  - Data Source Auswahl direkt im Menü
+  - Changelog-Anzeige mit aktuellen Änderungen
+  - Login/Registrierung für Benutzerkonten
+  - Tabs für einfache Navigation zwischen Bereichen
+- **PostgreSQL Database** - Persistente Datenbankanbindung für Benutzereinstellungen
+  - User-Tabelle mit sicherer Passwort-Hashung (PBKDF2)
+  - Session-Management mit Token-basierter Authentifizierung
+  - User Settings für Präferenzen und API-Keys
+  - Custom Symbols pro Benutzer synchronisiert
+  - Automatische Schema-Migration beim Start
+- **User Authentication** - Vollständiges Authentifizierungssystem
+  - Registrierung mit E-Mail-Validierung
+  - Login mit Session-Token (7 Tage gültig)
+  - Automatisches Cleanup abgelaufener Sessions
+  - Auth-Status-Check für UI-Anpassung
+- **User Settings Sync** - Serverseitige Einstellungsspeicherung
+  - API-Keys werden verschlüsselt gespeichert (wenn eingeloggt)
+  - Custom Symbols werden mit dem Konto synchronisiert
+  - Fallback auf localStorage wenn nicht eingeloggt
 - **Combined Trading Signals** - Trading-Signale kombinieren jetzt alle Datenquellen für präzisere Empfehlungen
   - Multi-Quellen-Analyse: News-Sentiment + Technische Indikatoren + ML-Preisprognosen
   - Adaptive Gewichtung je nach Zeitraum:

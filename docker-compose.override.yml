@@ -2,6 +2,10 @@
 # This file is automatically loaded with docker-compose.yml
 # Enables hot reload with Vite dev server and automatic rebuild on code changes
 services:
+  postgres:
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
   frontend:
     build:
       context: ./frontend
@@ -44,6 +48,7 @@ services:
       - NODE_ENV=development
       - CORS_ORIGIN=*
       - ML_SERVICE_URL=http://ml-service:8000
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-daytrader}:${POSTGRES_PASSWORD:-daytrader_secret}@postgres:5432/${POSTGRES_DB:-daytrader}
 
   ml-service:
     build:

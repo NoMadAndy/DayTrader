@@ -1,4 +1,20 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-daytrader}
+      - POSTGRES_USER=${POSTGRES_USER:-daytrader}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-daytrader_secret}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-daytrader} -d ${POSTGRES_DB:-daytrader}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   frontend:
     build:
       context: ./frontend
@@ -31,6 +47,9 @@ services:
     ports:
       - "${BACKEND_PORT:-3001}:3001"
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
       interval: 30s
@@ -41,6 +60,7 @@ services:
       - NODE_ENV=${APP_ENV:-production}
       - CORS_ORIGIN=${CORS_ORIGIN:-*}
       - ML_SERVICE_URL=http://ml-service:8000
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-daytrader}:${POSTGRES_PASSWORD:-daytrader_secret}@postgres:5432/${POSTGRES_DB:-daytrader}
 
   ml-service:
     build:
@@ -78,3 +98,4 @@ services:
 
 volumes:
   ml-models:
+  postgres-data:

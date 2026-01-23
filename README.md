@@ -14,7 +14,9 @@ A modern, AI-powered stock technical analysis platform for day trading education
 - 📱 **Modern, Responsive UI**: Works on desktop and mobile devices
 - 📝 **Documented Analysis**: Each forecast explains the reasoning behind signals
 - 🌐 **Real-Time Data**: Connect to multiple market data providers (Finnhub, Alpha Vantage, Twelve Data, Yahoo Finance)
-- 📰 **Financial News**: Integrated news feeds for selected stocks
+- 📰 **Financial News**: Integrated news feeds with sentiment analysis
+- 🔐 **User Accounts**: Optional login/registration for settings persistence
+- ☰ **Hamburger Menu**: Unified navigation for API settings, data sources, changelog, and account
 
 ## Getting Started
 
@@ -51,10 +53,11 @@ DayTrader supports multiple market data providers. By default, the app uses Yaho
 
 ### Option 1: Configure API Keys via UI
 
-1. Click the ⚙️ settings icon in the app header
-2. Enter your API keys for the data providers you want to use
-3. Click "Save & Apply"
-4. Keys are stored locally in your browser
+1. Click the ☰ hamburger menu icon in the top left
+2. Navigate to "API Settings" tab
+3. Enter your API keys for the data providers you want to use
+4. Click "Save & Apply"
+5. Keys are stored locally in your browser (or synced if logged in)
 
 ### Option 2: Configure via Environment Variables
 
@@ -99,9 +102,34 @@ VITE_PREFERRED_DATA_SOURCE=finnhub
 | **Yahoo Finance** | No | Quotes, Historical Data | Uses backend proxy |
 | **Mock Data** | No | Simulated data | Unlimited (demo only) |
 
+## User Authentication & Settings
+
+DayTrader supports optional user accounts with PostgreSQL for persisting settings:
+
+### Features
+- **User Registration/Login**: Create an account to sync settings across devices
+- **Persistent Settings**: API keys and preferences stored securely on server
+- **Custom Symbols**: Your custom stock symbols sync with your account
+- **Session Management**: Secure token-based authentication (7-day sessions)
+
+### Database Setup
+
+The PostgreSQL database is optional. Without it, all settings are stored locally in your browser.
+
+To enable user accounts, set the following in your `.env` file:
+
+```bash
+# PostgreSQL Configuration
+POSTGRES_DB=daytrader
+POSTGRES_USER=daytrader
+POSTGRES_PASSWORD=your_secure_password_here
+```
+
+The database schema is created automatically on first startup.
+
 ## Architecture
 
-DayTrader consists of three services:
+DayTrader consists of four services:
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
@@ -113,20 +141,28 @@ DayTrader consists of three services:
                                │  /api/* requests        │
                                └─────────────────────────┤
                                                          │
-                        ┌────────────────────────────────┼─────────────────┐
-                        │                                │                 │
-                        ▼                                ▼                 ▼
-              ┌─────────────────┐            ┌─────────────────┐  ┌─────────────────┐
-              │  Yahoo Finance  │            │     NewsAPI     │  │   ML Service    │
-              │      API        │            │                 │  │   (PyTorch)     │
-              └─────────────────┘            └─────────────────┘  │   Port 8000     │
-                                                                  │   CUDA/GPU      │
-                                                                  └─────────────────┘
+                        ┌────────────────────────────────┼─────────────────────┐
+                        │                                │                     │
+                        ▼                                ▼                     ▼
+              ┌─────────────────┐            ┌─────────────────┐    ┌─────────────────┐
+              │  Yahoo Finance  │            │     NewsAPI     │    │   PostgreSQL    │
+              │      API        │            │                 │    │   Port 5432     │
+              └─────────────────┘            └─────────────────┘    │  (User Data)    │
+                                                    │               └─────────────────┘
+                                                    │
+                                                    ▼
+                                           ┌─────────────────┐
+                                           │   ML Service    │
+                                           │   (PyTorch)     │
+                                           │   Port 8000     │
+                                           │   CUDA/GPU      │
+                                           └─────────────────┘
 ```
 
 - **Frontend**: React SPA served by nginx (production) or Vite (development)
-- **Backend**: Express.js proxy server that handles external API calls to avoid CORS issues
+- **Backend**: Express.js proxy server that handles external API calls and user authentication
 - **ML Service**: Python/FastAPI service with PyTorch LSTM model for price predictions
+- **PostgreSQL**: Optional database for user accounts and settings persistence
 
 ## ML-Based Price Prediction
 

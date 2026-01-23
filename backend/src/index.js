@@ -3,12 +3,17 @@
  * 
  * Proxies requests to external APIs (Yahoo Finance, etc.) to avoid CORS issues.
  * This server runs in Docker alongside the frontend.
+ * 
+ * Also provides authentication and user settings management with PostgreSQL.
  */
 
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
+import db from './db.js';
+import { registerUser, loginUser, logoutUser, authMiddleware, optionalAuthMiddleware } from './auth.js';
+import { getUserSettings, updateUserSettings, getCustomSymbols, addCustomSymbol, removeCustomSymbol, syncCustomSymbols } from './userSettings.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -40,13 +45,15 @@ app.use((req, res, next) => {
 });
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+  const dbHealthy = process.env.DATABASE_URL ? await db.checkHealth() : true;
   res.json({ 
-    status: 'ok', 
+    status: dbHealthy ? 'ok' : 'degraded', 
     timestamp: new Date().toISOString(),
     version: BUILD_VERSION,
     commit: BUILD_COMMIT,
-    buildTime: BUILD_TIME
+    buildTime: BUILD_TIME,
+    database: process.env.DATABASE_URL ? (dbHealthy ? 'connected' : 'error') : 'not configured'
   });
 });
 
@@ -58,6 +65,197 @@ app.get('/api/version', (req, res) => {
     buildTime: BUILD_TIME,
     service: 'daytrader-backend'
   });
+});
+
+// ============================================================================
+// Authentication Endpoints
+// ============================================================================
+
+/**
+ * Register a new user
+ * POST /api/auth/register
+ * Body: { email, password, username? }
+ */
+app.post('/api/auth/register', express.json(), async (req, res) => {
+  if (!process.env.DATABASE_URL) {
+    return res.status(503).json({ error: 'Database not configured' });
+  }
+  
+  const { email, password, username } = req.body;
+  
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+  
+  const result = await registerUser(email, password, username);
+  
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+  
+  res.status(201).json({ user: result.user });
+});
+
+/**
+ * Login user
+ * POST /api/auth/login
+ * Body: { email, password }
+ */
+app.post('/api/auth/login', express.json(), async (req, res) => {
+  if (!process.env.DATABASE_URL) {
+    return res.status(503).json({ error: 'Database not configured' });
+  }
+  
+  const { email, password } = req.body;
+  
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+  
+  const userAgent = req.headers['user-agent'];
+  const ipAddress = req.ip || req.connection.remoteAddress;
+  
+  const result = await loginUser(email, password, userAgent, ipAddress);
+  
+  if (!result.success) {
+    return res.status(401).json({ error: result.error });
+  }
+  
+  res.json({ token: result.token, user: result.user });
+});
+
+/**
+ * Logout user
+ * POST /api/auth/logout
+ * Headers: Authorization: Bearer <token>
+ */
+app.post('/api/auth/logout', authMiddleware, async (req, res) => {
+  const token = req.headers.authorization.substring(7);
+  await logoutUser(token);
+  res.json({ success: true });
+});
+
+/**
+ * Get current user
+ * GET /api/auth/me
+ * Headers: Authorization: Bearer <token>
+ */
+app.get('/api/auth/me', authMiddleware, (req, res) => {
+  res.json({ user: req.user });
+});
+
+/**
+ * Check if database/auth is available
+ * GET /api/auth/status
+ */
+app.get('/api/auth/status', async (req, res) => {
+  const dbConfigured = !!process.env.DATABASE_URL;
+  const dbHealthy = dbConfigured ? await db.checkHealth() : false;
+  
+  res.json({
+    authAvailable: dbConfigured && dbHealthy,
+    dbConfigured,
+    dbHealthy
+  });
+});
+
+// ============================================================================
+// User Settings Endpoints
+// ============================================================================
+
+/**
+ * Get user settings
+ * GET /api/user/settings
+ */
+app.get('/api/user/settings', authMiddleware, async (req, res) => {
+  try {
+    const settings = await getUserSettings(req.user.id);
+    res.json(settings);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get settings' });
+  }
+});
+
+/**
+ * Update user settings
+ * PUT /api/user/settings
+ * Body: { preferredDataSource?, apiKeys?, uiPreferences? }
+ */
+app.put('/api/user/settings', authMiddleware, express.json(), async (req, res) => {
+  try {
+    const settings = await updateUserSettings(req.user.id, req.body);
+    res.json(settings);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to update settings' });
+  }
+});
+
+/**
+ * Get custom symbols
+ * GET /api/user/symbols
+ */
+app.get('/api/user/symbols', authMiddleware, async (req, res) => {
+  try {
+    const symbols = await getCustomSymbols(req.user.id);
+    res.json(symbols);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get symbols' });
+  }
+});
+
+/**
+ * Add custom symbol
+ * POST /api/user/symbols
+ * Body: { symbol, name? }
+ */
+app.post('/api/user/symbols', authMiddleware, express.json(), async (req, res) => {
+  const { symbol, name } = req.body;
+  
+  if (!symbol) {
+    return res.status(400).json({ error: 'Symbol is required' });
+  }
+  
+  const result = await addCustomSymbol(req.user.id, symbol, name);
+  
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+  
+  res.status(201).json(result.symbol);
+});
+
+/**
+ * Remove custom symbol
+ * DELETE /api/user/symbols/:symbol
+ */
+app.delete('/api/user/symbols/:symbol', authMiddleware, async (req, res) => {
+  const removed = await removeCustomSymbol(req.user.id, req.params.symbol);
+  
+  if (!removed) {
+    return res.status(404).json({ error: 'Symbol not found' });
+  }
+  
+  res.json({ success: true });
+});
+
+/**
+ * Sync custom symbols from localStorage
+ * POST /api/user/symbols/sync
+ * Body: { symbols: [{ symbol, name }, ...] }
+ */
+app.post('/api/user/symbols/sync', authMiddleware, express.json(), async (req, res) => {
+  const { symbols } = req.body;
+  
+  if (!Array.isArray(symbols)) {
+    return res.status(400).json({ error: 'Symbols array is required' });
+  }
+  
+  try {
+    const result = await syncCustomSymbols(req.user.id, symbols);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to sync symbols' });
+  }
 });
 
 // Yahoo Finance proxy endpoints
@@ -441,8 +639,30 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`DayTrader Backend Proxy running on port ${PORT}`);
-  console.log(`Version: ${BUILD_VERSION} (${BUILD_COMMIT})`);
-  console.log(`Build time: ${BUILD_TIME}`);
-});
+const startServer = async () => {
+  // Initialize database if configured
+  if (process.env.DATABASE_URL) {
+    try {
+      await db.initializeDatabase();
+      console.log('Database connected and initialized');
+      
+      // Schedule session cleanup every hour
+      setInterval(() => {
+        db.cleanupExpiredSessions();
+      }, 60 * 60 * 1000);
+    } catch (e) {
+      console.error('Database initialization failed:', e.message);
+      console.log('Server will start without database features');
+    }
+  } else {
+    console.log('DATABASE_URL not set - running without database features');
+  }
+  
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`DayTrader Backend Proxy running on port ${PORT}`);
+    console.log(`Version: ${BUILD_VERSION} (${BUILD_COMMIT})`);
+    console.log(`Build time: ${BUILD_TIME}`);
+  });
+};
+
+startServer();

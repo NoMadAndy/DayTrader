@@ -7,3 +7,7 @@ export { DataSourceSelector } from './DataSourceSelector';
 export { NewsPanel, type NewsItemWithSentiment } from './NewsPanel';
 export { ApiConfigPanel } from './ApiConfigPanel';
 export { TradingSignalPanel } from './TradingSignalPanel';
+export { HamburgerMenu } from './HamburgerMenu';
+export { LoginForm } from './LoginForm';
+export { RegisterForm } from './RegisterForm';
+export { ChangelogPanel } from './ChangelogPanel';

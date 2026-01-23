@@ -1,7 +1,8 @@
-import { useState, useMemo, useCallback } from 'react';
-import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, DataSourceSelector, NewsPanel, ApiConfigPanel, TradingSignalPanel, type NewsItemWithSentiment } from './components';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, DataSourceSelector, NewsPanel, TradingSignalPanel, HamburgerMenu, type NewsItemWithSentiment } from './components';
 import { DataServiceProvider, useStockData, useDataService } from './hooks';
 import { generateForecast } from './utils/forecast';
+import { initializeAuth } from './services/authService';
 
 // ML Prediction type for trading signals
 interface MLPrediction {
@@ -21,6 +22,11 @@ function AppContent() {
   const [selectedSymbol, setSelectedSymbol] = useState('AAPL');
   const { data: stockData, isLoading, source, refetch } = useStockData(selectedSymbol);
   const { preferredSource } = useDataService();
+
+  // Initialize auth on mount
+  useEffect(() => {
+    initializeAuth();
+  }, []);
 
   // State for ML predictions (shared with NewsPanel for combined trading signals)
   const [mlPredictions, setMlPredictions] = useState<MLPrediction[] | null>(null);
@@ -96,6 +102,8 @@ function AppContent() {
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
+              {/* Hamburger Menu */}
+              <HamburgerMenu />
               <div className="flex items-center gap-2">
                 <svg className="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
@@ -108,9 +116,6 @@ function AppContent() {
             </div>
             <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
               <StockSelector selectedSymbol={selectedSymbol} onSelect={setSelectedSymbol} />
-              <div className="flex-shrink-0">
-                <ApiConfigPanel />
-              </div>
             </div>
           </div>
         </div>
