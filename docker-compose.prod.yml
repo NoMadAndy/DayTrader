@@ -7,7 +7,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "${APP_PORT:-3000}:5173"
+      - "${APP_PORT:-3000}:80"
     restart: unless-stopped
     environment:
       - APP_ENV=production
