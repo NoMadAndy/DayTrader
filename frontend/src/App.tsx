@@ -216,21 +216,21 @@ function AppContent() {
                 )}
               </div>
 
-              {/* Forecast Panel */}
-              <div className="lg:col-span-1 space-y-4">
+              {/* News Panel */}
+              <div className="lg:col-span-1">
+                <NewsPanel symbol={selectedSymbol} />
+              </div>
+            </div>
+
+            {/* AI Forecast and Data Source Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+              {/* Forecast Panels */}
+              <div className="lg:col-span-2 space-y-4">
                 <ForecastPanel forecast={forecast} currentPrice={currentPrice} />
                 <MLForecastPanel 
                   symbol={selectedSymbol} 
                   stockData={stockData?.data ?? []} 
                 />
-              </div>
-            </div>
-
-            {/* News and Data Source Row */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-              {/* News Panel */}
-              <div className="lg:col-span-2">
-                <NewsPanel symbol={selectedSymbol} />
               </div>
 
               {/* Data Source Selector - Collapsible */}
