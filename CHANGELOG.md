@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Backend proxy server for Yahoo Finance API**
+  - Node.js/Express backend service to avoid CORS issues
+  - Proxy endpoints for Yahoo Finance chart and search APIs
+  - Health check and version endpoints
+  - Docker containerization with production and development Dockerfiles
+  - nginx reverse proxy configuration to route `/api` requests to backend
+  - Vite dev server proxy for local development
+  - Backend service auto-starts with `docker compose up`
+
 ### Changed
 - **Yahoo Finance is now the default data source** - Changed from mock data to Yahoo Finance as the default provider since it requires no API key and provides real market data
+- Yahoo Finance provider now uses backend proxy instead of direct API calls
 
 ### Added
 - **Real-time market data integration**

@@ -96,8 +96,32 @@ VITE_PREFERRED_DATA_SOURCE=finnhub
 | **Finnhub** | Yes | Quotes, Candles, News | 60 calls/min |
 | **Alpha Vantage** | Yes | Quotes, Daily Data | 5 calls/min, 500/day |
 | **Twelve Data** | Yes | Quotes, Time Series | 8 calls/min, 800/day |
-| **Yahoo Finance** | No | Quotes, Historical Data | May have CORS issues |
+| **Yahoo Finance** | No | Quotes, Historical Data | Uses backend proxy |
 | **Mock Data** | No | Simulated data | Unlimited (demo only) |
+
+## Architecture
+
+DayTrader consists of two services:
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│    Browser      │────▶│    Frontend     │────▶│    Backend      │
+│                 │     │  (nginx/vite)   │     │   (Node.js)     │
+└─────────────────┘     │    Port 3000    │     │   Port 3001     │
+                        └─────────────────┘     └────────┬────────┘
+                               │                         │
+                               │  /api/* requests        │
+                               └─────────────────────────┘
+                                                         │
+                                                         ▼
+                                              ┌─────────────────┐
+                                              │  Yahoo Finance  │
+                                              │      API        │
+                                              └─────────────────┘
+```
+
+- **Frontend**: React SPA served by nginx (production) or Vite (development)
+- **Backend**: Express.js proxy server that handles external API calls to avoid CORS issues
 
 ## Docker Deployment
 
@@ -110,7 +134,7 @@ VITE_PREFERRED_DATA_SOURCE=finnhub
 
 **Development mode (with hot reload):**
 ```bash
-# Start with hot reload - automatically rebuilds on code changes
+# Start both frontend and backend with hot reload
 docker compose up
 
 # Or run in background
@@ -118,7 +142,8 @@ docker compose up -d
 ```
 
 The application will be available at http://localhost:3000 (or your configured `APP_PORT`).
-Code changes in `frontend/src` will trigger automatic hot reload.
+The backend API runs on port 3001 (or your configured `BACKEND_PORT`).
+Code changes in `frontend/src` and `backend/src` will trigger automatic hot reload.
 
 **Production mode:**
 ```bash

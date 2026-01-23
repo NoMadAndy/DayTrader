@@ -1,29 +1,23 @@
 /**
- * Yahoo Finance Data Provider (via public endpoints)
+ * Yahoo Finance Data Provider (via backend proxy)
  * 
- * Uses Yahoo Finance's public chart API for stock data.
- * No API key required, but may have rate limits.
+ * Uses the backend proxy server to fetch data from Yahoo Finance,
+ * avoiding CORS issues in the browser.
  * 
- * Note: This uses Yahoo's publicly available endpoints.
- * For production use, consider using official APIs.
+ * No API key required.
  */
 
 import type { OHLCV } from '../types/stock';
 import type { DataProvider, QuoteData, StockSearchResult } from './types';
 
-// CORS proxy may be needed in browser environment
-// For production, use a backend proxy
-const YAHOO_CHART_URL = 'https://query1.finance.yahoo.com/v8/finance/chart';
-const YAHOO_SEARCH_URL = 'https://query1.finance.yahoo.com/v1/finance/search';
+// Use backend proxy API endpoints (relative URLs work with nginx proxy in prod, vite proxy in dev)
+const API_BASE_URL = '/api/yahoo';
 
 export class YahooFinanceProvider implements DataProvider {
   name = 'Yahoo Finance';
-  private useCorsProxy: boolean;
-  private corsProxyUrl: string;
 
-  constructor(options?: { useCorsProxy?: boolean; corsProxyUrl?: string }) {
-    this.useCorsProxy = options?.useCorsProxy ?? false;
-    this.corsProxyUrl = options?.corsProxyUrl ?? '';
+  constructor(_options?: { useCorsProxy?: boolean; corsProxyUrl?: string }) {
+    // Options are now ignored - we always use the backend proxy
   }
 
   isConfigured(): boolean {
@@ -31,16 +25,9 @@ export class YahooFinanceProvider implements DataProvider {
     return true;
   }
 
-  private buildUrl(baseUrl: string): string {
-    if (this.useCorsProxy && this.corsProxyUrl) {
-      return `${this.corsProxyUrl}${encodeURIComponent(baseUrl)}`;
-    }
-    return baseUrl;
-  }
-
   private async fetch<T>(url: string): Promise<T | null> {
     try {
-      const response = await fetch(this.buildUrl(url), {
+      const response = await fetch(url, {
         headers: {
           'Accept': 'application/json',
         }
@@ -53,8 +40,7 @@ export class YahooFinanceProvider implements DataProvider {
 
       return await response.json();
     } catch (error) {
-      // CORS errors are expected in browser without proxy
-      console.warn('Yahoo Finance fetch error (CORS issue expected in browser):', error);
+      console.warn('Yahoo Finance fetch error:', error);
       return null;
     }
   }
@@ -78,7 +64,7 @@ export class YahooFinanceProvider implements DataProvider {
       };
     }
 
-    const url = `${YAHOO_CHART_URL}/${symbol}?interval=1d&range=1d`;
+    const url = `${API_BASE_URL}/chart/${symbol}?interval=1d&range=1d`;
     const data = await this.fetch<YahooChartResponse>(url);
 
     if (!data || !data.chart.result || data.chart.result.length === 0) {
@@ -132,7 +118,7 @@ export class YahooFinanceProvider implements DataProvider {
     else if (days <= 730) range = '2y';
     else range = '5y';
 
-    const url = `${YAHOO_CHART_URL}/${symbol}?interval=1d&range=${range}`;
+    const url = `${API_BASE_URL}/chart/${symbol}?interval=1d&range=${range}`;
     const data = await this.fetch<YahooChartResponse>(url);
 
     if (!data || !data.chart.result || data.chart.result.length === 0) {
@@ -188,7 +174,7 @@ export class YahooFinanceProvider implements DataProvider {
       }>;
     }
 
-    const url = `${YAHOO_SEARCH_URL}?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0`;
+    const url = `${API_BASE_URL}/search?q=${encodeURIComponent(query)}`;
     const data = await this.fetch<YahooSearchResponse>(url);
 
     if (!data || !data.quotes) {

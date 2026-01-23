@@ -11,3 +11,14 @@ services:
     restart: unless-stopped
     environment:
       - APP_ENV=production
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "${BACKEND_PORT:-3001}:3001"
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - CORS_ORIGIN=${CORS_ORIGIN:-*}

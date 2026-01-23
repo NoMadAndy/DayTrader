@@ -7,9 +7,13 @@ services:
         BUILD_VERSION: ${BUILD_VERSION:-0.1.0}
         BUILD_COMMIT: ${BUILD_COMMIT:-dev}
         BUILD_TIME: ${BUILD_TIME:-}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
     ports:
       - "${APP_PORT:-3000}:80"
     restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/"]
       interval: 30s
@@ -18,3 +22,24 @@ services:
       start_period: 10s
     environment:
       - APP_ENV=${APP_ENV:-production}
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        BUILD_VERSION: ${BUILD_VERSION:-0.1.0}
+        BUILD_COMMIT: ${BUILD_COMMIT:-dev}
+        BUILD_TIME: ${BUILD_TIME:-}
+    ports:
+      - "${BACKEND_PORT:-3001}:3001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    environment:
+      - NODE_ENV=${APP_ENV:-production}
+      - CORS_ORIGIN=${CORS_ORIGIN:-*}
