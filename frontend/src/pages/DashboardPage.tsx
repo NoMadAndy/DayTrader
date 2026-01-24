@@ -204,35 +204,35 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
       {/* Price Header */}
-      <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700 mb-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
+      <div className="bg-slate-800/50 rounded-xl p-4 sm:p-6 border border-slate-700 mb-6">
+        <div className="flex flex-col gap-4">
+          {/* Top row: Stock Selector + Data Freshness */}
+          <div className="flex items-center justify-between gap-2">
             <StockSelector selectedSymbol={selectedSymbol} onSelect={onSymbolChange} />
-            <div>
-              <div className="flex items-center gap-3 mb-1">
-                <h2 className="text-2xl font-bold">{stockData.symbol}</h2>
-                <span className="text-gray-400">{stockData.name}</span>
-                {preferredSource !== 'mock' && (
-                  <span className="px-2 py-0.5 bg-green-600/20 text-green-400 text-xs rounded-full flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                    Live ({source})
-                  </span>
-                )}
-              </div>
-              <div className="flex items-baseline gap-3">
-                <span className="text-4xl font-bold">${currentPrice.toFixed(2)}</span>
-                <span className={`text-lg font-semibold ${priceChange.value >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {priceChange.value >= 0 ? '+' : ''}{priceChange.value.toFixed(2)} ({priceChange.percent >= 0 ? '+' : ''}{priceChange.percent.toFixed(2)}%)
-                </span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
             <DataFreshnessIndicator 
               timestamps={dataTimestamps}
               onRefresh={handleRefreshAll}
               isRefreshing={isRefreshing}
             />
+          </div>
+          {/* Bottom row: Symbol info + Price */}
+          <div>
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <h2 className="text-xl sm:text-2xl font-bold">{stockData.symbol}</h2>
+              <span className="text-gray-400 text-sm sm:text-base truncate">{stockData.name}</span>
+              {preferredSource !== 'mock' && (
+                <span className="px-2 py-0.5 bg-green-600/20 text-green-400 text-xs rounded-full flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                  Live ({source})
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap items-baseline gap-2 sm:gap-3">
+              <span className="text-3xl sm:text-4xl font-bold">${currentPrice.toFixed(2)}</span>
+              <span className={`text-base sm:text-lg font-semibold ${priceChange.value >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {priceChange.value >= 0 ? '+' : ''}{priceChange.value.toFixed(2)} ({priceChange.percent >= 0 ? '+' : ''}{priceChange.percent.toFixed(2)}%)
+              </span>
+            </div>
           </div>
         </div>
       </div>
