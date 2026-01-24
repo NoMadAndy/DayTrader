@@ -6,7 +6,7 @@
 
 export function InfoPage() {
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 flex-1">
+    <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 flex-1">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white flex items-center gap-3">
           <span className="text-3xl">📊</span>

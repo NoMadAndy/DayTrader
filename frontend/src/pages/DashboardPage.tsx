@@ -202,7 +202,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 flex-1">
+    <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 flex-1">
       {/* Price Header */}
       <div className="bg-slate-800/50 rounded-xl p-4 sm:p-6 border border-slate-700 mb-6">
         <div className="flex flex-col gap-4">

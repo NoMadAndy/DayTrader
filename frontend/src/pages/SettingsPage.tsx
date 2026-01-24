@@ -214,27 +214,28 @@ export function SettingsPage() {
         </p>
       </div>
 
-      <div className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden">
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden flex-1 flex flex-col">
         {/* Tabs */}
-        <div className="flex border-b border-slate-700 bg-slate-900/30 overflow-x-auto">
+        <div className="flex border-b border-slate-700 bg-slate-900/30">
           {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 py-3 px-4 text-sm transition-colors whitespace-nowrap ${
+              className={`flex items-center justify-center gap-2 py-3 px-3 sm:px-4 text-sm transition-colors flex-1 sm:flex-none ${
                 activeTab === tab.id
                   ? 'text-blue-400 border-b-2 border-blue-400 bg-slate-800/50'
                   : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
               }`}
+              title={tab.label}
             >
               {tab.icon}
-              <span>{tab.label}</span>
+              <span className="hidden sm:inline">{tab.label}</span>
             </button>
           ))}
         </div>
 
         {/* Tab Content */}
-        <div className="p-6">
+        <div className="p-4 sm:p-6 flex-1 overflow-y-auto">
           {/* API Keys Tab */}
           {activeTab === 'api' && (
             <div className="space-y-6">
