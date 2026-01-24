@@ -88,9 +88,20 @@ export async function initializeDatabase() {
         preferred_data_source VARCHAR(50) DEFAULT 'yahoo',
         api_keys JSONB DEFAULT '{}',
         ui_preferences JSONB DEFAULT '{}',
+        ml_settings JSONB DEFAULT '{"sequenceLength": 60, "forecastDays": 14, "epochs": 100, "learningRate": 0.001, "useCuda": false, "preloadFinbert": false}',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+    `);
+    
+    // Add ml_settings column if it doesn't exist (for existing databases)
+    await client.query(`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'user_settings' AND column_name = 'ml_settings') THEN
+          ALTER TABLE user_settings ADD COLUMN ml_settings JSONB DEFAULT '{"sequenceLength": 60, "forecastDays": 14, "epochs": 100, "learningRate": 0.001, "useCuda": false, "preloadFinbert": false}';
+        END IF;
+      END $$;
     `);
 
     // Create custom_symbols table for user's custom stock symbols

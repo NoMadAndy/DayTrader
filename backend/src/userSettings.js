@@ -12,10 +12,20 @@ import { query, getClient } from './db.js';
  * @param {number} userId - User ID
  * @returns {Promise<object>}
  */
+// Default ML settings
+const DEFAULT_ML_SETTINGS = {
+  sequenceLength: 60,
+  forecastDays: 14,
+  epochs: 100,
+  learningRate: 0.001,
+  useCuda: false,
+  preloadFinbert: false,
+};
+
 export async function getUserSettings(userId) {
   try {
     const result = await query(
-      `SELECT preferred_data_source, api_keys, ui_preferences, created_at, updated_at
+      `SELECT preferred_data_source, api_keys, ui_preferences, ml_settings, created_at, updated_at
        FROM user_settings WHERE user_id = $1`,
       [userId]
     );
@@ -30,6 +40,7 @@ export async function getUserSettings(userId) {
         preferredDataSource: 'yahoo',
         apiKeys: {},
         uiPreferences: {},
+        mlSettings: { ...DEFAULT_ML_SETTINGS },
       };
     }
 
@@ -38,6 +49,7 @@ export async function getUserSettings(userId) {
       preferredDataSource: settings.preferred_data_source,
       apiKeys: settings.api_keys || {},
       uiPreferences: settings.ui_preferences || {},
+      mlSettings: settings.ml_settings || { ...DEFAULT_ML_SETTINGS },
       createdAt: settings.created_at,
       updatedAt: settings.updated_at,
     };
@@ -74,6 +86,11 @@ export async function updateUserSettings(userId, updates) {
       values.push(JSON.stringify(updates.uiPreferences));
     }
 
+    if (updates.mlSettings !== undefined) {
+      setClauses.push(`ml_settings = $${paramIndex++}`);
+      values.push(JSON.stringify(updates.mlSettings));
+    }
+
     if (setClauses.length === 0) {
       return getUserSettings(userId);
     }
@@ -83,20 +100,21 @@ export async function updateUserSettings(userId, updates) {
     const result = await query(
       `UPDATE user_settings SET ${setClauses.join(', ')} 
        WHERE user_id = $1 
-       RETURNING preferred_data_source, api_keys, ui_preferences, updated_at`,
+       RETURNING preferred_data_source, api_keys, ui_preferences, ml_settings, updated_at`,
       values
     );
 
     if (result.rows.length === 0) {
       // Settings don't exist, create them
       await query(
-        `INSERT INTO user_settings (user_id, preferred_data_source, api_keys, ui_preferences)
-         VALUES ($1, $2, $3, $4)`,
+        `INSERT INTO user_settings (user_id, preferred_data_source, api_keys, ui_preferences, ml_settings)
+         VALUES ($1, $2, $3, $4, $5)`,
         [
           userId,
           updates.preferredDataSource || 'yahoo',
           JSON.stringify(updates.apiKeys || {}),
           JSON.stringify(updates.uiPreferences || {}),
+          JSON.stringify(updates.mlSettings || DEFAULT_ML_SETTINGS),
         ]
       );
       return getUserSettings(userId);
@@ -107,6 +125,7 @@ export async function updateUserSettings(userId, updates) {
       preferredDataSource: settings.preferred_data_source,
       apiKeys: settings.api_keys || {},
       uiPreferences: settings.ui_preferences || {},
+      mlSettings: settings.ml_settings || { ...DEFAULT_ML_SETTINGS },
       updatedAt: settings.updated_at,
     };
   } catch (e) {

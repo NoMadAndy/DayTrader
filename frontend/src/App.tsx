@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, DataSourceSelector, NewsPanel, TradingSignalPanel, HamburgerMenu, type NewsItemWithSentiment } from './components';
+import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, NewsPanel, TradingSignalPanel, HamburgerMenu, type NewsItemWithSentiment } from './components';
 import { DataServiceProvider, useStockData, useDataService } from './hooks';
 import { generateForecast } from './utils/forecast';
 import { initializeAuth } from './services/authService';
@@ -47,8 +47,6 @@ function AppContent() {
   // Collapsible section states (default: collapsed)
   const [showIndicators, setShowIndicators] = useState(false);
   const [showChart, setShowChart] = useState(false);
-  const [showDataSource, setShowDataSource] = useState(false);
-  const [showTechnicalMethods, setShowTechnicalMethods] = useState(false);
 
   // Chart indicator toggles
   const [showSMA20, setShowSMA20] = useState(true);
@@ -279,86 +277,6 @@ function AppContent() {
                     />
                   </div>
                 )}
-              </div>
-            </div>
-
-            {/* Technical Analysis Methods and Data Source Row */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-              {/* Technical Analysis Documentation - Collapsible */}
-              <div className="lg:col-span-2 bg-slate-800/50 rounded-xl border border-slate-700">
-                <button
-                  onClick={() => setShowTechnicalMethods(!showTechnicalMethods)}
-                  className="w-full flex items-center justify-between p-4 text-left"
-                >
-                  <h3 className="font-semibold text-white">Technical Analysis Methods Used</h3>
-                  <svg
-                    className={`w-5 h-5 text-gray-400 transition-transform ${showTechnicalMethods ? 'rotate-180' : ''}`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                {showTechnicalMethods && (
-                <div className="px-4 pb-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-slate-900/50 rounded-lg p-4">
-                  <h4 className="font-semibold text-blue-400 mb-2">Trend Indicators</h4>
-                  <ul className="text-sm text-gray-300 space-y-1">
-                    <li>• <strong>SMA (Simple Moving Average):</strong> Average price over N periods</li>
-                    <li>• <strong>EMA (Exponential MA):</strong> Weighted average favoring recent prices</li>
-                  </ul>
-                </div>
-                <div className="bg-slate-900/50 rounded-lg p-4">
-                  <h4 className="font-semibold text-purple-400 mb-2">Momentum Indicators</h4>
-                  <ul className="text-sm text-gray-300 space-y-1">
-                    <li>• <strong>RSI:</strong> Measures overbought/oversold (0-100)</li>
-                    <li>• <strong>MACD:</strong> Trend-following momentum indicator</li>
-                    <li>• <strong>Stochastic:</strong> Compares close to price range</li>
-                  </ul>
-                </div>
-                <div className="bg-slate-900/50 rounded-lg p-4">
-                  <h4 className="font-semibold text-amber-400 mb-2">Volatility & Volume</h4>
-                  <ul className="text-sm text-gray-300 space-y-1">
-                    <li>• <strong>Bollinger Bands:</strong> Volatility bands around SMA</li>
-                    <li>• <strong>ATR:</strong> Average True Range for volatility</li>
-                    <li>• <strong>OBV/VWAP:</strong> Volume-based indicators</li>
-                  </ul>
-                </div>
-                </div>
-                </div>
-                )}
-              </div>
-
-              {/* Data Source Selector - Collapsible */}
-              <div className="lg:col-span-1">
-                <div className="bg-slate-800/50 rounded-xl border border-slate-700 h-full">
-                  <button
-                    onClick={() => setShowDataSource(!showDataSource)}
-                    className="w-full flex items-center justify-between p-4 text-left"
-                  >
-                    <div className="flex items-center gap-2">
-                      <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-                      </svg>
-                      <h3 className="font-semibold text-white">Data Source</h3>
-                    </div>
-                    <svg
-                      className={`w-5 h-5 text-gray-400 transition-transform ${showDataSource ? 'rotate-180' : ''}`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  {showDataSource && (
-                    <div className="px-4 pb-4">
-                      <DataSourceSelector collapsed />
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
           </>

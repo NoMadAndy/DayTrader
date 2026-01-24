@@ -11,9 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Hamburger Menu** - Neues Hauptmenü links oben ersetzt das Zahnrad-Icon
   - API Settings mit allen Provider-Konfigurationen
   - Data Source Auswahl direkt im Menü
+  - ML Settings für Training-Parameter (Epochen, Lernrate, Sequenzlänge, etc.)
+  - Technical Analysis Info mit Erklärung aller Indikatoren
   - Changelog-Anzeige mit aktuellen Änderungen
   - Login/Registrierung für Benutzerkonten
-  - Tabs für einfache Navigation zwischen Bereichen
+  - 6 Tabs für übersichtliche Navigation
+- **User-spezifische Einstellungen** - Alle Einstellungen pro User in der Datenbank
+  - ML-Settings (Sequenzlänge, Vorhersage-Tage, Epochen, Lernrate)
+  - GPU/CUDA und FinBERT Vorladen Optionen
+  - API-Keys werden serverseitig synchronisiert
+  - Einstellungen werden geräteübergreifend gespeichert
 - **PostgreSQL Database** - Persistente Datenbankanbindung für Benutzereinstellungen
   - User-Tabelle mit sicherer Passwort-Hashung (PBKDF2)
   - Session-Management mit Token-basierter Authentifizierung
@@ -96,6 +103,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Backend proxy for NewsAPI** - Added `/api/news/everything` endpoint to proxy NewsAPI requests, because NewsAPI's free tier requires server-side requests (returns 426 from browser)
 
 ### Changed
+- **UI Vereinfachung** - Data Source und Technical Analysis Methods Panels aus Hauptansicht entfernt
+  - Beide Funktionen sind jetzt im Hamburger-Menü verfügbar
+  - Übersichtlichere Hauptansicht mit Fokus auf Charts und Signale
 - **Yahoo Finance is now the default data source** - Changed from mock data to Yahoo Finance as the default provider since it requires no API key and provides real market data
 - Yahoo Finance provider now uses backend proxy instead of direct API calls
 

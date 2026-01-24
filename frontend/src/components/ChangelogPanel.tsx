@@ -28,22 +28,23 @@ const CHANGELOG_DATA: ChangelogEntry[] = [
       {
         title: 'Added',
         items: [
-          '**Hamburger Menu** - Neues Hauptmenü links oben mit API-Settings, Data Source, Changelog und Login/Registrierung',
+          '**Hamburger Menu** - Neues Hauptmenü mit 6 Tabs: API, Daten, ML-Settings, Info, Changelog, Login',
+          '**User-spezifische Einstellungen** - ML-Parameter pro User in der Datenbank speicherbar',
+          '**ML Settings Tab** - Epochen, Lernrate, Sequenzlänge, CUDA/GPU direkt konfigurierbar',
+          '**Technical Analysis Info** - Erklärung aller Indikatoren im Menü',
           '**User Authentication** - Login und Registrierung mit PostgreSQL-Backend',
-          '**User Settings Sync** - Benutzereinstellungen und Custom Symbols werden serverseitig gespeichert',
-          '**Combined Trading Signals** - Trading-Signale kombinieren jetzt alle Datenquellen für präzisere Empfehlungen',
-          '**Trading Signal Summary** - Aggregierte Kauf-/Verkaufsempfehlungen basierend auf News-Sentiment',
-          '**FinBERT ML Sentiment Analysis** - Enhanced news sentiment with transformer-based analysis',
-          '**News Sentiment Analysis** - Financial news now includes sentiment tags',
-          '**Custom Stock Symbols** - Users can now add and manage custom stock/ticker symbols',
-          '**ML-based Price Prediction Service** - LSTM-based stock price predictions',
+          '**Combined Trading Signals** - Multi-Quellen-Analyse: News + Technisch + ML',
+          '**FinBERT ML Sentiment Analysis** - Transformer-basierte Nachrichtenanalyse',
+          '**Custom Stock Symbols** - Eigene Aktien-Symbole hinzufügen und verwalten',
+          '**ML Price Prediction** - LSTM-basierte Kursprognosen',
         ],
       },
       {
         title: 'Changed',
         items: [
-          '**UI Redesign** - Zahnrad-Icon durch Hamburger-Menü ersetzt für bessere Übersichtlichkeit',
-          '**Yahoo Finance is now the default data source** - Changed from mock data to Yahoo Finance',
+          '**UI Vereinfachung** - Data Source & Technical Methods aus Hauptansicht ins Menü verschoben',
+          '**API-Keys Sync** - Keys werden bei Login automatisch mit Server synchronisiert',
+          '**Yahoo Finance** - Standardmäßig aktiv (kein API-Key nötig)',
         ],
       },
       {

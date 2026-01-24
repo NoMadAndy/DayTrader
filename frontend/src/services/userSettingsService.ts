@@ -9,10 +9,29 @@ import { getAuthState, getAuthHeaders } from './authService';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
+export interface MLSettings {
+  sequenceLength: number;
+  forecastDays: number;
+  epochs: number;
+  learningRate: number;
+  useCuda: boolean;
+  preloadFinbert: boolean;
+}
+
+export const DEFAULT_ML_SETTINGS: MLSettings = {
+  sequenceLength: 60,
+  forecastDays: 14,
+  epochs: 100,
+  learningRate: 0.001,
+  useCuda: false,
+  preloadFinbert: false,
+};
+
 export interface UserSettings {
   preferredDataSource: string;
   apiKeys: Record<string, string>;
   uiPreferences: Record<string, unknown>;
+  mlSettings: MLSettings;
 }
 
 export interface CustomSymbol {

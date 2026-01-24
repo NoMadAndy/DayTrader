@@ -4,6 +4,8 @@
  * Main navigation menu with:
  * - API Settings
  * - Data Source selection
+ * - ML & App Settings
+ * - Technical Analysis Info
  * - Changelog
  * - Login/Registration
  */
@@ -11,6 +13,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useDataService } from '../hooks';
 import { subscribeToAuth, getAuthState, logout, checkAuthStatus, type AuthState, type AuthStatus } from '../services/authService';
+import { getUserSettings, updateUserSettings, DEFAULT_ML_SETTINGS, type MLSettings } from '../services/userSettingsService';
 import { LoginForm } from './LoginForm';
 import { RegisterForm } from './RegisterForm';
 import { ChangelogPanel } from './ChangelogPanel';
@@ -57,7 +60,7 @@ function saveConfig(config: ApiConfig): void {
   }
 }
 
-type MenuTab = 'api' | 'data-source' | 'changelog' | 'auth';
+type MenuTab = 'api' | 'data-source' | 'settings' | 'technical' | 'changelog' | 'auth';
 
 export function HamburgerMenu() {
   const { setConfig } = useDataService();
@@ -68,6 +71,8 @@ export function HamburgerMenu() {
   const [authState, setAuthState] = useState<AuthState>(getAuthState());
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const [showRegister, setShowRegister] = useState(false);
+  const [mlSettings, setMlSettings] = useState<MLSettings>({ ...DEFAULT_ML_SETTINGS });
+  const [mlSettingsSaved, setMlSettingsSaved] = useState(false);
 
   // Subscribe to auth state changes
   useEffect(() => {
@@ -78,6 +83,29 @@ export function HamburgerMenu() {
   useEffect(() => {
     checkAuthStatus().then(setAuthStatus);
   }, []);
+
+  // Load user settings when authenticated
+  useEffect(() => {
+    if (authState.isAuthenticated) {
+      getUserSettings().then(settings => {
+        if (settings) {
+          setMlSettings(settings.mlSettings || { ...DEFAULT_ML_SETTINGS });
+          // Also load API keys from server if available
+          if (settings.apiKeys && Object.keys(settings.apiKeys).length > 0) {
+            const serverConfig: ApiConfig = {
+              finnhubApiKey: settings.apiKeys.finnhub || '',
+              alphaVantageApiKey: settings.apiKeys.alphaVantage || '',
+              twelveDataApiKey: settings.apiKeys.twelveData || '',
+              newsApiKey: settings.apiKeys.newsApi || '',
+            };
+            setLocalConfig(serverConfig);
+            saveConfig(serverConfig);
+            applyConfig(serverConfig);
+          }
+        }
+      });
+    }
+  }, [authState.isAuthenticated]);
 
   const applyConfig = useCallback((config: ApiConfig) => {
     const serviceConfig: DataServiceConfig = {
@@ -97,6 +125,18 @@ export function HamburgerMenu() {
     applyConfig(localConfig);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+    
+    // Sync to server if authenticated
+    if (authState.isAuthenticated) {
+      updateUserSettings({
+        apiKeys: {
+          finnhub: localConfig.finnhubApiKey,
+          alphaVantage: localConfig.alphaVantageApiKey,
+          twelveData: localConfig.twelveDataApiKey,
+          newsApi: localConfig.newsApiKey,
+        },
+      });
+    }
   };
 
   const handleClear = () => {
@@ -109,6 +149,28 @@ export function HamburgerMenu() {
     setLocalConfig(empty);
     saveConfig(empty);
     setConfig({ preferredSource: 'yahoo' });
+    
+    // Sync to server if authenticated
+    if (authState.isAuthenticated) {
+      updateUserSettings({ apiKeys: {} });
+    }
+  };
+
+  const handleSaveMLSettings = async () => {
+    // Save locally
+    try {
+      localStorage.setItem('daytrader_ml_settings', JSON.stringify(mlSettings));
+    } catch {
+      console.warn('Failed to save ML settings locally');
+    }
+    
+    // Save to server if authenticated
+    if (authState.isAuthenticated) {
+      await updateUserSettings({ mlSettings });
+    }
+    
+    setMlSettingsSaved(true);
+    setTimeout(() => setMlSettingsSaved(false), 2000);
   };
 
   const handleLogout = async () => {
@@ -121,7 +183,25 @@ export function HamburgerMenu() {
   const tabs: { id: MenuTab; label: string; icon: React.ReactNode }[] = [
     {
       id: 'api',
-      label: 'API Settings',
+      label: 'API',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+        </svg>
+      ),
+    },
+    {
+      id: 'data-source',
+      label: 'Daten',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+        </svg>
+      ),
+    },
+    {
+      id: 'settings',
+      label: 'ML',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -130,17 +210,17 @@ export function HamburgerMenu() {
       ),
     },
     {
-      id: 'data-source',
-      label: 'Data Source',
+      id: 'technical',
+      label: 'Info',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
         </svg>
       ),
     },
     {
       id: 'changelog',
-      label: 'Changelog',
+      label: 'Log',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -149,7 +229,7 @@ export function HamburgerMenu() {
     },
     {
       id: 'auth',
-      label: authState.isAuthenticated ? 'Account' : 'Login',
+      label: authState.isAuthenticated ? 'Konto' : 'Login',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -321,6 +401,193 @@ export function HamburgerMenu() {
               {/* Changelog Tab */}
               {activeTab === 'changelog' && (
                 <ChangelogPanel />
+              )}
+
+              {/* ML Settings Tab */}
+              {activeTab === 'settings' && (
+                <div className="space-y-4">
+                  <div className="p-3 bg-slate-900/50 rounded-lg border border-slate-700">
+                    <h4 className="text-white font-medium mb-3">ML Model Training</h4>
+                    
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm text-gray-400 mb-1">
+                          Sequenzlänge (Tage)
+                        </label>
+                        <input
+                          type="number"
+                          value={mlSettings.sequenceLength}
+                          onChange={(e) => setMlSettings(prev => ({ ...prev, sequenceLength: parseInt(e.target.value) || 60 }))}
+                          className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+                          min={10}
+                          max={200}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Anzahl historischer Tage für Vorhersage</p>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm text-gray-400 mb-1">
+                          Vorhersage-Tage
+                        </label>
+                        <input
+                          type="number"
+                          value={mlSettings.forecastDays}
+                          onChange={(e) => setMlSettings(prev => ({ ...prev, forecastDays: parseInt(e.target.value) || 14 }))}
+                          className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+                          min={1}
+                          max={60}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Tage in die Zukunft prognostizieren</p>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm text-gray-400 mb-1">
+                          Epochen
+                        </label>
+                        <input
+                          type="number"
+                          value={mlSettings.epochs}
+                          onChange={(e) => setMlSettings(prev => ({ ...prev, epochs: parseInt(e.target.value) || 100 }))}
+                          className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+                          min={10}
+                          max={500}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Training-Durchläufe (mehr = genauer, aber langsamer)</p>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm text-gray-400 mb-1">
+                          Lernrate
+                        </label>
+                        <input
+                          type="number"
+                          value={mlSettings.learningRate}
+                          onChange={(e) => setMlSettings(prev => ({ ...prev, learningRate: parseFloat(e.target.value) || 0.001 }))}
+                          className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+                          min={0.0001}
+                          max={0.1}
+                          step={0.0001}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Schrittgröße beim Lernen (0.001 empfohlen)</p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="p-3 bg-slate-900/50 rounded-lg border border-slate-700">
+                    <h4 className="text-white font-medium mb-3">GPU & Performance</h4>
+                    
+                    <div className="space-y-3">
+                      <label className="flex items-center justify-between cursor-pointer">
+                        <div>
+                          <span className="text-sm text-gray-300">CUDA/GPU aktivieren</span>
+                          <p className="text-xs text-gray-500">Benötigt NVIDIA GPU mit CUDA-Unterstützung</p>
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="checkbox"
+                            checked={mlSettings.useCuda}
+                            onChange={(e) => setMlSettings(prev => ({ ...prev, useCuda: e.target.checked }))}
+                            className="sr-only"
+                          />
+                          <div className={`w-11 h-6 rounded-full transition-colors ${mlSettings.useCuda ? 'bg-blue-600' : 'bg-slate-600'}`}>
+                            <div className={`w-5 h-5 rounded-full bg-white shadow transform transition-transform ${mlSettings.useCuda ? 'translate-x-5' : 'translate-x-0.5'} mt-0.5`} />
+                          </div>
+                        </div>
+                      </label>
+                      
+                      <label className="flex items-center justify-between cursor-pointer">
+                        <div>
+                          <span className="text-sm text-gray-300">FinBERT vorladen</span>
+                          <p className="text-xs text-gray-500">Schnellere Sentiment-Analyse (~500MB RAM)</p>
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="checkbox"
+                            checked={mlSettings.preloadFinbert}
+                            onChange={(e) => setMlSettings(prev => ({ ...prev, preloadFinbert: e.target.checked }))}
+                            className="sr-only"
+                          />
+                          <div className={`w-11 h-6 rounded-full transition-colors ${mlSettings.preloadFinbert ? 'bg-blue-600' : 'bg-slate-600'}`}>
+                            <div className={`w-5 h-5 rounded-full bg-white shadow transform transition-transform ${mlSettings.preloadFinbert ? 'translate-x-5' : 'translate-x-0.5'} mt-0.5`} />
+                          </div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={handleSaveMLSettings}
+                    className="w-full py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm font-medium transition-colors"
+                  >
+                    {mlSettingsSaved ? '✓ Gespeichert!' : 'Einstellungen speichern'}
+                  </button>
+                  
+                  {!authState.isAuthenticated && (
+                    <p className="text-xs text-yellow-400/70 text-center">
+                      💡 Logge dich ein, um Einstellungen geräteübergreifend zu synchronisieren
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Technical Analysis Info Tab */}
+              {activeTab === 'technical' && (
+                <div className="space-y-4">
+                  <div className="bg-slate-900/50 rounded-lg p-4 border border-blue-500/20">
+                    <h4 className="font-semibold text-blue-400 mb-2 flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                      </svg>
+                      Trend Indicators
+                    </h4>
+                    <ul className="text-sm text-gray-300 space-y-1">
+                      <li>• <strong className="text-white">SMA (Simple Moving Average):</strong> Durchschnittspreis über N Perioden</li>
+                      <li>• <strong className="text-white">EMA (Exponential MA):</strong> Gewichteter Durchschnitt, bevorzugt aktuelle Preise</li>
+                    </ul>
+                  </div>
+                  
+                  <div className="bg-slate-900/50 rounded-lg p-4 border border-purple-500/20">
+                    <h4 className="font-semibold text-purple-400 mb-2 flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      Momentum Indicators
+                    </h4>
+                    <ul className="text-sm text-gray-300 space-y-1">
+                      <li>• <strong className="text-white">RSI:</strong> Misst überkauft/überverkauft (0-100)</li>
+                      <li>• <strong className="text-white">MACD:</strong> Trend-folgender Momentum-Indikator</li>
+                      <li>• <strong className="text-white">Stochastic:</strong> Vergleicht Schluss mit Preisspanne</li>
+                    </ul>
+                  </div>
+                  
+                  <div className="bg-slate-900/50 rounded-lg p-4 border border-amber-500/20">
+                    <h4 className="font-semibold text-amber-400 mb-2 flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                      </svg>
+                      Volatility & Volume
+                    </h4>
+                    <ul className="text-sm text-gray-300 space-y-1">
+                      <li>• <strong className="text-white">Bollinger Bands:</strong> Volatilitätsbänder um SMA</li>
+                      <li>• <strong className="text-white">ATR:</strong> Average True Range für Volatilität</li>
+                      <li>• <strong className="text-white">OBV/VWAP:</strong> Volumenbasierte Indikatoren</li>
+                    </ul>
+                  </div>
+                  
+                  <div className="bg-slate-900/50 rounded-lg p-4 border border-green-500/20">
+                    <h4 className="font-semibold text-green-400 mb-2 flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      ML-basierte Analyse
+                    </h4>
+                    <ul className="text-sm text-gray-300 space-y-1">
+                      <li>• <strong className="text-white">LSTM Neural Network:</strong> Deep Learning für Preisprognosen</li>
+                      <li>• <strong className="text-white">FinBERT Sentiment:</strong> NLP für Nachrichtenanalyse</li>
+                      <li>• <strong className="text-white">Multi-Source Signals:</strong> Kombinierte Datenquellen</li>
+                    </ul>
+                  </div>
+                </div>
               )}
 
               {/* Auth Tab */}
