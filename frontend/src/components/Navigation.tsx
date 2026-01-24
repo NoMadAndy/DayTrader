@@ -2,6 +2,7 @@
  * Navigation Component
  * 
  * Main navigation bar with links to all pages.
+ * Hamburger menu for mobile, full navigation for desktop.
  */
 
 import { Link, useLocation } from 'react-router-dom';
@@ -20,10 +21,16 @@ interface NavItem {
 export function Navigation() {
   const location = useLocation();
   const [authState, setAuthState] = useState<AuthState>(getAuthState());
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     return subscribeToAuth(setAuthState);
   }, []);
+
+  // Close mobile menu when route changes
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   const navItems: NavItem[] = [
     {
@@ -78,41 +85,7 @@ export function Navigation() {
     <header className="border-b border-slate-700/50 bg-slate-900/50 backdrop-blur-sm sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 py-3">
         <div className="flex items-center justify-between">
-          {/* Logo */}
-          <Link to="/" className="flex items-center gap-2">
-            <svg className="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-            </svg>
-            <div>
-              <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-                DayTrader AI
-              </h1>
-              <span className="text-[10px] text-gray-500 hidden sm:block">v{__BUILD_VERSION__}</span>
-            </div>
-          </Link>
-
-          {/* Navigation Links */}
-          <nav className="flex items-center gap-1">
-            {navItems.map(item => {
-              const isActive = location.pathname === item.path;
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
-                    isActive
-                      ? 'bg-blue-600/20 text-blue-400'
-                      : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
-                  }`}
-                >
-                  {item.icon}
-                  <span className="hidden md:inline text-sm">{item.label}</span>
-                </Link>
-              );
-            })}
-          </nav>
-
-          {/* User Status */}
+          {/* Left: User Status (Login) */}
           <div className="flex items-center gap-2">
             {authState.isAuthenticated ? (
               <Link
@@ -136,7 +109,86 @@ export function Navigation() {
               </Link>
             )}
           </div>
+
+          {/* Center: Logo */}
+          <Link to="/" className="flex items-center gap-2">
+            <svg className="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+            </svg>
+            <div>
+              <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+                DayTrader AI
+              </h1>
+              <span className="text-[10px] text-gray-500 hidden sm:block">v{__BUILD_VERSION__}</span>
+            </div>
+          </Link>
+
+          {/* Right: Desktop Navigation + Mobile Hamburger */}
+          <div className="flex items-center">
+            {/* Desktop Navigation */}
+            <nav className="hidden md:flex items-center gap-1">
+              {navItems.map(item => {
+                const isActive = location.pathname === item.path;
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                      isActive
+                        ? 'bg-blue-600/20 text-blue-400'
+                        : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
+                    }`}
+                  >
+                    {item.icon}
+                    <span className="text-sm">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+
+            {/* Mobile Hamburger Button */}
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="md:hidden p-2 rounded-lg text-gray-400 hover:text-white hover:bg-slate-700/50 transition-colors"
+              aria-label="Menu"
+            >
+              {mobileMenuOpen ? (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              )}
+            </button>
+          </div>
         </div>
+
+        {/* Mobile Menu Dropdown */}
+        {mobileMenuOpen && (
+          <nav className="md:hidden mt-3 pt-3 border-t border-slate-700/50">
+            <div className="flex flex-col gap-1">
+              {navItems.map(item => {
+                const isActive = location.pathname === item.path;
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={`flex items-center gap-3 px-3 py-3 rounded-lg transition-colors ${
+                      isActive
+                        ? 'bg-blue-600/20 text-blue-400'
+                        : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
+                    }`}
+                  >
+                    {item.icon}
+                    <span className="text-sm">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
+        )}
       </div>
     </header>
   );

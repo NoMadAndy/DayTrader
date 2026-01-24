@@ -202,7 +202,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
   }
 
   return (
-    <>
+    <div className="max-w-7xl mx-auto px-4 py-6">
       {/* Price Header */}
       <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700 mb-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -347,6 +347,6 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }
