@@ -124,14 +124,17 @@ export function DataFreshnessIndicator({
   onRefresh, 
   isRefreshing = false 
 }: DataFreshnessIndicatorProps) {
-  // Force re-render every 10 seconds to update ages
-  const [, setTick] = useState(0);
+  // Force re-render every second to update ages live
+  const [tick, setTick] = useState(0);
   useEffect(() => {
-    const interval = setInterval(() => setTick(t => t + 1), 10000);
+    const interval = setInterval(() => setTick(t => t + 1), 1000);
     return () => clearInterval(interval);
   }, []);
 
+  // Recalculate on every tick to keep the display live
   const dataItems = useMemo(() => {
+    // Include tick in dependency to force recalculation
+    void tick;
     const financialAge = getAgeInMs(timestamps.financial);
     const newsAge = getAgeInMs(timestamps.news);
     const mlAge = getAgeInMs(timestamps.mlModel);
@@ -156,7 +159,7 @@ export function DataFreshnessIndicator({
         freshness: getFreshnessLevel(mlAge, THRESHOLDS.mlModel),
       },
     ];
-  }, [timestamps]);
+  }, [timestamps, tick]);
 
   // Overall freshness is the worst of all sources
   const overallFreshness = useMemo(() => {
