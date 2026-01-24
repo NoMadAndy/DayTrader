@@ -14,7 +14,7 @@ interface StockInfo {
   isCustom?: boolean;
 }
 
-const DEFAULT_STOCKS: StockInfo[] = [
+export const DEFAULT_STOCKS: StockInfo[] = [
   { symbol: 'AAPL', name: 'Apple Inc.', basePrice: 175 },
   { symbol: 'GOOGL', name: 'Alphabet Inc.', basePrice: 140 },
   { symbol: 'MSFT', name: 'Microsoft Corporation', basePrice: 380 },

@@ -3,10 +3,13 @@
  * 
  * Displays all user's symbols with trading recommendations per holding period.
  * Allows managing the watchlist (add/remove symbols).
+ * 
+ * - Non-authenticated users see default symbols only (read-only)
+ * - Authenticated users manage their own symbols completely
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { getAvailableStocks, addCustomStock, removeCustomStock, stockExists } from '../utils/mockData';
+import { DEFAULT_STOCKS } from '../utils/mockData';
 import { useDataService } from '../hooks';
 import { 
   calculateCombinedTradingSignals, 
@@ -15,11 +18,20 @@ import {
   type CombinedSignalInput
 } from '../utils/tradingSignals';
 import { generateForecast } from '../utils/forecast';
+import { 
+  getAuthState, 
+  subscribeToAuth, 
+  type AuthState 
+} from '../services/authService';
+import { 
+  getCustomSymbols, 
+  addCustomSymbolToServer, 
+  removeCustomSymbolFromServer 
+} from '../services/userSettingsService';
 
 interface WatchlistStock {
   symbol: string;
   name: string;
-  isCustom: boolean;
 }
 
 interface WatchlistItem extends WatchlistStock {
@@ -37,6 +49,7 @@ interface WatchlistPanelProps {
 
 export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanelProps) {
   const { dataService } = useDataService();
+  const [authState, setAuthState] = useState<AuthState>(getAuthState());
   const [watchlistItems, setWatchlistItems] = useState<WatchlistItem[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -45,22 +58,42 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
   const [addError, setAddError] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'score'>('name');
   const [filterPeriod, setFilterPeriod] = useState<'hourly' | 'daily' | 'weekly' | 'longTerm'>('daily');
+  const [isLoadingSymbols, setIsLoadingSymbols] = useState(false);
 
-  // Load watchlist from mockData
-  const loadWatchlist = useCallback(() => {
-    const stocks = getAvailableStocks();
+  // Subscribe to auth state changes
+  useEffect(() => {
+    const unsubscribe = subscribeToAuth(setAuthState);
+    return () => unsubscribe();
+  }, []);
+
+  // Load watchlist based on auth state
+  const loadWatchlist = useCallback(async () => {
+    setIsLoadingSymbols(true);
+    
+    let stocks: Array<{ symbol: string; name: string }>;
+    
+    if (authState.isAuthenticated) {
+      // Authenticated: Load user's symbols from server
+      const serverSymbols = await getCustomSymbols();
+      stocks = serverSymbols.map(s => ({ symbol: s.symbol, name: s.name || s.symbol }));
+    } else {
+      // Not authenticated: Show default stocks only
+      stocks = DEFAULT_STOCKS.map(s => ({ symbol: s.symbol, name: s.name }));
+    }
+    
     setWatchlistItems(stocks.map(stock => ({
       symbol: stock.symbol,
       name: stock.name,
-      isCustom: stock.isCustom ?? false,
       isLoading: true,
     })));
-  }, []);
+    
+    setIsLoadingSymbols(false);
+  }, [authState.isAuthenticated]);
 
-  // Initial load
+  // Reload watchlist when auth state changes
   useEffect(() => {
     loadWatchlist();
-  }, [loadWatchlist]);
+  }, [loadWatchlist, authState.isAuthenticated]);
 
   // Fetch data for a single symbol
   const fetchSymbolData = useCallback(async (symbol: string): Promise<Partial<WatchlistItem>> => {
@@ -108,7 +141,16 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
   // Refresh all watchlist data
   const refreshWatchlist = useCallback(async () => {
     setIsRefreshing(true);
-    const stocks = getAvailableStocks();
+    
+    // Reload symbols from appropriate source first
+    let stocks: Array<{ symbol: string; name: string }>;
+    
+    if (authState.isAuthenticated) {
+      const serverSymbols = await getCustomSymbols();
+      stocks = serverSymbols.map(s => ({ symbol: s.symbol, name: s.name || s.symbol }));
+    } else {
+      stocks = DEFAULT_STOCKS.map(s => ({ symbol: s.symbol, name: s.name }));
+    }
     
     // Process in batches to avoid overwhelming the API
     const batchSize = 3;
@@ -145,8 +187,13 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
     refreshWatchlist();
   }, []);
 
-  // Add new symbol
-  const handleAddSymbol = useCallback(() => {
+  // Add new symbol (only for authenticated users)
+  const handleAddSymbol = useCallback(async () => {
+    if (!authState.isAuthenticated) {
+      setAddError('Bitte melden Sie sich an, um Symbole hinzuzufügen');
+      return;
+    }
+    
     const symbol = newSymbol.trim().toUpperCase();
     
     if (!symbol) {
@@ -159,13 +206,16 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
       return;
     }
     
-    if (stockExists(symbol)) {
-      setAddError('Symbol existiert bereits');
+    // Check if symbol already exists in watchlist
+    if (watchlistItems.some(item => item.symbol === symbol)) {
+      setAddError('Symbol existiert bereits in Ihrer Watchlist');
       return;
     }
     
-    const success = addCustomStock(symbol, newName.trim() || symbol);
-    if (success) {
+    // Add to server
+    const result = await addCustomSymbolToServer(symbol, newName.trim() || symbol);
+    
+    if (result.success) {
       setNewSymbol('');
       setNewName('');
       setShowAddForm(false);
@@ -175,7 +225,6 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
       const newItem: WatchlistItem = {
         symbol,
         name: newName.trim() || symbol,
-        isCustom: true,
         isLoading: true,
       };
       setWatchlistItems(prev => [...prev, newItem]);
@@ -189,16 +238,19 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
         );
       });
     } else {
-      setAddError('Fehler beim Hinzufügen');
+      setAddError(result.error || 'Fehler beim Hinzufügen');
     }
-  }, [newSymbol, newName, fetchSymbolData]);
+  }, [newSymbol, newName, fetchSymbolData, authState.isAuthenticated, watchlistItems]);
 
-  // Remove symbol
-  const handleRemoveSymbol = useCallback((symbol: string) => {
-    if (removeCustomStock(symbol)) {
+  // Remove symbol (only for authenticated users)
+  const handleRemoveSymbol = useCallback(async (symbol: string) => {
+    if (!authState.isAuthenticated) return;
+    
+    const success = await removeCustomSymbolFromServer(symbol);
+    if (success) {
       setWatchlistItems(prev => prev.filter(item => item.symbol !== symbol));
     }
-  }, []);
+  }, [authState.isAuthenticated]);
 
   // Sort and filter items
   const displayItems = useMemo(() => {
@@ -311,7 +363,26 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
 
       {/* Watchlist Items */}
       <div className="space-y-2 flex-1 overflow-y-auto pr-1 -mr-1">
-        {displayItems.map(item => (
+        {isLoadingSymbols ? (
+          <div className="text-center py-8 text-gray-400">
+            <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2" />
+            <p>Lade Watchlist...</p>
+          </div>
+        ) : displayItems.length === 0 ? (
+          <div className="text-center py-8 text-gray-400">
+            {authState.isAuthenticated ? (
+              <>
+                <p className="text-lg mb-2">Ihre Watchlist ist leer</p>
+                <p className="text-sm">Fügen Sie Symbole hinzu, um loszulegen!</p>
+              </>
+            ) : (
+              <>
+                <p className="text-lg mb-2">Keine Symbole verfügbar</p>
+                <p className="text-sm">Melden Sie sich an, um Ihre eigene Watchlist zu erstellen.</p>
+              </>
+            )}
+          </div>
+        ) : displayItems.map(item => (
           <div 
             key={item.symbol}
             className={`bg-slate-800/50 rounded-lg p-2.5 sm:p-3 border transition-colors cursor-pointer ${
@@ -325,19 +396,12 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
             <div className="flex items-center justify-between gap-2">
               {/* Left: Symbol & Name */}
               <div className="flex items-center gap-2 min-w-0 flex-1">
-                <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-white font-bold text-xs sm:text-sm flex-shrink-0 ${
-                  item.isCustom 
-                    ? 'bg-gradient-to-br from-green-500 to-teal-600' 
-                    : 'bg-gradient-to-br from-blue-500 to-purple-600'
-                }`}>
+                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-white font-bold text-xs sm:text-sm flex-shrink-0 bg-gradient-to-br from-blue-500 to-purple-600">
                   {item.symbol.charAt(0)}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="font-semibold text-white text-sm sm:text-base">{item.symbol}</span>
-                    {item.isCustom && (
-                      <span className="text-[10px] text-green-400 bg-green-500/20 px-1 rounded">Custom</span>
-                    )}
                   </div>
                   <div className="text-xs text-gray-400 truncate">{item.name}</div>
                 </div>
@@ -366,8 +430,8 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                   <SignalBadge signal={item.signals} small />
                 )}
 
-                {/* Remove Button (for custom only) */}
-                {item.isCustom && (
+                {/* Remove Button (only for authenticated users) */}
+                {authState.isAuthenticated && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -411,65 +475,78 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
         ))}
       </div>
 
-      {/* Add Symbol Form */}
-      <div className="border-t border-slate-700 pt-4">
-        {!showAddForm ? (
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-slate-700/50 hover:bg-slate-700 rounded-lg text-gray-300 hover:text-white transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-            Symbol zur Watchlist hinzufügen
-          </button>
-        ) : (
-          <div className="space-y-3 bg-slate-800/50 rounded-lg p-4">
-            <h4 className="text-sm font-medium text-white">Neues Symbol hinzufügen</h4>
-            <input
-              type="text"
-              value={newSymbol}
-              onChange={(e) => {
-                setNewSymbol(e.target.value.toUpperCase());
-                setAddError('');
-              }}
-              placeholder="Symbol (z.B. TSLA, BTC)"
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 text-sm"
-              autoFocus
-              maxLength={10}
-            />
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Name (optional, z.B. Tesla Inc.)"
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 text-sm"
-            />
-            {addError && (
-              <p className="text-red-400 text-xs">{addError}</p>
-            )}
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  setShowAddForm(false);
-                  setNewSymbol('');
-                  setNewName('');
+      {/* Add Symbol Form - only for authenticated users */}
+      {authState.isAuthenticated && (
+        <div className="border-t border-slate-700 pt-4">
+          {!showAddForm ? (
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-slate-700/50 hover:bg-slate-700 rounded-lg text-gray-300 hover:text-white transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              Symbol zur Watchlist hinzufügen
+            </button>
+          ) : (
+            <div className="space-y-3 bg-slate-800/50 rounded-lg p-4">
+              <h4 className="text-sm font-medium text-white">Neues Symbol hinzufügen</h4>
+              <input
+                type="text"
+                value={newSymbol}
+                onChange={(e) => {
+                  setNewSymbol(e.target.value.toUpperCase());
                   setAddError('');
                 }}
-                className="flex-1 py-2 px-3 bg-slate-700 hover:bg-slate-600 rounded-lg text-gray-300 text-sm transition-colors"
-              >
-                Abbrechen
-              </button>
-              <button
-                onClick={handleAddSymbol}
-                className="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm font-medium transition-colors"
-              >
-                Hinzufügen
-              </button>
+                placeholder="Symbol (z.B. TSLA, BTC)"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 text-sm"
+                autoFocus
+                maxLength={10}
+              />
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Name (optional, z.B. Tesla Inc.)"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 text-sm"
+              />
+              {addError && (
+                <p className="text-red-400 text-xs">{addError}</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setShowAddForm(false);
+                    setNewSymbol('');
+                    setNewName('');
+                    setAddError('');
+                  }}
+                  className="flex-1 py-2 px-3 bg-slate-700 hover:bg-slate-600 rounded-lg text-gray-300 text-sm transition-colors"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  onClick={handleAddSymbol}
+                  className="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm font-medium transition-colors"
+                >
+                  Hinzufügen
+                </button>
+              </div>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Info for non-authenticated users */}
+      {!authState.isAuthenticated && (
+        <div className="border-t border-slate-700 pt-4">
+          <div className="bg-slate-800/50 rounded-lg p-3 text-center">
+            <p className="text-gray-400 text-sm">
+              Melden Sie sich an, um Ihre eigene Watchlist zu erstellen und zu verwalten.
+            </p>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Legend - compact */}
       <div className="text-[10px] sm:text-xs text-gray-500 pt-2 border-t border-slate-700 flex-shrink-0">

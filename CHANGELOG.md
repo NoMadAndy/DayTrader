@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **HamburgerMenu** entfernt - Funktionalität auf eigene Seiten verteilt
 - **Settings** - API-Keys, ML-Einstellungen, Datenquellen und Auth in einer kombinierten Seite
 - **StockSelector** - Aus der Navigation entfernt, jetzt nur noch im Dashboard
+- **Watchlist Symbolverwaltung** - Komplett überarbeitet
+  - Nicht eingeloggte Benutzer: Sehen nur Standard-Symbole (AAPL, GOOGL, etc.) - kein Bearbeiten möglich
+  - Eingeloggte Benutzer: Volle Kontrolle über eigene Symbolliste
+  - Symbole werden von Server-Datenbank geladen (nicht mehr localStorage)
+  - Add/Remove synchronisiert direkt mit Server-API
+  - Keine "Custom"-Unterscheidung mehr - alle Symbole eines Users sind seine Symbole
 
 ### Fixed
 - WatchlistPage verwendet jetzt Events für Symbol-Auswahl (kein Prop-Drilling mehr)
