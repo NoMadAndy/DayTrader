@@ -5,7 +5,8 @@
  * Supports stocks, CFDs, knock-out certificates, and factor certificates.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useDataService } from '../hooks';
 import { getAuthState, subscribeToAuth, type AuthState } from '../services/authService';
 import {
@@ -24,6 +25,8 @@ import {
   validateOrder,
   createPendingOrder,
   getOrderTypeName,
+  checkTriggers,
+  updatePositionLevels,
 } from '../services/tradingService';
 import type {
   Portfolio,
@@ -40,6 +43,7 @@ import { StockSelector, PendingOrders } from '../components';
 
 export function TradingPage() {
   const { dataService } = useDataService();
+  const [searchParams] = useSearchParams();
   
   // Auth state
   const [authState, setAuthState] = useState<AuthState>(getAuthState());
@@ -52,8 +56,8 @@ export function TradingPage() {
   // Configuration
   const [productTypes, setProductTypes] = useState<ProductTypes | null>(null);
   
-  // Trading form
-  const [selectedSymbol, setSelectedSymbol] = useState('AAPL');
+  // Trading form - initialize from URL param if present
+  const [selectedSymbol, setSelectedSymbol] = useState(() => searchParams.get('symbol') || 'AAPL');
   const [currentPrice, setCurrentPrice] = useState<number>(0);
   const [productType, setProductType] = useState<ProductType>('stock');
   const [side, setSide] = useState<OrderSide>('buy');
@@ -65,6 +69,11 @@ export function TradingPage() {
   const [limitPrice, setLimitPrice] = useState<string>('');
   const [stopOrderPrice, setStopOrderPrice] = useState<string>('');
   
+  // Position editing state
+  const [editingPosition, setEditingPosition] = useState<number | null>(null);
+  const [editStopLoss, setEditStopLoss] = useState<string>('');
+  const [editTakeProfit, setEditTakeProfit] = useState<string>('');
+  
   // Fee preview
   const [feePreview, setFeePreview] = useState<FeeCalculation | null>(null);
   
@@ -74,10 +83,21 @@ export function TradingPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   
+  // Ref for tracking price updates for trigger checks
+  const priceCache = useRef<Record<string, number>>({});
+  
   // Subscribe to auth changes
   useEffect(() => {
     return subscribeToAuth(setAuthState);
   }, []);
+  
+  // Update symbol from URL params when they change
+  useEffect(() => {
+    const symbolFromUrl = searchParams.get('symbol');
+    if (symbolFromUrl && symbolFromUrl !== selectedSymbol) {
+      setSelectedSymbol(symbolFromUrl);
+    }
+  }, [searchParams]);
   
   // Load configuration
   useEffect(() => {
@@ -134,6 +154,7 @@ export function TradingPage() {
         const quote = await dataService.fetchQuote(selectedSymbol);
         if (quote) {
           setCurrentPrice(quote.price);
+          priceCache.current[selectedSymbol] = quote.price;
         }
       } catch (e) {
         console.error('Failed to get quote:', e);
@@ -145,6 +166,81 @@ export function TradingPage() {
     const interval = setInterval(loadPrice, 30000);
     return () => clearInterval(interval);
   }, [selectedSymbol, dataService]);
+  
+  // Fetch prices for all positions and check triggers periodically
+  useEffect(() => {
+    if (!authState.isAuthenticated || positions.length === 0) return;
+    
+    async function checkPositionTriggers() {
+      // Get unique symbols from positions
+      const symbols = [...new Set(positions.map(p => p.symbol))];
+      
+      // Fetch current prices for all position symbols
+      const prices: Record<string, number> = {};
+      for (const symbol of symbols) {
+        try {
+          const quote = await dataService.fetchQuote(symbol);
+          if (quote) {
+            prices[symbol] = quote.price;
+            priceCache.current[symbol] = quote.price;
+          }
+        } catch (e) {
+          // Use cached price if available
+          if (priceCache.current[symbol]) {
+            prices[symbol] = priceCache.current[symbol];
+          }
+        }
+      }
+      
+      // Update positions with current prices
+      setPositions(prev => prev.map(pos => 
+        calculatePositionPnL(pos, prices[pos.symbol] || pos.currentPrice || pos.entryPrice)
+      ));
+      
+      // Check triggers on server
+      if (Object.keys(prices).length > 0) {
+        try {
+          const result = await checkTriggers(prices);
+          
+          // If any triggers were executed, show message and reload
+          if (result.executedOrders.length > 0 || result.triggeredPositions.length > 0) {
+            const messages: string[] = [];
+            
+            result.executedOrders.forEach(o => {
+              if (o.success && o.order) {
+                messages.push(`Order ${o.order.symbol} ausgeführt`);
+              }
+            });
+            
+            result.triggeredPositions.forEach(t => {
+              const reasons: Record<string, string> = {
+                stop_loss: 'Stop-Loss',
+                take_profit: 'Take-Profit',
+                knockout: 'Knock-Out',
+                margin_call: 'Margin-Call',
+              };
+              messages.push(`${t.symbol}: ${reasons[t.reason]} bei ${formatCurrency(t.closePrice)}, P&L: ${formatCurrency(t.realizedPnl)}`);
+            });
+            
+            if (messages.length > 0) {
+              setSuccessMessage(messages.join('\n'));
+              setTimeout(() => setSuccessMessage(null), 10000);
+              await loadPortfolioData();
+            }
+          }
+        } catch (e) {
+          console.error('Trigger check failed:', e);
+        }
+      }
+    }
+    
+    // Initial check
+    checkPositionTriggers();
+    
+    // Check every 60 seconds
+    const interval = setInterval(checkPositionTriggers, 60000);
+    return () => clearInterval(interval);
+  }, [authState.isAuthenticated, positions.length, dataService, loadPortfolioData]);
   
   // Calculate fee preview
   useEffect(() => {
@@ -303,6 +399,39 @@ export function TradingPage() {
     } finally {
       setOrderLoading(false);
     }
+  };
+  
+  // Handle position SL/TP update
+  const handleUpdatePositionLevels = async (positionId: number) => {
+    try {
+      setOrderLoading(true);
+      setError(null);
+      
+      const sl = editStopLoss ? parseFloat(editStopLoss) : undefined;
+      const tp = editTakeProfit ? parseFloat(editTakeProfit) : undefined;
+      
+      const result = await updatePositionLevels(positionId, { stopLoss: sl, takeProfit: tp });
+      
+      if (result) {
+        setSuccessMessage('Stop-Loss/Take-Profit aktualisiert');
+        setEditingPosition(null);
+        setEditStopLoss('');
+        setEditTakeProfit('');
+        await loadPortfolioData();
+        setTimeout(() => setSuccessMessage(null), 3000);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Fehler beim Aktualisieren');
+    } finally {
+      setOrderLoading(false);
+    }
+  };
+  
+  // Start editing a position's SL/TP
+  const startEditingPosition = (position: PositionWithPnL) => {
+    setEditingPosition(position.id);
+    setEditStopLoss(position.stopLoss?.toString() || '');
+    setEditTakeProfit(position.takeProfit?.toString() || '');
   };
   
   // Render login required message
@@ -780,6 +909,78 @@ export function TradingPage() {
                         )}
                       </div>
                     )}
+                    
+                    {/* SL/TP Display & Edit */}
+                    <div className="mt-3 pt-3 border-t border-slate-700">
+                      {editingPosition === position.id ? (
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-xs text-gray-400">Stop-Loss</label>
+                              <input
+                                type="number"
+                                value={editStopLoss}
+                                onChange={(e) => setEditStopLoss(e.target.value)}
+                                placeholder="Kein SL"
+                                step="0.01"
+                                className="w-full px-2 py-1 bg-slate-800 rounded text-sm text-white focus:ring-1 focus:ring-red-500 outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-400">Take-Profit</label>
+                              <input
+                                type="number"
+                                value={editTakeProfit}
+                                onChange={(e) => setEditTakeProfit(e.target.value)}
+                                placeholder="Kein TP"
+                                step="0.01"
+                                className="w-full px-2 py-1 bg-slate-800 rounded text-sm text-white focus:ring-1 focus:ring-green-500 outline-none"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                setEditingPosition(null);
+                                setEditStopLoss('');
+                                setEditTakeProfit('');
+                              }}
+                              className="flex-1 px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs"
+                            >
+                              Abbrechen
+                            </button>
+                            <button
+                              onClick={() => handleUpdatePositionLevels(position.id)}
+                              disabled={orderLoading}
+                              className="flex-1 px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs disabled:opacity-50"
+                            >
+                              Speichern
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="flex gap-4">
+                            <span className="text-gray-500">
+                              SL: <span className={position.stopLoss ? 'text-red-400' : 'text-gray-600'}>
+                                {position.stopLoss ? formatCurrency(position.stopLoss) : '—'}
+                              </span>
+                            </span>
+                            <span className="text-gray-500">
+                              TP: <span className={position.takeProfit ? 'text-green-400' : 'text-gray-600'}>
+                                {position.takeProfit ? formatCurrency(position.takeProfit) : '—'}
+                              </span>
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => startEditingPosition(position)}
+                            className="px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                          >
+                            ✏️ Bearbeiten
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     
                     <div className="mt-3 flex justify-end">
                       <button

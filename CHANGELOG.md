@@ -46,6 +46,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `PendingOrders` - Anzeige und Stornierung ausstehender Orders
   - `LeaderboardPage` - Vollständige Ranglisten-Seite
 
+- **Watchlist-Trading Integration**
+  - "Handeln"-Button direkt in der Watchlist für schnellen Trade-Zugang
+  - Navigation zur Trading-Seite mit vorausgewähltem Symbol
+  - Symbol wird aus URL-Parameter gelesen (`/trading?symbol=AAPL`)
+
+- **Position-Management UI**
+  - Stop-Loss und Take-Profit können für offene Positionen bearbeitet werden
+  - Inline-Bearbeitungsformular in der Positionsliste
+
+- **Automatisches Trigger-Polling**
+  - Frontend prüft alle 60 Sekunden Preise und Trigger
+  - Automatische Benachrichtigung bei ausgelösten SL/TP/Knockout
+  - Live-Aktualisierung der Position-P&L mit aktuellen Kursen
+
 ## [1.4.0] - 2026-01-24
 
 ### Added
