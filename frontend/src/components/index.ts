@@ -14,3 +14,4 @@ export { ChangelogPanel } from './ChangelogPanel';
 export { DataFreshnessIndicator, type DataTimestamps } from './DataFreshnessIndicator';
 export { WatchlistPanel } from './WatchlistPanel';
 export { Navigation } from './Navigation';
+export { CompanyInfoPanel } from './CompanyInfoPanel';

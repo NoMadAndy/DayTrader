@@ -302,6 +302,84 @@ app.get('/api/yahoo/chart/:symbol', async (req, res) => {
 });
 
 /**
+ * Proxy Yahoo Finance quote summary (for company details)
+ * GET /api/yahoo/quoteSummary/:symbol
+ * Query params: modules (comma-separated list of modules)
+ * 
+ * Available modules: assetProfile, summaryProfile, summaryDetail, 
+ * financialData, defaultKeyStatistics, price, etc.
+ */
+app.get('/api/yahoo/quoteSummary/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  const { modules = 'summaryDetail,price,defaultKeyStatistics' } = req.query;
+  
+  try {
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${modules}`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; DayTrader/1.0)',
+        'Accept': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      console.error(`Yahoo Finance quoteSummary error: ${response.status} ${response.statusText}`);
+      return res.status(response.status).json({ 
+        error: 'Yahoo Finance quoteSummary error',
+        status: response.status,
+        message: response.statusText
+      });
+    }
+    
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Yahoo Finance quoteSummary proxy error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch quote summary from Yahoo Finance',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Get EUR/USD exchange rate
+ * GET /api/forex/eurusd
+ */
+app.get('/api/forex/eurusd', async (req, res) => {
+  try {
+    // Use Yahoo Finance to get EUR/USD rate
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/EURUSD=X?interval=1d&range=1d`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; DayTrader/1.0)',
+        'Accept': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      // Fallback rate if API fails
+      return res.json({ rate: 0.92, source: 'fallback' });
+    }
+    
+    const data = await response.json();
+    const rate = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
+    
+    if (rate) {
+      // EUR/USD gives us how many USD per EUR, we want USD to EUR (inverse)
+      res.json({ rate: 1 / rate, source: 'yahoo' });
+    } else {
+      res.json({ rate: 0.92, source: 'fallback' });
+    }
+  } catch (error) {
+    console.error('Forex rate error:', error);
+    res.json({ rate: 0.92, source: 'fallback' });
+  }
+});
+
+/**
  * Proxy Yahoo Finance search
  * GET /api/yahoo/search
  * Query params: q (search query)

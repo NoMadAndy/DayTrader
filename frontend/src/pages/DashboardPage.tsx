@@ -5,8 +5,8 @@
  */
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, NewsPanel, TradingSignalPanel, DataFreshnessIndicator, type NewsItemWithSentiment, type DataTimestamps } from '../components';
-import { useStockData, useDataService } from '../hooks';
+import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, NewsPanel, TradingSignalPanel, DataFreshnessIndicator, CompanyInfoPanel, type NewsItemWithSentiment, type DataTimestamps } from '../components';
+import { useStockData } from '../hooks';
 import { generateForecast } from '../utils/forecast';
 
 // ML Prediction type for trading signals
@@ -24,8 +24,7 @@ interface DashboardPageProps {
 }
 
 export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageProps) {
-  const { data: stockData, isLoading, source, refetch } = useStockData(selectedSymbol);
-  const { preferredSource } = useDataService();
+  const { data: stockData, isLoading, refetch } = useStockData(selectedSymbol);
 
   // State for ML predictions (shared with NewsPanel for combined trading signals)
   const [mlPredictions, setMlPredictions] = useState<MLPrediction[] | null>(null);
@@ -173,15 +172,6 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
     return stockData.data[stockData.data.length - 1].close;
   }, [stockData]);
 
-  const priceChange = useMemo(() => {
-    if (!stockData || stockData.data.length < 2) return { value: 0, percent: 0 };
-    const current = stockData.data[stockData.data.length - 1].close;
-    const previous = stockData.data[stockData.data.length - 2].close;
-    const change = current - previous;
-    const percent = (change / previous) * 100;
-    return { value: change, percent };
-  }, [stockData]);
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -203,38 +193,19 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
 
   return (
     <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 flex-1">
-      {/* Price Header */}
-      <div className="bg-slate-800/50 rounded-xl p-4 sm:p-6 border border-slate-700 mb-6">
-        <div className="flex flex-col gap-4">
-          {/* Top row: Stock Selector + Data Freshness */}
-          <div className="flex items-center justify-between gap-2">
-            <StockSelector selectedSymbol={selectedSymbol} onSelect={onSymbolChange} />
-            <DataFreshnessIndicator 
-              timestamps={dataTimestamps}
-              onRefresh={handleRefreshAll}
-              isRefreshing={isRefreshing}
-            />
-          </div>
-          {/* Bottom row: Symbol info + Price */}
-          <div>
-            <div className="flex flex-wrap items-center gap-2 mb-1">
-              <h2 className="text-xl sm:text-2xl font-bold">{stockData.symbol}</h2>
-              <span className="text-gray-400 text-sm sm:text-base truncate">{stockData.name}</span>
-              {preferredSource !== 'mock' && (
-                <span className="px-2 py-0.5 bg-green-600/20 text-green-400 text-xs rounded-full flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                  Live ({source})
-                </span>
-              )}
-            </div>
-            <div className="flex flex-wrap items-baseline gap-2 sm:gap-3">
-              <span className="text-3xl sm:text-4xl font-bold">${currentPrice.toFixed(2)}</span>
-              <span className={`text-base sm:text-lg font-semibold ${priceChange.value >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {priceChange.value >= 0 ? '+' : ''}{priceChange.value.toFixed(2)} ({priceChange.percent >= 0 ? '+' : ''}{priceChange.percent.toFixed(2)}%)
-              </span>
-            </div>
-          </div>
-        </div>
+      {/* Stock Selector & Data Freshness Header */}
+      <div className="flex items-center justify-between gap-2 mb-4">
+        <StockSelector selectedSymbol={selectedSymbol} onSelect={onSymbolChange} />
+        <DataFreshnessIndicator 
+          timestamps={dataTimestamps}
+          onRefresh={handleRefreshAll}
+          isRefreshing={isRefreshing}
+        />
+      </div>
+
+      {/* Company Info Panel - with EUR prices and key metrics */}
+      <div className="mb-6">
+        <CompanyInfoPanel symbol={selectedSymbol} />
       </div>
 
       {/* Trading Signals - Full Width at Top */}

@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Company Info Panel** - Neues Panel im Dashboard mit Unternehmensinformationen
+  - Preise werden in Euro (EUR) angezeigt, mit USD-Preis als Referenz
+  - 52-Wochen Hoch/Tief mit visuellem Positionsindikator
+  - Tagesvolumen
+  - Börse und Währung
+- **EUR/USD Wechselkurs** - Automatische Währungsumrechnung
+  - Live-Kurs von Yahoo Finance
+  - Caching für 5 Minuten um API-Limits zu schonen
+  - Fallback-Kurs falls API nicht verfügbar
+- **Watchlist-Integration im Dashboard** - StockSelector zeigt Watchlist-Symbole
+  - Eingeloggte User sehen ihre Watchlist-Symbole
+  - Nicht eingeloggte User sehen Standard-Symbole
 - **Multi-Page Navigation** - App wurde von Single-Page auf Multi-Page Architektur umgestellt
   - React Router für Seitennavigation integriert
   - **Dashboard** (/) - Hauptansicht mit Charts, Prognosen und Trading-Signalen
