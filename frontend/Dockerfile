@@ -5,7 +5,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Accept build arguments for build info
-ARG BUILD_VERSION=0.1.0
+ARG BUILD_VERSION=1.3.0
 ARG BUILD_COMMIT=unknown
 ARG BUILD_TIME=unknown
 

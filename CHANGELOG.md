@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-01-24
+
 ### Added
 - **Multi-Provider Datenaggregation** - Unternehmensdaten werden von allen verfügbaren Quellen zusammengeführt
   - Yahoo Finance: Preisdaten, 52-Wochen-Range, Volumen, Unternehmensname
