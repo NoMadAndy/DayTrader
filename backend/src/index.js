@@ -1266,7 +1266,8 @@ app.get('/api/trading/backtest/sessions', authMiddleware, async (req, res) => {
     const sessions = await trading.getUserBacktestSessions(req.user.id);
     res.json(sessions);
   } catch (e) {
-    res.status(500).json({ error: 'Failed to get backtest sessions' });
+    console.error('Get backtest sessions error:', e);
+    res.status(500).json({ error: e.message || 'Failed to get backtest sessions' });
   }
 });
 

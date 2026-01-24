@@ -297,7 +297,7 @@ export async function initializeTradingSchema() {
         name VARCHAR(100) NOT NULL,
         start_date DATE NOT NULL,
         end_date DATE NOT NULL,
-        current_date DATE NOT NULL,
+        simulation_date DATE NOT NULL,
         initial_capital DECIMAL(15,2) NOT NULL DEFAULT 100000,
         current_capital DECIMAL(15,2) NOT NULL DEFAULT 100000,
         broker_profile VARCHAR(50) DEFAULT 'standard',
@@ -2140,7 +2140,7 @@ export async function createBacktestSession(params) {
     // Create backtest session
     const result = await client.query(
       `INSERT INTO backtest_sessions 
-         (user_id, name, start_date, end_date, current_date, initial_capital, current_capital, broker_profile, symbols, status)
+         (user_id, name, start_date, end_date, simulation_date, initial_capital, current_capital, broker_profile, symbols, status)
        VALUES ($1, $2, $3, $4, $3, $5, $5, $6, $7, 'active')
        RETURNING *`,
       [userId, name, startDate, endDate, initialCapital, brokerProfile, JSON.stringify(symbols)]
@@ -2220,7 +2220,7 @@ export async function executeBacktestOrder(params) {
     symbol, 
     side, 
     quantity, 
-    price, // Historical price at current_date
+    price, // Historical price at simulation_date
     productType = 'stock',
     leverage = 1,
     stopLoss,
@@ -2266,7 +2266,7 @@ export async function executeBacktestOrder(params) {
          (session_id, user_id, symbol, side, product_type, quantity, price, leverage, status, executed_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'filled', $9)
        RETURNING *`,
-      [sessionId, userId, symbol, side, productType, quantity, price, leverage, session.current_date]
+      [sessionId, userId, symbol, side, productType, quantity, price, leverage, session.simulation_date]
     );
     
     const order = orderResult.rows[0];
@@ -2280,7 +2280,7 @@ export async function executeBacktestOrder(params) {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, true, $13)
        RETURNING *`,
       [sessionId, userId, symbol, productType, positionSide, quantity, price, 
-       leverage, fees.marginRequired, stopLoss, takeProfit, fees.totalFees, session.current_date]
+       leverage, fees.marginRequired, stopLoss, takeProfit, fees.totalFees, session.simulation_date]
     );
     
     // Record trade
@@ -2288,7 +2288,7 @@ export async function executeBacktestOrder(params) {
       `INSERT INTO backtest_trades 
          (session_id, user_id, order_id, position_id, symbol, side, quantity, price, fees, executed_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [sessionId, userId, order.id, positionResult.rows[0].id, symbol, side, quantity, price, fees.totalFees, session.current_date]
+      [sessionId, userId, order.id, positionResult.rows[0].id, symbol, side, quantity, price, fees.totalFees, session.simulation_date]
     );
     
     // Update session capital
@@ -2326,7 +2326,7 @@ export async function closeBacktestPosition(positionId, userId, closePrice) {
     
     // Get position
     const posResult = await client.query(
-      `SELECT bp.*, bs.broker_profile, bs.current_date
+      `SELECT bp.*, bs.broker_profile, bs.simulation_date
        FROM backtest_positions bp
        JOIN backtest_sessions bs ON bs.id = bp.session_id
        WHERE bp.id = $1 AND bp.user_id = $2 AND bp.is_open = true`,
@@ -2369,7 +2369,7 @@ export async function closeBacktestPosition(positionId, userId, closePrice) {
       `UPDATE backtest_positions 
        SET is_open = false, current_price = $1, realized_pnl = $2, total_fees_paid = $3, closed_at = $4
        WHERE id = $5`,
-      [closePrice, netPnl, totalFees, position.current_date, positionId]
+      [closePrice, netPnl, totalFees, position.simulation_date, positionId]
     );
     
     // Update session capital
@@ -2387,7 +2387,7 @@ export async function closeBacktestPosition(positionId, userId, closePrice) {
          (session_id, user_id, position_id, symbol, side, quantity, price, fees, pnl, executed_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [position.session_id, userId, positionId, position.symbol, 
-       position.side === 'long' ? 'sell' : 'buy', quantity, closePrice, fees.totalFees, netPnl, position.current_date]
+       position.side === 'long' ? 'sell' : 'buy', quantity, closePrice, fees.totalFees, netPnl, position.simulation_date]
     );
     
     await client.query('COMMIT');
@@ -2432,7 +2432,7 @@ export async function advanceBacktestTime(sessionId, userId, newDate, priceUpdat
     if (new Date(newDate) > new Date(session.end_date)) {
       // Session complete
       await client.query(
-        `UPDATE backtest_sessions SET status = 'completed', current_date = $1 WHERE id = $2`,
+        `UPDATE backtest_sessions SET status = 'completed', simulation_date = $1 WHERE id = $2`,
         [session.end_date, sessionId]
       );
       await client.query('COMMIT');
@@ -2491,7 +2491,7 @@ export async function advanceBacktestTime(sessionId, userId, newDate, priceUpdat
     
     // Update session date
     await client.query(
-      `UPDATE backtest_sessions SET current_date = $1 WHERE id = $2`,
+      `UPDATE backtest_sessions SET simulation_date = $1 WHERE id = $2`,
       [newDate, sessionId]
     );
     
@@ -2569,7 +2569,7 @@ async function closeBacktestPositionInternal(client, position, closePrice, userI
   
   await client.query(
     `UPDATE backtest_positions 
-     SET is_open = false, current_price = $1, realized_pnl = $2, total_fees_paid = $3, closed_at = CURRENT_DATE
+     SET is_open = false, current_price = $1, realized_pnl = $2, total_fees_paid = $3, closed_at = NOW()
      WHERE id = $4`,
     [closePrice, netPnl, totalFees, position.id]
   );
@@ -2583,7 +2583,7 @@ async function closeBacktestPositionInternal(client, position, closePrice, userI
   await client.query(
     `INSERT INTO backtest_trades 
        (session_id, user_id, position_id, symbol, side, quantity, price, fees, pnl, executed_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_DATE)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
     [position.session_id, userId, position.id, position.symbol, 
      position.side === 'long' ? 'sell' : 'buy', quantity, closePrice, fees.totalFees, netPnl]
   );
@@ -2707,7 +2707,7 @@ function formatBacktestSession(row) {
     name: row.name,
     startDate: row.start_date,
     endDate: row.end_date,
-    currentDate: row.current_date,
+    currentDate: row.simulation_date,
     initialCapital: parseFloat(row.initial_capital),
     currentCapital: parseFloat(row.current_capital),
     brokerProfile: row.broker_profile,
