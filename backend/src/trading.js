@@ -287,6 +287,109 @@ export async function initializeTradingSchema() {
       CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_portfolio_id ON portfolio_snapshots(portfolio_id);
     `);
 
+    // ========== BACKTESTING TABLES ==========
+    
+    // Backtest sessions table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS backtest_sessions (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        name VARCHAR(100) NOT NULL,
+        start_date DATE NOT NULL,
+        end_date DATE NOT NULL,
+        current_date DATE NOT NULL,
+        initial_capital DECIMAL(15,2) NOT NULL DEFAULT 100000,
+        current_capital DECIMAL(15,2) NOT NULL DEFAULT 100000,
+        broker_profile VARCHAR(50) DEFAULT 'standard',
+        symbols JSONB DEFAULT '[]',
+        status VARCHAR(20) DEFAULT 'active',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Backtest positions table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS backtest_positions (
+        id SERIAL PRIMARY KEY,
+        session_id INTEGER REFERENCES backtest_sessions(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        symbol VARCHAR(20) NOT NULL,
+        product_type VARCHAR(20) DEFAULT 'stock',
+        side VARCHAR(10) NOT NULL,
+        quantity DECIMAL(15,4) NOT NULL,
+        entry_price DECIMAL(15,4) NOT NULL,
+        current_price DECIMAL(15,4),
+        leverage DECIMAL(5,2) DEFAULT 1,
+        margin_used DECIMAL(15,2),
+        stop_loss DECIMAL(15,4),
+        take_profit DECIMAL(15,4),
+        total_fees_paid DECIMAL(10,4) DEFAULT 0,
+        realized_pnl DECIMAL(15,4),
+        is_open BOOLEAN DEFAULT true,
+        opened_at DATE,
+        closed_at DATE
+      );
+    `);
+
+    // Backtest orders table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS backtest_orders (
+        id SERIAL PRIMARY KEY,
+        session_id INTEGER REFERENCES backtest_sessions(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        symbol VARCHAR(20) NOT NULL,
+        side VARCHAR(10) NOT NULL,
+        product_type VARCHAR(20) DEFAULT 'stock',
+        quantity DECIMAL(15,4) NOT NULL,
+        price DECIMAL(15,4) NOT NULL,
+        leverage DECIMAL(5,2) DEFAULT 1,
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        executed_at DATE
+      );
+    `);
+
+    // Backtest trades table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS backtest_trades (
+        id SERIAL PRIMARY KEY,
+        session_id INTEGER REFERENCES backtest_sessions(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        order_id INTEGER REFERENCES backtest_orders(id) ON DELETE SET NULL,
+        position_id INTEGER REFERENCES backtest_positions(id) ON DELETE SET NULL,
+        symbol VARCHAR(20) NOT NULL,
+        side VARCHAR(10) NOT NULL,
+        quantity DECIMAL(15,4) NOT NULL,
+        price DECIMAL(15,4) NOT NULL,
+        fees DECIMAL(10,4) DEFAULT 0,
+        pnl DECIMAL(15,4),
+        executed_at DATE
+      );
+    `);
+
+    // Backtest snapshots table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS backtest_snapshots (
+        id SERIAL PRIMARY KEY,
+        session_id INTEGER REFERENCES backtest_sessions(id) ON DELETE CASCADE,
+        snapshot_date DATE NOT NULL,
+        total_value DECIMAL(15,2),
+        cash_balance DECIMAL(15,2),
+        unrealized_pnl DECIMAL(15,2),
+        margin_used DECIMAL(15,2),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Backtest indexes
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_backtest_sessions_user_id ON backtest_sessions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_backtest_positions_session_id ON backtest_positions(session_id);
+      CREATE INDEX IF NOT EXISTS idx_backtest_orders_session_id ON backtest_orders(session_id);
+      CREATE INDEX IF NOT EXISTS idx_backtest_trades_session_id ON backtest_trades(session_id);
+      CREATE INDEX IF NOT EXISTS idx_backtest_snapshots_session_id ON backtest_snapshots(session_id);
+    `);
+
     await client.query('COMMIT');
     console.log('Trading database schema initialized successfully');
   } catch (e) {
@@ -2012,6 +2115,662 @@ export async function getUserRank(userId) {
   }
 }
 
+// ============================================================================
+// Backtesting / Historical Trading Functions
+// ============================================================================
+
+/**
+ * Create a new backtest session with historical data
+ */
+export async function createBacktestSession(params) {
+  const { 
+    userId, 
+    name, 
+    startDate, 
+    endDate,
+    initialCapital = 100000,
+    brokerProfile = 'standard',
+    symbols = []
+  } = params;
+  
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    
+    // Create backtest session
+    const result = await client.query(
+      `INSERT INTO backtest_sessions 
+         (user_id, name, start_date, end_date, current_date, initial_capital, current_capital, broker_profile, symbols, status)
+       VALUES ($1, $2, $3, $4, $3, $5, $5, $6, $7, 'active')
+       RETURNING *`,
+      [userId, name, startDate, endDate, initialCapital, brokerProfile, JSON.stringify(symbols)]
+    );
+    
+    await client.query('COMMIT');
+    
+    return formatBacktestSession(result.rows[0]);
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('Create backtest session error:', e);
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Get a backtest session by ID
+ */
+export async function getBacktestSession(sessionId, userId) {
+  const result = await query(
+    `SELECT * FROM backtest_sessions WHERE id = $1 AND user_id = $2`,
+    [sessionId, userId]
+  );
+  
+  if (result.rows.length === 0) {
+    return null;
+  }
+  
+  // Get positions and orders for this session
+  const [positions, orders, trades] = await Promise.all([
+    query(`SELECT * FROM backtest_positions WHERE session_id = $1 ORDER BY opened_at DESC`, [sessionId]),
+    query(`SELECT * FROM backtest_orders WHERE session_id = $1 ORDER BY created_at DESC`, [sessionId]),
+    query(`SELECT * FROM backtest_trades WHERE session_id = $1 ORDER BY executed_at DESC`, [sessionId]),
+  ]);
+  
+  const session = formatBacktestSession(result.rows[0]);
+  session.positions = positions.rows.map(formatBacktestPosition);
+  session.orders = orders.rows.map(formatBacktestOrder);
+  session.trades = trades.rows.map(formatBacktestTrade);
+  
+  return session;
+}
+
+/**
+ * Get all backtest sessions for a user
+ */
+export async function getUserBacktestSessions(userId) {
+  const result = await query(
+    `SELECT bs.*, 
+       COUNT(DISTINCT bp.id) FILTER (WHERE bp.is_open = true) as open_positions,
+       COUNT(DISTINCT bt.id) as total_trades
+     FROM backtest_sessions bs
+     LEFT JOIN backtest_positions bp ON bp.session_id = bs.id
+     LEFT JOIN backtest_trades bt ON bt.session_id = bs.id
+     WHERE bs.user_id = $1
+     GROUP BY bs.id
+     ORDER BY bs.created_at DESC`,
+    [userId]
+  );
+  
+  return result.rows.map(row => ({
+    ...formatBacktestSession(row),
+    openPositions: parseInt(row.open_positions || 0),
+    totalTrades: parseInt(row.total_trades || 0),
+  }));
+}
+
+/**
+ * Execute an order in backtest mode
+ */
+export async function executeBacktestOrder(params) {
+  const { 
+    sessionId, 
+    userId, 
+    symbol, 
+    side, 
+    quantity, 
+    price, // Historical price at current_date
+    productType = 'stock',
+    leverage = 1,
+    stopLoss,
+    takeProfit,
+  } = params;
+  
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    
+    // Get session
+    const sessionResult = await client.query(
+      `SELECT * FROM backtest_sessions WHERE id = $1 AND user_id = $2 AND status = 'active'`,
+      [sessionId, userId]
+    );
+    
+    if (sessionResult.rows.length === 0) {
+      throw new Error('Backtest session not found or not active');
+    }
+    
+    const session = sessionResult.rows[0];
+    const brokerProfile = session.broker_profile || 'standard';
+    
+    // Calculate fees
+    const fees = calculateFees({
+      productType,
+      side,
+      quantity,
+      price,
+      leverage,
+      brokerProfile,
+    });
+    
+    // Check if we have enough capital
+    const totalCost = fees.marginRequired + fees.totalFees;
+    if (totalCost > parseFloat(session.current_capital)) {
+      throw new Error(`Nicht genügend Kapital. Benötigt: €${totalCost.toFixed(2)}, Verfügbar: €${session.current_capital}`);
+    }
+    
+    // Create order
+    const orderResult = await client.query(
+      `INSERT INTO backtest_orders 
+         (session_id, user_id, symbol, side, product_type, quantity, price, leverage, status, executed_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'filled', $9)
+       RETURNING *`,
+      [sessionId, userId, symbol, side, productType, quantity, price, leverage, session.current_date]
+    );
+    
+    const order = orderResult.rows[0];
+    
+    // Create position
+    const positionSide = side === 'buy' ? 'long' : 'short';
+    const positionResult = await client.query(
+      `INSERT INTO backtest_positions 
+         (session_id, user_id, symbol, product_type, side, quantity, entry_price, current_price, 
+          leverage, margin_used, stop_loss, take_profit, total_fees_paid, is_open, opened_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, true, $13)
+       RETURNING *`,
+      [sessionId, userId, symbol, productType, positionSide, quantity, price, 
+       leverage, fees.marginRequired, stopLoss, takeProfit, fees.totalFees, session.current_date]
+    );
+    
+    // Record trade
+    await client.query(
+      `INSERT INTO backtest_trades 
+         (session_id, user_id, order_id, position_id, symbol, side, quantity, price, fees, executed_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [sessionId, userId, order.id, positionResult.rows[0].id, symbol, side, quantity, price, fees.totalFees, session.current_date]
+    );
+    
+    // Update session capital
+    const newCapital = parseFloat(session.current_capital) - totalCost;
+    await client.query(
+      `UPDATE backtest_sessions SET current_capital = $1 WHERE id = $2`,
+      [newCapital, sessionId]
+    );
+    
+    await client.query('COMMIT');
+    
+    return {
+      success: true,
+      order: formatBacktestOrder(order),
+      position: formatBacktestPosition(positionResult.rows[0]),
+      fees,
+      newCapital,
+    };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('Execute backtest order error:', e);
+    return { success: false, error: e.message };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Close a backtest position
+ */
+export async function closeBacktestPosition(positionId, userId, closePrice) {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    
+    // Get position
+    const posResult = await client.query(
+      `SELECT bp.*, bs.broker_profile, bs.current_date
+       FROM backtest_positions bp
+       JOIN backtest_sessions bs ON bs.id = bp.session_id
+       WHERE bp.id = $1 AND bp.user_id = $2 AND bp.is_open = true`,
+      [positionId, userId]
+    );
+    
+    if (posResult.rows.length === 0) {
+      throw new Error('Position not found or already closed');
+    }
+    
+    const position = posResult.rows[0];
+    
+    // Calculate P&L
+    const entryPrice = parseFloat(position.entry_price);
+    const quantity = parseFloat(position.quantity);
+    const leverage = parseFloat(position.leverage);
+    
+    let pnl;
+    if (position.side === 'long') {
+      pnl = (closePrice - entryPrice) * quantity * leverage;
+    } else {
+      pnl = (entryPrice - closePrice) * quantity * leverage;
+    }
+    
+    // Calculate closing fees
+    const fees = calculateFees({
+      productType: position.product_type,
+      side: position.side === 'long' ? 'sell' : 'buy',
+      quantity,
+      price: closePrice,
+      leverage,
+      brokerProfile: position.broker_profile,
+    });
+    
+    const netPnl = pnl - fees.totalFees;
+    const totalFees = parseFloat(position.total_fees_paid) + fees.totalFees;
+    
+    // Close position
+    await client.query(
+      `UPDATE backtest_positions 
+       SET is_open = false, current_price = $1, realized_pnl = $2, total_fees_paid = $3, closed_at = $4
+       WHERE id = $5`,
+      [closePrice, netPnl, totalFees, position.current_date, positionId]
+    );
+    
+    // Update session capital
+    const returnedCapital = parseFloat(position.margin_used) + netPnl;
+    await client.query(
+      `UPDATE backtest_sessions 
+       SET current_capital = current_capital + $1
+       WHERE id = $2`,
+      [returnedCapital, position.session_id]
+    );
+    
+    // Record trade
+    await client.query(
+      `INSERT INTO backtest_trades 
+         (session_id, user_id, position_id, symbol, side, quantity, price, fees, pnl, executed_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [position.session_id, userId, positionId, position.symbol, 
+       position.side === 'long' ? 'sell' : 'buy', quantity, closePrice, fees.totalFees, netPnl, position.current_date]
+    );
+    
+    await client.query('COMMIT');
+    
+    return {
+      success: true,
+      realizedPnl: netPnl,
+      closingFees: fees.totalFees,
+      totalFees,
+    };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('Close backtest position error:', e);
+    return { success: false, error: e.message };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Advance backtest time to a new date
+ * Returns price data that should be fetched by frontend for the new date
+ */
+export async function advanceBacktestTime(sessionId, userId, newDate, priceUpdates = {}) {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    
+    // Get session
+    const sessionResult = await client.query(
+      `SELECT * FROM backtest_sessions WHERE id = $1 AND user_id = $2 AND status = 'active'`,
+      [sessionId, userId]
+    );
+    
+    if (sessionResult.rows.length === 0) {
+      throw new Error('Backtest session not found or not active');
+    }
+    
+    const session = sessionResult.rows[0];
+    
+    // Check if new date is within range
+    if (new Date(newDate) > new Date(session.end_date)) {
+      // Session complete
+      await client.query(
+        `UPDATE backtest_sessions SET status = 'completed', current_date = $1 WHERE id = $2`,
+        [session.end_date, sessionId]
+      );
+      await client.query('COMMIT');
+      return { success: true, completed: true, message: 'Backtest abgeschlossen!' };
+    }
+    
+    // Get open positions
+    const positionsResult = await client.query(
+      `SELECT * FROM backtest_positions WHERE session_id = $1 AND is_open = true`,
+      [sessionId]
+    );
+    
+    const triggeredPositions = [];
+    
+    // Check SL/TP for each position with price updates
+    for (const pos of positionsResult.rows) {
+      const currentPrice = priceUpdates[pos.symbol];
+      if (!currentPrice) continue;
+      
+      // Update position price
+      await client.query(
+        `UPDATE backtest_positions SET current_price = $1 WHERE id = $2`,
+        [currentPrice, pos.id]
+      );
+      
+      // Check stop-loss
+      if (pos.stop_loss) {
+        const sl = parseFloat(pos.stop_loss);
+        if ((pos.side === 'long' && currentPrice <= sl) || (pos.side === 'short' && currentPrice >= sl)) {
+          // Close at stop-loss
+          const closeResult = await closeBacktestPositionInternal(client, pos, sl, userId);
+          triggeredPositions.push({ 
+            ...closeResult, 
+            symbol: pos.symbol, 
+            reason: 'stop_loss',
+            triggerPrice: sl
+          });
+        }
+      }
+      
+      // Check take-profit
+      if (pos.take_profit) {
+        const tp = parseFloat(pos.take_profit);
+        if ((pos.side === 'long' && currentPrice >= tp) || (pos.side === 'short' && currentPrice <= tp)) {
+          // Close at take-profit
+          const closeResult = await closeBacktestPositionInternal(client, pos, tp, userId);
+          triggeredPositions.push({ 
+            ...closeResult, 
+            symbol: pos.symbol, 
+            reason: 'take_profit',
+            triggerPrice: tp
+          });
+        }
+      }
+    }
+    
+    // Update session date
+    await client.query(
+      `UPDATE backtest_sessions SET current_date = $1 WHERE id = $2`,
+      [newDate, sessionId]
+    );
+    
+    // Save snapshot
+    const metricsResult = await client.query(
+      `SELECT current_capital FROM backtest_sessions WHERE id = $1`,
+      [sessionId]
+    );
+    
+    const openPositionsResult = await client.query(
+      `SELECT SUM((current_price - entry_price) * quantity * leverage * 
+                  CASE WHEN side = 'long' THEN 1 ELSE -1 END) as unrealized_pnl,
+              SUM(margin_used) as margin_used
+       FROM backtest_positions WHERE session_id = $1 AND is_open = true`,
+      [sessionId]
+    );
+    
+    const unrealizedPnl = parseFloat(openPositionsResult.rows[0]?.unrealized_pnl || 0);
+    const marginUsed = parseFloat(openPositionsResult.rows[0]?.margin_used || 0);
+    const currentCapital = parseFloat(metricsResult.rows[0].current_capital);
+    const totalValue = currentCapital + marginUsed + unrealizedPnl;
+    
+    await client.query(
+      `INSERT INTO backtest_snapshots (session_id, snapshot_date, total_value, cash_balance, unrealized_pnl, margin_used)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [sessionId, newDate, totalValue, currentCapital, unrealizedPnl, marginUsed]
+    );
+    
+    await client.query('COMMIT');
+    
+    return {
+      success: true,
+      newDate,
+      triggeredPositions,
+      metrics: {
+        totalValue,
+        cashBalance: currentCapital,
+        unrealizedPnl,
+        marginUsed,
+      }
+    };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('Advance backtest time error:', e);
+    return { success: false, error: e.message };
+  } finally {
+    client.release();
+  }
+}
+
+// Internal helper for closing positions during time advance
+async function closeBacktestPositionInternal(client, position, closePrice, userId) {
+  const entryPrice = parseFloat(position.entry_price);
+  const quantity = parseFloat(position.quantity);
+  const leverage = parseFloat(position.leverage);
+  
+  let pnl;
+  if (position.side === 'long') {
+    pnl = (closePrice - entryPrice) * quantity * leverage;
+  } else {
+    pnl = (entryPrice - closePrice) * quantity * leverage;
+  }
+  
+  const fees = calculateFees({
+    productType: position.product_type,
+    side: position.side === 'long' ? 'sell' : 'buy',
+    quantity,
+    price: closePrice,
+    leverage,
+    brokerProfile: 'standard',
+  });
+  
+  const netPnl = pnl - fees.totalFees;
+  const totalFees = parseFloat(position.total_fees_paid) + fees.totalFees;
+  
+  await client.query(
+    `UPDATE backtest_positions 
+     SET is_open = false, current_price = $1, realized_pnl = $2, total_fees_paid = $3, closed_at = CURRENT_DATE
+     WHERE id = $4`,
+    [closePrice, netPnl, totalFees, position.id]
+  );
+  
+  const returnedCapital = parseFloat(position.margin_used) + netPnl;
+  await client.query(
+    `UPDATE backtest_sessions SET current_capital = current_capital + $1 WHERE id = $2`,
+    [returnedCapital, position.session_id]
+  );
+  
+  await client.query(
+    `INSERT INTO backtest_trades 
+       (session_id, user_id, position_id, symbol, side, quantity, price, fees, pnl, executed_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_DATE)`,
+    [position.session_id, userId, position.id, position.symbol, 
+     position.side === 'long' ? 'sell' : 'buy', quantity, closePrice, fees.totalFees, netPnl]
+  );
+  
+  return { positionId: position.id, realizedPnl: netPnl };
+}
+
+/**
+ * Get backtest results and performance metrics
+ */
+export async function getBacktestResults(sessionId, userId) {
+  const session = await getBacktestSession(sessionId, userId);
+  if (!session) {
+    return null;
+  }
+  
+  // Get all snapshots for equity curve
+  const snapshots = await query(
+    `SELECT snapshot_date, total_value, cash_balance, unrealized_pnl 
+     FROM backtest_snapshots 
+     WHERE session_id = $1 
+     ORDER BY snapshot_date`,
+    [sessionId]
+  );
+  
+  // Calculate metrics
+  const closedPositions = session.positions.filter(p => !p.isOpen);
+  const winners = closedPositions.filter(p => p.realizedPnl > 0);
+  const losers = closedPositions.filter(p => p.realizedPnl <= 0);
+  
+  const totalPnl = closedPositions.reduce((sum, p) => sum + (p.realizedPnl || 0), 0);
+  const totalFees = session.positions.reduce((sum, p) => sum + (p.totalFeesPaid || 0), 0);
+  
+  const avgWin = winners.length > 0 
+    ? winners.reduce((sum, p) => sum + p.realizedPnl, 0) / winners.length 
+    : 0;
+  const avgLoss = losers.length > 0 
+    ? Math.abs(losers.reduce((sum, p) => sum + p.realizedPnl, 0) / losers.length) 
+    : 0;
+  
+  return {
+    session,
+    equityCurve: snapshots.rows.map(s => ({
+      date: s.snapshot_date,
+      totalValue: parseFloat(s.total_value),
+      cashBalance: parseFloat(s.cash_balance),
+      unrealizedPnl: parseFloat(s.unrealized_pnl),
+    })),
+    metrics: {
+      initialCapital: session.initialCapital,
+      finalValue: session.currentCapital + session.positions
+        .filter(p => p.isOpen)
+        .reduce((sum, p) => sum + (p.marginUsed || 0) + ((p.currentPrice - p.entryPrice) * p.quantity * p.leverage * (p.side === 'long' ? 1 : -1)), 0),
+      totalReturn: ((session.currentCapital - session.initialCapital) / session.initialCapital) * 100,
+      totalTrades: closedPositions.length,
+      winningTrades: winners.length,
+      losingTrades: losers.length,
+      winRate: closedPositions.length > 0 ? (winners.length / closedPositions.length) * 100 : 0,
+      avgWin,
+      avgLoss,
+      profitFactor: avgLoss > 0 ? (avgWin * winners.length) / (avgLoss * losers.length) : 0,
+      totalPnl,
+      totalFees,
+      netPnl: totalPnl - totalFees,
+      maxDrawdown: calculateMaxDrawdown(snapshots.rows),
+    }
+  };
+}
+
+function calculateMaxDrawdown(snapshots) {
+  if (snapshots.length < 2) return 0;
+  
+  let maxValue = parseFloat(snapshots[0].total_value);
+  let maxDrawdown = 0;
+  
+  for (const snapshot of snapshots) {
+    const value = parseFloat(snapshot.total_value);
+    if (value > maxValue) {
+      maxValue = value;
+    }
+    const drawdown = ((maxValue - value) / maxValue) * 100;
+    if (drawdown > maxDrawdown) {
+      maxDrawdown = drawdown;
+    }
+  }
+  
+  return maxDrawdown;
+}
+
+/**
+ * Delete a backtest session
+ */
+export async function deleteBacktestSession(sessionId, userId) {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    
+    // Delete all related data
+    await client.query(`DELETE FROM backtest_snapshots WHERE session_id = $1`, [sessionId]);
+    await client.query(`DELETE FROM backtest_trades WHERE session_id = $1`, [sessionId]);
+    await client.query(`DELETE FROM backtest_orders WHERE session_id = $1`, [sessionId]);
+    await client.query(`DELETE FROM backtest_positions WHERE session_id = $1`, [sessionId]);
+    await client.query(`DELETE FROM backtest_sessions WHERE id = $1 AND user_id = $2`, [sessionId, userId]);
+    
+    await client.query('COMMIT');
+    return { success: true };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('Delete backtest session error:', e);
+    return { success: false, error: e.message };
+  } finally {
+    client.release();
+  }
+}
+
+// Formatter helpers for backtest objects
+function formatBacktestSession(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    currentDate: row.current_date,
+    initialCapital: parseFloat(row.initial_capital),
+    currentCapital: parseFloat(row.current_capital),
+    brokerProfile: row.broker_profile,
+    symbols: typeof row.symbols === 'string' ? JSON.parse(row.symbols) : row.symbols,
+    status: row.status,
+    createdAt: row.created_at,
+  };
+}
+
+function formatBacktestPosition(row) {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    symbol: row.symbol,
+    productType: row.product_type,
+    side: row.side,
+    quantity: parseFloat(row.quantity),
+    entryPrice: parseFloat(row.entry_price),
+    currentPrice: parseFloat(row.current_price || row.entry_price),
+    leverage: parseFloat(row.leverage),
+    marginUsed: parseFloat(row.margin_used || 0),
+    stopLoss: row.stop_loss ? parseFloat(row.stop_loss) : null,
+    takeProfit: row.take_profit ? parseFloat(row.take_profit) : null,
+    totalFeesPaid: parseFloat(row.total_fees_paid || 0),
+    realizedPnl: row.realized_pnl ? parseFloat(row.realized_pnl) : null,
+    isOpen: row.is_open,
+    openedAt: row.opened_at,
+    closedAt: row.closed_at,
+  };
+}
+
+function formatBacktestOrder(row) {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    symbol: row.symbol,
+    side: row.side,
+    productType: row.product_type,
+    quantity: parseFloat(row.quantity),
+    price: parseFloat(row.price),
+    leverage: parseFloat(row.leverage),
+    status: row.status,
+    createdAt: row.created_at,
+    executedAt: row.executed_at,
+  };
+}
+
+function formatBacktestTrade(row) {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    orderId: row.order_id,
+    positionId: row.position_id,
+    symbol: row.symbol,
+    side: row.side,
+    quantity: parseFloat(row.quantity),
+    price: parseFloat(row.price),
+    fees: parseFloat(row.fees || 0),
+    pnl: row.pnl ? parseFloat(row.pnl) : null,
+    executedAt: row.executed_at,
+  };
+}
+
 export default {
   BROKER_PROFILES,
   PRODUCT_TYPES,
@@ -2046,4 +2805,13 @@ export default {
   saveDailySnapshots,
   getLeaderboard,
   getUserRank,
+  // Backtesting features
+  createBacktestSession,
+  getBacktestSession,
+  getUserBacktestSessions,
+  executeBacktestOrder,
+  closeBacktestPosition,
+  advanceBacktestTime,
+  getBacktestResults,
+  deleteBacktestSession,
 };

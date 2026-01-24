@@ -8,6 +8,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Historisches Backtesting** - Handeln mit historischen Kursdaten
+  
+  - **Backtest-Sessions** - Erstelle Backtests mit beliebigem Zeitraum
+    - Name, Startdatum, Enddatum und Startkapital konfigurierbar
+    - Mehrere Sessions pro Benutzer möglich
+    - Status-Tracking (aktiv/abgeschlossen)
+  
+  - **Zeitsimulation** - Spiele historische Kurse durch
+    - Zeit vorspulen um 1 Tag, 1 Woche oder 1 Monat
+    - Auto-Play-Modus für automatisches Durchspielen
+    - Fortschrittsbalken zeigt aktuelle Position im Zeitraum
+  
+  - **Historisches Trading** - Kaufe und verkaufe zum historischen Preis
+    - Market-Orders werden sofort zum historischen Kurs ausgeführt
+    - Stop-Loss und Take-Profit werden bei Zeitfortschritt geprüft
+    - Gebühren werden realistisch berechnet
+  
+  - **Backtest-Ergebnisse** - Detaillierte Performance-Analyse
+    - Gesamtrendite, Netto-P&L, Gewinnrate
+    - Max. Drawdown, Profit Factor
+    - Equity-Kurve über den gesamten Zeitraum
+    - Gewinner/Verlierer-Statistiken
+
+- **Neue API-Endpunkte für Backtesting**
+  - `POST /api/trading/backtest/session` - Backtest-Session erstellen
+  - `GET /api/trading/backtest/sessions` - Alle Sessions abrufen
+  - `GET /api/trading/backtest/session/:id` - Session-Details mit Positionen
+  - `POST /api/trading/backtest/order` - Order im Backtest ausführen
+  - `POST /api/trading/backtest/position/:id/close` - Position schließen
+  - `POST /api/trading/backtest/session/:id/advance` - Zeit vorspulen
+  - `GET /api/trading/backtest/session/:id/results` - Ergebnisse abrufen
+  - `DELETE /api/trading/backtest/session/:id` - Session löschen
+
+- **Neue Komponenten**
+  - `BacktestPage` - Vollständige Backtesting-Oberfläche
+  - Navigation-Eintrag "Backtest" mit Uhr-Icon
+
+- **Neue Datenbank-Tabellen**
+  - `backtest_sessions` - Backtest-Sessions mit Konfiguration
+  - `backtest_positions` - Positionen innerhalb eines Backtests
+  - `backtest_orders` - Orders innerhalb eines Backtests
+  - `backtest_trades` - Ausgeführte Trades
+  - `backtest_snapshots` - Equity-Kurve Snapshots
+
 - **Erweiterte Trading-Features für Börsenspiel**
   
   - **Limit- und Stop-Orders** - Neben Market-Orders können nun auch Limit-, Stop- und Stop-Limit-Orders erstellt werden

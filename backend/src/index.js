@@ -1211,6 +1211,216 @@ app.get('/api/trading/leaderboard/rank', authMiddleware, async (req, res) => {
   }
 });
 
+// ============================================================================
+// Backtesting Endpoints
+// ============================================================================
+
+/**
+ * Create a new backtest session
+ * POST /api/trading/backtest/session
+ */
+app.post('/api/trading/backtest/session', authMiddleware, async (req, res) => {
+  try {
+    const { name, startDate, endDate, initialCapital, brokerProfile, symbols } = req.body;
+    
+    if (!name || !startDate || !endDate) {
+      return res.status(400).json({ error: 'Name, startDate, and endDate are required' });
+    }
+    
+    // Validate dates
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const now = new Date();
+    
+    if (start >= end) {
+      return res.status(400).json({ error: 'Start date must be before end date' });
+    }
+    
+    if (end > now) {
+      return res.status(400).json({ error: 'End date cannot be in the future' });
+    }
+    
+    const session = await trading.createBacktestSession({
+      userId: req.user.id,
+      name,
+      startDate,
+      endDate,
+      initialCapital: initialCapital || 100000,
+      brokerProfile: brokerProfile || 'standard',
+      symbols: symbols || [],
+    });
+    
+    res.status(201).json(session);
+  } catch (e) {
+    console.error('Create backtest session error:', e);
+    res.status(500).json({ error: e.message || 'Failed to create backtest session' });
+  }
+});
+
+/**
+ * Get user's backtest sessions
+ * GET /api/trading/backtest/sessions
+ */
+app.get('/api/trading/backtest/sessions', authMiddleware, async (req, res) => {
+  try {
+    const sessions = await trading.getUserBacktestSessions(req.user.id);
+    res.json(sessions);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get backtest sessions' });
+  }
+});
+
+/**
+ * Get specific backtest session
+ * GET /api/trading/backtest/session/:id
+ */
+app.get('/api/trading/backtest/session/:id', authMiddleware, async (req, res) => {
+  try {
+    const session = await trading.getBacktestSession(parseInt(req.params.id), req.user.id);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    res.json(session);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get backtest session' });
+  }
+});
+
+/**
+ * Execute order in backtest
+ * POST /api/trading/backtest/order
+ */
+app.post('/api/trading/backtest/order', authMiddleware, async (req, res) => {
+  try {
+    const { sessionId, symbol, side, quantity, price, productType, leverage, stopLoss, takeProfit } = req.body;
+    
+    if (!sessionId || !symbol || !side || !quantity || !price) {
+      return res.status(400).json({ error: 'sessionId, symbol, side, quantity, and price are required' });
+    }
+    
+    const result = await trading.executeBacktestOrder({
+      sessionId,
+      userId: req.user.id,
+      symbol,
+      side,
+      quantity,
+      price,
+      productType: productType || 'stock',
+      leverage: leverage || 1,
+      stopLoss,
+      takeProfit,
+    });
+    
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+    
+    res.json(result);
+  } catch (e) {
+    console.error('Execute backtest order error:', e);
+    res.status(500).json({ error: 'Failed to execute backtest order' });
+  }
+});
+
+/**
+ * Close backtest position
+ * POST /api/trading/backtest/position/:id/close
+ */
+app.post('/api/trading/backtest/position/:id/close', authMiddleware, async (req, res) => {
+  try {
+    const { price } = req.body;
+    
+    if (!price) {
+      return res.status(400).json({ error: 'Close price is required' });
+    }
+    
+    const result = await trading.closeBacktestPosition(
+      parseInt(req.params.id),
+      req.user.id,
+      price
+    );
+    
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+    
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to close backtest position' });
+  }
+});
+
+/**
+ * Advance backtest time
+ * POST /api/trading/backtest/session/:id/advance
+ */
+app.post('/api/trading/backtest/session/:id/advance', authMiddleware, async (req, res) => {
+  try {
+    const { newDate, priceUpdates } = req.body;
+    
+    if (!newDate) {
+      return res.status(400).json({ error: 'New date is required' });
+    }
+    
+    const result = await trading.advanceBacktestTime(
+      parseInt(req.params.id),
+      req.user.id,
+      newDate,
+      priceUpdates || {}
+    );
+    
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+    
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to advance backtest time' });
+  }
+});
+
+/**
+ * Get backtest results
+ * GET /api/trading/backtest/session/:id/results
+ */
+app.get('/api/trading/backtest/session/:id/results', authMiddleware, async (req, res) => {
+  try {
+    const results = await trading.getBacktestResults(
+      parseInt(req.params.id),
+      req.user.id
+    );
+    
+    if (!results) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    
+    res.json(results);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get backtest results' });
+  }
+});
+
+/**
+ * Delete backtest session
+ * DELETE /api/trading/backtest/session/:id
+ */
+app.delete('/api/trading/backtest/session/:id', authMiddleware, async (req, res) => {
+  try {
+    const result = await trading.deleteBacktestSession(
+      parseInt(req.params.id),
+      req.user.id
+    );
+    
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+    
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to delete backtest session' });
+  }
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });

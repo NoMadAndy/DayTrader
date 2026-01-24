@@ -562,6 +562,250 @@ export async function getUserRank(): Promise<UserRank> {
   return handleResponse<UserRank>(response);
 }
 
+// ============================================================================
+// Backtesting APIs
+// ============================================================================
+
+export interface BacktestSession {
+  id: number;
+  userId: number;
+  name: string;
+  startDate: string;
+  endDate: string;
+  currentDate: string;
+  initialCapital: number;
+  currentCapital: number;
+  brokerProfile: string;
+  symbols: string[];
+  status: 'active' | 'completed' | 'cancelled';
+  createdAt: string;
+  positions?: BacktestPosition[];
+  orders?: BacktestOrder[];
+  trades?: BacktestTrade[];
+  openPositions?: number;
+  totalTrades?: number;
+}
+
+export interface BacktestPosition {
+  id: number;
+  sessionId: number;
+  symbol: string;
+  productType: string;
+  side: 'long' | 'short';
+  quantity: number;
+  entryPrice: number;
+  currentPrice: number;
+  leverage: number;
+  marginUsed: number;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  totalFeesPaid: number;
+  realizedPnl: number | null;
+  isOpen: boolean;
+  openedAt: string;
+  closedAt: string | null;
+}
+
+export interface BacktestOrder {
+  id: number;
+  sessionId: number;
+  symbol: string;
+  side: string;
+  productType: string;
+  quantity: number;
+  price: number;
+  leverage: number;
+  status: string;
+  createdAt: string;
+  executedAt: string;
+}
+
+export interface BacktestTrade {
+  id: number;
+  sessionId: number;
+  orderId: number | null;
+  positionId: number | null;
+  symbol: string;
+  side: string;
+  quantity: number;
+  price: number;
+  fees: number;
+  pnl: number | null;
+  executedAt: string;
+}
+
+export interface BacktestResults {
+  session: BacktestSession;
+  equityCurve: Array<{
+    date: string;
+    totalValue: number;
+    cashBalance: number;
+    unrealizedPnl: number;
+  }>;
+  metrics: {
+    initialCapital: number;
+    finalValue: number;
+    totalReturn: number;
+    totalTrades: number;
+    winningTrades: number;
+    losingTrades: number;
+    winRate: number;
+    avgWin: number;
+    avgLoss: number;
+    profitFactor: number;
+    totalPnl: number;
+    totalFees: number;
+    netPnl: number;
+    maxDrawdown: number;
+  };
+}
+
+export interface CreateBacktestSessionRequest {
+  name: string;
+  startDate: string;
+  endDate: string;
+  initialCapital?: number;
+  brokerProfile?: string;
+  symbols?: string[];
+}
+
+export interface ExecuteBacktestOrderRequest {
+  sessionId: number;
+  symbol: string;
+  side: 'buy' | 'sell';
+  quantity: number;
+  price: number;
+  productType?: string;
+  leverage?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+}
+
+export interface AdvanceBacktestTimeRequest {
+  newDate: string;
+  priceUpdates?: Record<string, number>;
+}
+
+export interface AdvanceBacktestTimeResponse {
+  success: boolean;
+  completed?: boolean;
+  newDate?: string;
+  triggeredPositions?: Array<{
+    positionId: number;
+    realizedPnl: number;
+    symbol: string;
+    reason: 'stop_loss' | 'take_profit';
+    triggerPrice: number;
+  }>;
+  metrics?: {
+    totalValue: number;
+    cashBalance: number;
+    unrealizedPnl: number;
+    marginUsed: number;
+  };
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Create a new backtest session
+ */
+export async function createBacktestSession(
+  params: CreateBacktestSessionRequest
+): Promise<BacktestSession> {
+  const response = await fetch(`${API_BASE}/trading/backtest/session`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  return handleResponse<BacktestSession>(response);
+}
+
+/**
+ * Get all backtest sessions for current user
+ */
+export async function getBacktestSessions(): Promise<BacktestSession[]> {
+  const response = await fetch(`${API_BASE}/trading/backtest/sessions`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<BacktestSession[]>(response);
+}
+
+/**
+ * Get specific backtest session with positions and trades
+ */
+export async function getBacktestSession(sessionId: number): Promise<BacktestSession> {
+  const response = await fetch(`${API_BASE}/trading/backtest/session/${sessionId}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<BacktestSession>(response);
+}
+
+/**
+ * Execute an order in a backtest session
+ */
+export async function executeBacktestOrder(
+  params: ExecuteBacktestOrderRequest
+): Promise<{ success: boolean; order?: BacktestOrder; position?: BacktestPosition; fees?: FeeCalculation; newCapital?: number; error?: string }> {
+  const response = await fetch(`${API_BASE}/trading/backtest/order`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  return handleResponse(response);
+}
+
+/**
+ * Close a backtest position
+ */
+export async function closeBacktestPosition(
+  positionId: number,
+  closePrice: number
+): Promise<{ success: boolean; realizedPnl?: number; closingFees?: number; totalFees?: number; error?: string }> {
+  const response = await fetch(`${API_BASE}/trading/backtest/position/${positionId}/close`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ price: closePrice }),
+  });
+  return handleResponse(response);
+}
+
+/**
+ * Advance backtest time to a new date
+ */
+export async function advanceBacktestTime(
+  sessionId: number,
+  params: AdvanceBacktestTimeRequest
+): Promise<AdvanceBacktestTimeResponse> {
+  const response = await fetch(`${API_BASE}/trading/backtest/session/${sessionId}/advance`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  return handleResponse<AdvanceBacktestTimeResponse>(response);
+}
+
+/**
+ * Get backtest results and performance metrics
+ */
+export async function getBacktestResults(sessionId: number): Promise<BacktestResults> {
+  const response = await fetch(`${API_BASE}/trading/backtest/session/${sessionId}/results`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<BacktestResults>(response);
+}
+
+/**
+ * Delete a backtest session
+ */
+export async function deleteBacktestSession(sessionId: number): Promise<{ success: boolean }> {
+  const response = await fetch(`${API_BASE}/trading/backtest/session/${sessionId}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+}
+
 /**
  * Get order type display name
  */
@@ -611,4 +855,13 @@ export default {
   getLeaderboard,
   getUserRank,
   getOrderTypeName,
+  // Backtesting
+  createBacktestSession,
+  getBacktestSessions,
+  getBacktestSession,
+  executeBacktestOrder,
+  closeBacktestPosition,
+  advanceBacktestTime,
+  getBacktestResults,
+  deleteBacktestSession,
 };
