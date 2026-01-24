@@ -1,18 +1,22 @@
 /**
  * Company Info Panel Component
  * 
- * Displays detailed company information:
+ * Displays detailed company information aggregated from multiple providers:
  * - Name, Symbol, Exchange
  * - Current price in EUR (and USD)
  * - 52-Week Range
- * - Volume
+ * - Market Cap, P/E (KGV), Dividend Yield
+ * - Industry, Country
+ * - Data sources indicator
  */
 
 import { useState, useEffect } from 'react';
 import { 
   fetchCompanyInfo, 
   formatCurrency, 
-  formatPercent, 
+  formatPercent,
+  formatMarketCap,
+  formatPE,
   type CompanyInfo 
 } from '../services/companyInfoService';
 
@@ -111,7 +115,18 @@ export function CompanyInfoPanel({ symbol }: CompanyInfoPanelProps) {
                 <span>{companyInfo.exchange}</span>
               </>
             )}
+            {companyInfo.country && (
+              <>
+                <span>•</span>
+                <span>{companyInfo.country}</span>
+              </>
+            )}
           </div>
+          {companyInfo.industry && (
+            <div className="text-xs text-gray-500 mt-1">
+              {companyInfo.sector && `${companyInfo.sector} / `}{companyInfo.industry}
+            </div>
+          )}
         </div>
         
         {/* Price in EUR */}
@@ -131,39 +146,55 @@ export function CompanyInfoPanel({ symbol }: CompanyInfoPanelProps) {
         </div>
       </div>
 
-      {/* Key Metrics Grid */}
+      {/* Key Financials Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-        {/* 52-Week Range */}
-        <div className="bg-slate-900/50 rounded-lg p-2.5 sm:p-3 col-span-2">
-          <div className="text-xs text-gray-400 mb-1">52-Wochen Bereich</div>
-          {companyInfo.fiftyTwoWeekLow && companyInfo.fiftyTwoWeekHigh ? (
-            <>
-              <div className="flex justify-between text-sm font-semibold text-white mb-1">
-                <span>{formatCurrency(companyInfo.fiftyTwoWeekLow, 'USD')}</span>
-                <span>{formatCurrency(companyInfo.fiftyTwoWeekHigh, 'USD')}</span>
-              </div>
-              {/* Position indicator */}
-              <div className="relative h-2 bg-slate-700 rounded-full overflow-hidden">
-                <div 
-                  className="absolute h-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 opacity-30"
-                  style={{ width: '100%' }}
-                />
-                <div 
-                  className="absolute h-full w-2 bg-blue-500 rounded-full transform -translate-x-1/2"
-                  style={{
-                    left: `${Math.min(100, Math.max(0, 
-                      ((companyInfo.priceUSD - companyInfo.fiftyTwoWeekLow) / 
-                      (companyInfo.fiftyTwoWeekHigh - companyInfo.fiftyTwoWeekLow)) * 100
-                    ))}%`
-                  }}
-                />
-              </div>
-              <div className="text-xs text-gray-500 mt-1 text-center">
-                Aktuell: {formatCurrency(companyInfo.priceUSD, 'USD')}
-              </div>
-            </>
-          ) : (
-            <div className="text-sm font-semibold text-white">—</div>
+        {/* Market Cap */}
+        <div className="bg-slate-900/50 rounded-lg p-2.5 sm:p-3">
+          <div className="text-xs text-gray-400 mb-1">Marktkapitalisierung</div>
+          <div className="text-sm sm:text-base font-semibold text-white">
+            {companyInfo.marketCapEUR ? `€${formatMarketCap(companyInfo.marketCapEUR)}` : '—'}
+          </div>
+          {companyInfo.marketCapUSD && (
+            <div className="text-xs text-gray-500">
+              ≈ ${formatMarketCap(companyInfo.marketCapUSD)}
+            </div>
+          )}
+        </div>
+
+        {/* P/E Ratio (KGV) */}
+        <div className="bg-slate-900/50 rounded-lg p-2.5 sm:p-3">
+          <div className="text-xs text-gray-400 mb-1">KGV (P/E)</div>
+          <div className={`text-sm sm:text-base font-semibold ${
+            companyInfo.peRatio === undefined ? 'text-white' :
+            companyInfo.peRatio > 30 ? 'text-yellow-400' : 
+            companyInfo.peRatio < 0 ? 'text-red-400' :
+            companyInfo.peRatio < 15 ? 'text-green-400' : 'text-white'
+          }`}>
+            {formatPE(companyInfo.peRatio)}
+          </div>
+          {companyInfo.forwardPE !== undefined && (
+            <div className="text-xs text-gray-500">
+              Fwd: {formatPE(companyInfo.forwardPE)}
+            </div>
+          )}
+        </div>
+
+        {/* Dividend Yield */}
+        <div className="bg-slate-900/50 rounded-lg p-2.5 sm:p-3">
+          <div className="text-xs text-gray-400 mb-1">Dividendenrendite</div>
+          <div className={`text-sm sm:text-base font-semibold ${
+            companyInfo.dividendYield === undefined || companyInfo.dividendYield === 0 ? 'text-white' :
+            companyInfo.dividendYield > 4 ? 'text-green-400' : 
+            companyInfo.dividendYield > 2 ? 'text-blue-400' : 'text-white'
+          }`}>
+            {companyInfo.dividendYield !== undefined && companyInfo.dividendYield > 0 
+              ? `${companyInfo.dividendYield.toFixed(2)}%` 
+              : '—'}
+          </div>
+          {companyInfo.eps !== undefined && (
+            <div className="text-xs text-gray-500">
+              EPS: ${companyInfo.eps.toFixed(2)}
+            </div>
           )}
         </div>
 
@@ -173,23 +204,52 @@ export function CompanyInfoPanel({ symbol }: CompanyInfoPanelProps) {
           <div className="text-sm sm:text-base font-semibold text-white">
             {formatVolume(companyInfo.volume)}
           </div>
-        </div>
-
-        {/* Day Range */}
-        <div className="bg-slate-900/50 rounded-lg p-2.5 sm:p-3">
-          <div className="text-xs text-gray-400 mb-1">Währung</div>
-          <div className="text-sm sm:text-base font-semibold text-white">
-            {companyInfo.currency}
-          </div>
-          <div className="text-xs text-gray-500">
-            Originale Notierung
-          </div>
+          {companyInfo.beta !== undefined && (
+            <div className="text-xs text-gray-500">
+              Beta: {companyInfo.beta.toFixed(2)}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Info note */}
-      <div className="text-xs text-gray-500 pt-2 border-t border-slate-700/50">
-        💱 Preise in EUR umgerechnet zum aktuellen Wechselkurs
+      {/* 52-Week Range */}
+      {companyInfo.fiftyTwoWeekLow && companyInfo.fiftyTwoWeekHigh && (
+        <div className="bg-slate-900/50 rounded-lg p-2.5 sm:p-3">
+          <div className="text-xs text-gray-400 mb-2">52-Wochen Bereich</div>
+          <div className="flex justify-between text-sm font-semibold text-white mb-1">
+            <span>{formatCurrency(companyInfo.fiftyTwoWeekLow, 'USD')}</span>
+            <span>{formatCurrency(companyInfo.fiftyTwoWeekHigh, 'USD')}</span>
+          </div>
+          {/* Position indicator */}
+          <div className="relative h-2 bg-slate-700 rounded-full overflow-hidden">
+            <div 
+              className="absolute h-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 opacity-30"
+              style={{ width: '100%' }}
+            />
+            <div 
+              className="absolute h-full w-2 bg-blue-500 rounded-full transform -translate-x-1/2"
+              style={{
+                left: `${Math.min(100, Math.max(0, 
+                  ((companyInfo.priceUSD - companyInfo.fiftyTwoWeekLow) / 
+                  (companyInfo.fiftyTwoWeekHigh - companyInfo.fiftyTwoWeekLow)) * 100
+                ))}%`
+              }}
+            />
+          </div>
+          <div className="text-xs text-gray-500 mt-1 text-center">
+            Aktuell: {formatCurrency(companyInfo.priceUSD, 'USD')}
+          </div>
+        </div>
+      )}
+
+      {/* Data sources and info */}
+      <div className="text-xs text-gray-500 pt-2 border-t border-slate-700/50 flex justify-between items-center flex-wrap gap-2">
+        <span>💱 Preise in EUR umgerechnet zum aktuellen Wechselkurs</span>
+        {companyInfo.dataSources && companyInfo.dataSources.length > 0 && (
+          <span className="text-gray-600" title={`Daten von: ${companyInfo.dataSources.join(', ')}`}>
+            📊 {companyInfo.dataSources.join(', ')}
+          </span>
+        )}
       </div>
     </div>
   );

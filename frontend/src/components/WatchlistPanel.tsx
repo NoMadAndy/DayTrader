@@ -2,6 +2,7 @@
  * Watchlist Panel Component
  * 
  * Displays all user's symbols with trading recommendations per holding period.
+ * Shows comprehensive company data aggregated from multiple providers.
  * Allows managing the watchlist (add/remove symbols).
  * 
  * - Non-authenticated users see default symbols only (read-only)
@@ -28,6 +29,15 @@ import {
   addCustomSymbolToServer, 
   removeCustomSymbolFromServer 
 } from '../services/userSettingsService';
+import { fetchCompanyInfo, type CompanyInfo } from '../services/companyInfoService';
+
+// Helper function to format market cap
+function formatMarketCap(value: number): string {
+  if (value >= 1e12) return `${(value / 1e12).toFixed(1)}T`;
+  if (value >= 1e9) return `${(value / 1e9).toFixed(1)}Mrd`;
+  if (value >= 1e6) return `${(value / 1e6).toFixed(1)}Mio`;
+  return value.toLocaleString('de-DE');
+}
 
 interface WatchlistStock {
   symbol: string;
@@ -36,8 +46,10 @@ interface WatchlistStock {
 
 interface WatchlistItem extends WatchlistStock {
   currentPrice?: number;
+  priceEUR?: number;
   priceChange?: number;
   signals?: TradingSignalSummary;
+  companyInfo?: CompanyInfo;
   isLoading: boolean;
   error?: string;
 }
@@ -98,7 +110,11 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
   // Fetch data for a single symbol
   const fetchSymbolData = useCallback(async (symbol: string): Promise<Partial<WatchlistItem>> => {
     try {
-      const stockData = await dataService.fetchStockData(symbol);
+      // Fetch stock data and company info in parallel
+      const [stockData, companyInfo] = await Promise.all([
+        dataService.fetchStockData(symbol),
+        fetchCompanyInfo(symbol)
+      ]);
       
       if (!stockData || stockData.data.length === 0) {
         return { error: 'Keine Daten', isLoading: false };
@@ -125,8 +141,10 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
 
       return {
         currentPrice,
+        priceEUR: companyInfo?.priceEUR,
         priceChange,
         signals,
+        companyInfo: companyInfo ?? undefined,
         isLoading: false,
         error: undefined,
       };
@@ -416,8 +434,9 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                   <span className="text-[10px] text-red-400">{item.error}</span>
                 ) : (
                   <div className="text-right">
-                    <div className="text-sm font-medium text-white">
-                      ${item.currentPrice?.toFixed(2)}
+                    <div className="text-sm font-medium text-white flex items-center gap-1">
+                      <span className="text-green-400">€{item.priceEUR?.toFixed(2) || '—'}</span>
+                      <span className="text-gray-500 text-xs">${item.currentPrice?.toFixed(2)}</span>
                     </div>
                     <div className={`text-[10px] sm:text-xs ${(item.priceChange ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {(item.priceChange ?? 0) >= 0 ? '+' : ''}{item.priceChange?.toFixed(2)}%
@@ -469,6 +488,46 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                     </span>
                   );
                 })}
+              </div>
+            )}
+
+            {/* Company Info Row - KGV, Market Cap, Dividende */}
+            {!item.isLoading && !item.error && item.companyInfo && (
+              <div className="mt-2 pt-2 border-t border-slate-700/50 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] sm:text-xs text-gray-400">
+                {item.companyInfo.marketCapEUR !== undefined && (
+                  <span title="Marktkapitalisierung">
+                    <span className="text-gray-500">MKap:</span>{' '}
+                    <span className="text-gray-300">
+                      €{formatMarketCap(item.companyInfo.marketCapEUR)}
+                    </span>
+                  </span>
+                )}
+                {item.companyInfo.peRatio !== undefined && (
+                  <span title="Kurs-Gewinn-Verhältnis">
+                    <span className="text-gray-500">KGV:</span>{' '}
+                    <span className={`${item.companyInfo.peRatio > 30 ? 'text-yellow-400' : item.companyInfo.peRatio < 15 ? 'text-green-400' : 'text-gray-300'}`}>
+                      {item.companyInfo.peRatio.toFixed(1)}
+                    </span>
+                  </span>
+                )}
+                {item.companyInfo.dividendYield !== undefined && item.companyInfo.dividendYield > 0 && (
+                  <span title="Dividendenrendite">
+                    <span className="text-gray-500">Div:</span>{' '}
+                    <span className={`${item.companyInfo.dividendYield > 3 ? 'text-green-400' : 'text-gray-300'}`}>
+                      {item.companyInfo.dividendYield.toFixed(2)}%
+                    </span>
+                  </span>
+                )}
+                {item.companyInfo.industry && (
+                  <span className="text-gray-500 truncate max-w-[120px]" title={item.companyInfo.industry}>
+                    {item.companyInfo.industry}
+                  </span>
+                )}
+                {item.companyInfo.dataSources && item.companyInfo.dataSources.length > 0 && (
+                  <span className="text-gray-600 text-[9px]" title={`Daten von: ${item.companyInfo.dataSources.join(', ')}`}>
+                    [{item.companyInfo.dataSources.length} Quellen]
+                  </span>
+                )}
               </div>
             )}
           </div>

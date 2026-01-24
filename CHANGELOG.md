@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Multi-Provider Datenaggregation** - Unternehmensdaten werden von allen verfügbaren Quellen zusammengeführt
+  - Yahoo Finance: Preisdaten, 52-Wochen-Range, Volumen
+  - Finnhub: Unternehmensprofil (Marktkapitalisierung, Branche, ISIN), Finanzkennzahlen (KGV, Dividendenrendite, Beta)
+  - Alpha Vantage: Unternehmensübersicht (Name, Sektor, KGV, EPS)
+  - Twelve Data: Echtzeit-Kurse
+  - Automatischer Fallback: Wenn eine Quelle keine Daten hat, werden andere abgefragt
+  - Datenquellen-Anzeige: Zeigt an, von welchen Providern die Daten stammen
+- **Erweiterte Unternehmenskennzahlen** - Neue Datenfelder hinzugefügt
+  - Marktkapitalisierung in EUR und USD
+  - KGV (P/E Ratio) mit Forward P/E
+  - Dividendenrendite in Prozent
+  - EPS (Earnings per Share)
+  - Beta-Faktor
+  - Branche und Sektor
+  - ISIN und CUSIP Identifikatoren
+- **Watchlist mit EUR-Preisen** - Preise werden jetzt auch in EUR angezeigt
+  - Primärer Preis in EUR (grün), USD als Sekundärpreis
+  - Marktkapitalisierung, KGV und Dividende werden angezeigt
+  - Branche wird für jeden Titel angezeigt
+  - Quellen-Indikator zeigt Anzahl der verwendeten Datenquellen
 - **Company Info Panel** - Neues Panel im Dashboard mit Unternehmensinformationen
   - Preise werden in Euro (EUR) angezeigt, mit USD-Preis als Referenz
   - 52-Wochen Hoch/Tief mit visuellem Positionsindikator
