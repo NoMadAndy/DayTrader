@@ -18,6 +18,7 @@ import { LoginForm } from './LoginForm';
 import { RegisterForm } from './RegisterForm';
 import { ChangelogPanel } from './ChangelogPanel';
 import { DataSourceSelector } from './DataSourceSelector';
+import { WatchlistPanel } from './WatchlistPanel';
 import type { DataServiceConfig } from '../services/dataService';
 
 // Build info from Vite config
@@ -60,12 +61,12 @@ function saveConfig(config: ApiConfig): void {
   }
 }
 
-type MenuTab = 'api' | 'data-source' | 'settings' | 'technical' | 'changelog' | 'auth';
+type MenuTab = 'watchlist' | 'api' | 'data-source' | 'settings' | 'technical' | 'changelog' | 'auth';
 
 export function HamburgerMenu() {
   const { setConfig } = useDataService();
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<MenuTab>('api');
+  const [activeTab, setActiveTab] = useState<MenuTab>('watchlist');
   const [localConfig, setLocalConfig] = useState<ApiConfig>(loadStoredConfig);
   const [saved, setSaved] = useState(false);
   const [authState, setAuthState] = useState<AuthState>(getAuthState());
@@ -181,6 +182,15 @@ export function HamburgerMenu() {
                     localConfig.twelveDataApiKey || localConfig.newsApiKey;
 
   const tabs: { id: MenuTab; label: string; icon: React.ReactNode }[] = [
+    {
+      id: 'watchlist',
+      label: 'Watchlist',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+        </svg>
+      ),
+    },
     {
       id: 'api',
       label: 'API',
@@ -305,6 +315,18 @@ export function HamburgerMenu() {
 
             {/* Tab Content */}
             <div className="flex-1 overflow-y-auto p-4">
+              {/* Watchlist Tab */}
+              {activeTab === 'watchlist' && (
+                <WatchlistPanel 
+                  onSelectSymbol={(symbol) => {
+                    // Close menu and navigate to symbol
+                    setIsOpen(false);
+                    // Emit custom event for symbol selection
+                    window.dispatchEvent(new CustomEvent('selectSymbol', { detail: symbol }));
+                  }}
+                />
+              )}
+
               {/* API Settings Tab */}
               {activeTab === 'api' && (
                 <div className="space-y-4">

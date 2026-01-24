@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Watchlist Panel** - Neue Übersicht aller beobachteten Aktien im Hamburger-Menü
+  - Zeigt alle Symbole mit aktuellem Preis und Änderung
+  - Trading-Empfehlungen für 4 Haltedauern (1h, 1d, 1w, Long) pro Symbol
+  - Farbcodierte Signale: 🚀 Starker Kauf, 📈 Kauf, ➡️ Halten, 📉 Verkauf, ⚠️ Starker Verkauf
+  - Filter nach Haltedauer zum Vergleichen
+  - Sortierung nach Name (A-Z) oder Score
+  - Symbole hinzufügen/entfernen direkt in der Watchlist
+  - Klick auf Symbol wechselt zur Detailansicht
+  - Auto-Refresh aller Daten mit Batch-Verarbeitung
 - **Data Freshness Indicator** - Neuer Indikator zeigt Alter aller Daten
   - Farbcodierte Anzeige: Grün (aktuell), Gelb (nicht ganz aktuell), Rot (veraltet)
   - Separate Schwellwerte für verschiedene Datentypen:

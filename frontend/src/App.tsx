@@ -28,6 +28,18 @@ function AppContent() {
     initializeAuth();
   }, []);
 
+  // Listen for symbol selection from Watchlist in HamburgerMenu
+  useEffect(() => {
+    const handleSelectSymbol = (event: CustomEvent<string>) => {
+      setSelectedSymbol(event.detail);
+    };
+    
+    window.addEventListener('selectSymbol', handleSelectSymbol as EventListener);
+    return () => {
+      window.removeEventListener('selectSymbol', handleSelectSymbol as EventListener);
+    };
+  }, []);
+
   // State for ML predictions (shared with NewsPanel for combined trading signals)
   const [mlPredictions, setMlPredictions] = useState<MLPrediction[] | null>(null);
   
