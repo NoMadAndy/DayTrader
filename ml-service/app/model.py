@@ -209,7 +209,8 @@ class StockPredictor:
         self,
         X: np.ndarray,
         y: np.ndarray,
-        sequence_length: int
+        sequence_length: int,
+        forecast_days: int
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Create sequences for LSTM training
@@ -218,21 +219,24 @@ class StockPredictor:
             X: Feature matrix (samples, features)
             y: Target values (samples, forecast_days)
             sequence_length: Number of time steps in each sequence
+            forecast_days: Number of days to forecast
             
         Returns:
             Tuple of (X_sequences, y_sequences)
         """
         X_seq, y_seq = [], []
         
-        for i in range(len(X) - sequence_length - settings.forecast_days + 1):
+        for i in range(len(X) - sequence_length - forecast_days + 1):
             X_seq.append(X[i:i + sequence_length])
-            y_seq.append(y[i + sequence_length:i + sequence_length + settings.forecast_days])
+            y_seq.append(y[i + sequence_length:i + sequence_length + forecast_days])
         
         return np.array(X_seq), np.array(y_seq)
     
     def prepare_data(
         self,
-        ohlcv_data: List[dict]
+        ohlcv_data: List[dict],
+        sequence_length: Optional[int] = None,
+        forecast_days: Optional[int] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Prepare data for training
@@ -240,10 +244,15 @@ class StockPredictor:
         Args:
             ohlcv_data: List of OHLCV dictionaries with keys:
                        timestamp, open, high, low, close, volume
+            sequence_length: Number of time steps in each sequence (default from settings)
+            forecast_days: Number of days to forecast (default from settings)
                        
         Returns:
             Tuple of (X_train, y_train, X_val, y_val) tensors
         """
+        seq_len = sequence_length or settings.sequence_length
+        fc_days = forecast_days or settings.forecast_days
+        
         # Convert to DataFrame
         df = pd.DataFrame(ohlcv_data)
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
@@ -264,15 +273,16 @@ class StockPredictor:
         X_seq, y_seq = self._create_sequences(
             X_scaled,
             y_scaled,
-            settings.sequence_length
+            seq_len,
+            fc_days
         )
         
         # Reshape y_seq to (samples, forecast_days)
         # Each target is the next forecast_days of scaled close prices
         y_targets = []
         for i in range(len(X_seq)):
-            start_idx = settings.sequence_length + i
-            end_idx = start_idx + settings.forecast_days
+            start_idx = seq_len + i
+            end_idx = start_idx + fc_days
             if end_idx <= len(y_scaled):
                 y_targets.append(y_scaled[start_idx:end_idx])
         
@@ -294,6 +304,8 @@ class StockPredictor:
         ohlcv_data: List[dict],
         epochs: Optional[int] = None,
         learning_rate: Optional[float] = None,
+        sequence_length: Optional[int] = None,
+        forecast_days: Optional[int] = None,
         early_stopping_patience: int = 10
     ) -> dict:
         """
@@ -303,6 +315,8 @@ class StockPredictor:
             ohlcv_data: Historical OHLCV data
             epochs: Number of training epochs (default from settings)
             learning_rate: Learning rate (default from settings)
+            sequence_length: Number of time steps in each sequence (default from settings)
+            forecast_days: Number of days to forecast (default from settings)
             early_stopping_patience: Epochs to wait before early stopping
             
         Returns:
@@ -311,16 +325,27 @@ class StockPredictor:
         epochs = epochs or settings.epochs
         learning_rate = learning_rate or settings.learning_rate
         
-        # Prepare data
-        X_train, y_train, X_val, y_val = self.prepare_data(ohlcv_data)
+        # Store custom parameters for this training session
+        self._train_sequence_length = sequence_length or settings.sequence_length
+        self._train_forecast_days = forecast_days or settings.forecast_days
         
-        # Initialize model
+        print(f"[ML Training] Parameters: epochs={epochs}, lr={learning_rate}, "
+              f"seq_len={self._train_sequence_length}, forecast_days={self._train_forecast_days}")
+        
+        # Prepare data with custom parameters
+        X_train, y_train, X_val, y_val = self.prepare_data(
+            ohlcv_data,
+            sequence_length=self._train_sequence_length,
+            forecast_days=self._train_forecast_days
+        )
+        
+        # Initialize model with custom forecast_days
         input_size = X_train.shape[2]  # Number of features
         self.model = LSTMModel(
             input_size=input_size,
             hidden_size=128,
             num_layers=2,
-            output_size=settings.forecast_days,
+            output_size=self._train_forecast_days,
             dropout=0.2
         ).to(self.device)
         
@@ -397,8 +422,8 @@ class StockPredictor:
             'best_val_loss': best_val_loss,
             'device': str(self.device),
             'input_features': self.feature_names,
-            'sequence_length': settings.sequence_length,
-            'forecast_days': settings.forecast_days,
+            'sequence_length': self._train_sequence_length,
+            'forecast_days': self._train_forecast_days,
             'data_points': len(ohlcv_data)
         }
         

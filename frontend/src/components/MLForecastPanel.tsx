@@ -10,7 +10,27 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { mlService, type MLPredictResponse, type MLTrainStatus, type MLServiceHealth } from '../services';
+import { DEFAULT_ML_SETTINGS, type MLSettings } from '../services/userSettingsService';
 import type { OHLCV } from '../types/stock';
+
+// ML Settings storage key (same as in SettingsPage)
+const ML_SETTINGS_STORAGE_KEY = 'daytrader_ml_settings';
+
+/**
+ * Get ML settings from localStorage
+ * Falls back to defaults if not found
+ */
+function getMLSettings(): MLSettings {
+  try {
+    const stored = localStorage.getItem(ML_SETTINGS_STORAGE_KEY);
+    if (stored) {
+      return { ...DEFAULT_ML_SETTINGS, ...JSON.parse(stored) };
+    }
+  } catch {
+    console.warn('Failed to load ML settings from localStorage');
+  }
+  return { ...DEFAULT_ML_SETTINGS };
+}
 
 interface MLForecastPanelProps {
   symbol: string;
@@ -117,7 +137,16 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
     setIsTraining(true);
     setError(null);
     
-    const result = await mlService.startTraining(symbol, stockData);
+    // Get ML settings from localStorage
+    const mlSettings = getMLSettings();
+    console.log('[ML Training] Using settings:', mlSettings);
+    
+    const result = await mlService.startTraining(symbol, stockData, {
+      epochs: mlSettings.epochs,
+      learningRate: mlSettings.learningRate,
+      sequenceLength: mlSettings.sequenceLength,
+      forecastDays: mlSettings.forecastDays,
+    });
     
     if (!result.success) {
       setIsTraining(false);

@@ -137,7 +137,12 @@ class MLServiceClient {
   async startTraining(
     symbol: string,
     data: OHLCV[],
-    options?: { epochs?: number; learningRate?: number }
+    options?: { 
+      epochs?: number; 
+      learningRate?: number;
+      sequenceLength?: number;
+      forecastDays?: number;
+    }
   ): Promise<{ success: boolean; message: string; statusUrl?: string }> {
     try {
       const response = await fetch(`${ML_API_BASE}/train`, {
@@ -154,7 +159,9 @@ class MLServiceClient {
             volume: d.volume
           })),
           epochs: options?.epochs,
-          learning_rate: options?.learningRate
+          learning_rate: options?.learningRate,
+          sequence_length: options?.sequenceLength,
+          forecast_days: options?.forecastDays
         })
       });
 

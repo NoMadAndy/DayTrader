@@ -79,6 +79,8 @@ class TrainRequest(BaseModel):
     data: List[OHLCVData] = Field(..., description="Historical OHLCV data")
     epochs: Optional[int] = Field(None, description="Training epochs")
     learning_rate: Optional[float] = Field(None, description="Learning rate")
+    sequence_length: Optional[int] = Field(None, description="Sequence length for LSTM input")
+    forecast_days: Optional[int] = Field(None, description="Number of days to forecast")
 
 
 class PredictRequest(BaseModel):
@@ -226,7 +228,14 @@ async def get_model_info(symbol: str):
     }
 
 
-async def train_model_background(symbol: str, data: List[dict], epochs: int, learning_rate: float):
+async def train_model_background(
+    symbol: str, 
+    data: List[dict], 
+    epochs: int, 
+    learning_rate: float,
+    sequence_length: int,
+    forecast_days: int
+):
     """Background task for model training"""
     try:
         training_status[symbol] = {
@@ -243,11 +252,13 @@ async def train_model_background(symbol: str, data: List[dict], epochs: int, lea
         training_status[symbol]["message"] = "Preparing data..."
         training_status[symbol]["progress"] = 10
         
-        # Train
+        # Train with custom parameters
         result = predictor.train(
             ohlcv_data,
             epochs=epochs,
-            learning_rate=learning_rate
+            learning_rate=learning_rate,
+            sequence_length=sequence_length,
+            forecast_days=forecast_days
         )
         
         training_status[symbol]["progress"] = 90
@@ -285,11 +296,16 @@ async def train_model(request: TrainRequest, background_tasks: BackgroundTasks):
     """
     symbol = request.symbol.upper()
     
+    # Use request params or fall back to settings defaults
+    seq_length = request.sequence_length or settings.sequence_length
+    fc_days = request.forecast_days or settings.forecast_days
+    
     # Validate data
-    if len(request.data) < settings.sequence_length + settings.forecast_days + 50:
+    min_data_points = seq_length + fc_days + 50
+    if len(request.data) < min_data_points:
         raise HTTPException(
             status_code=400,
-            detail=f"Need at least {settings.sequence_length + settings.forecast_days + 50} data points for training"
+            detail=f"Need at least {min_data_points} data points for training (sequence_length={seq_length}, forecast_days={fc_days})"
         )
     
     # Check if already training
@@ -302,19 +318,21 @@ async def train_model(request: TrainRequest, background_tasks: BackgroundTasks):
     # Convert to dict format
     data = [d.model_dump() for d in request.data]
     
-    # Start training in background
+    # Start training in background with all parameters
     background_tasks.add_task(
         train_model_background,
         symbol,
         data,
         request.epochs or settings.epochs,
-        request.learning_rate or settings.learning_rate
+        request.learning_rate or settings.learning_rate,
+        seq_length,
+        fc_days
     )
     
     training_status[symbol] = {
         "status": "starting",
         "progress": 0,
-        "message": "Training job queued"
+        "message": f"Training job queued (epochs={request.epochs or settings.epochs}, seq_len={seq_length}, forecast={fc_days})"
     }
     
     return {
