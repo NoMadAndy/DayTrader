@@ -18,7 +18,7 @@ export default defineConfig({
     },
   },
   define: {
-    __BUILD_VERSION__: JSON.stringify(process.env.BUILD_VERSION || '1.3.0'),
+    __BUILD_VERSION__: JSON.stringify(process.env.BUILD_VERSION || '1.4.0'),
     __BUILD_COMMIT__: JSON.stringify(process.env.BUILD_COMMIT || 'dev'),
     __BUILD_TIME__: JSON.stringify(process.env.BUILD_TIME || new Date().toISOString()),
   },

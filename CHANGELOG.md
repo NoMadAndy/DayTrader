@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.4.0] - 2026-01-24
 
 ### Added
 - **Historisches Backtesting** - Handeln mit historischen Kursdaten
@@ -51,6 +51,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `backtest_orders` - Orders innerhalb eines Backtests
   - `backtest_trades` - Ausgeführte Trades
   - `backtest_snapshots` - Equity-Kurve Snapshots
+
+- **ML Settings greifen jetzt beim Training**
+  - Einstellungen werden aus localStorage gelesen
+  - Parameter (Epochen, Lernrate, Sequenzlänge, Vorhersagetage) werden an ML-Service übergeben
+  - ML-Service nutzt übergebene Parameter statt nur Environment-Defaults
+  - ML Settings werden pro User in PostgreSQL gespeichert
 
 - **Erweiterte Trading-Features für Börsenspiel**
   
@@ -104,7 +110,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Automatische Benachrichtigung bei ausgelösten SL/TP/Knockout
   - Live-Aktualisierung der Position-P&L mit aktuellen Kursen
 
-## [1.4.0] - 2026-01-24
+### Fixed
+- PostgreSQL reserved keyword conflict (`current_date` → `simulation_date`)
+- BacktestPage modal and trading panel input styling (white on white text)
+- HTML validation error: nested buttons in StockSelector
+
+## [1.3.0] - 2026-01-20
 
 ### Added
 - **Paper Trading / Börsenspiel** - Vollständige Trading-Simulation mit virtuellem Geld

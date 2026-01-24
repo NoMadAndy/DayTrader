@@ -20,7 +20,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Build info from environment (set during Docker build)
-const BUILD_VERSION = process.env.BUILD_VERSION || '0.1.0';
+const BUILD_VERSION = process.env.BUILD_VERSION || '1.4.0';
 const BUILD_COMMIT = process.env.BUILD_COMMIT || 'unknown';
 const BUILD_TIME = process.env.BUILD_TIME || new Date().toISOString();
 
