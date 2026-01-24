@@ -59,9 +59,10 @@ services:
     environment:
       - NODE_ENV=${APP_ENV:-production}
       - CORS_ORIGIN=${CORS_ORIGIN:-*}
-      - ML_SERVICE_URL=http://ml-service:8000
+      - ML_SERVICE_URL=${ML_SERVICE_URL:-http://ml-service:8000}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-daytrader}:${POSTGRES_PASSWORD:-daytrader_secret}@postgres:5432/${POSTGRES_DB:-daytrader}
 
+  # ML service - CPU by default, GPU via docker-compose.gpu.yml
   ml-service:
     build:
       context: ./ml-service
@@ -75,13 +76,6 @@ services:
     restart: unless-stopped
     volumes:
       - ml-models:/app/models
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -89,7 +83,7 @@ services:
       retries: 3
       start_period: 30s
     environment:
-      - USE_CUDA=${USE_CUDA:-true}
+      - USE_CUDA=${USE_CUDA:-false}
       - MODEL_DIR=/app/models
       - SEQUENCE_LENGTH=${ML_SEQUENCE_LENGTH:-60}
       - FORECAST_DAYS=${ML_FORECAST_DAYS:-14}

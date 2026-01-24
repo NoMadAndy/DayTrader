@@ -14,6 +14,7 @@ import compression from 'compression';
 import db from './db.js';
 import { registerUser, loginUser, logoutUser, authMiddleware, optionalAuthMiddleware } from './auth.js';
 import { getUserSettings, updateUserSettings, getCustomSymbols, addCustomSymbol, removeCustomSymbol, syncCustomSymbols } from './userSettings.js';
+import * as trading from './trading.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -745,6 +746,311 @@ app.post('/api/ml/sentiment/analyze/batch', express.json({ limit: '5mb' }), asyn
   }
 });
 
+// ============================================================================
+// Paper Trading / Stock Market Simulation Endpoints
+// ============================================================================
+
+/**
+ * Get broker profiles configuration
+ * GET /api/trading/broker-profiles
+ */
+app.get('/api/trading/broker-profiles', (req, res) => {
+  res.json(trading.BROKER_PROFILES);
+});
+
+/**
+ * Get product types configuration
+ * GET /api/trading/product-types
+ */
+app.get('/api/trading/product-types', (req, res) => {
+  res.json(trading.PRODUCT_TYPES);
+});
+
+/**
+ * Calculate fees preview (no auth required for preview)
+ * POST /api/trading/calculate-fees
+ * Body: { productType, side, quantity, price, leverage?, brokerProfile? }
+ */
+app.post('/api/trading/calculate-fees', express.json(), (req, res) => {
+  try {
+    const fees = trading.calculateFees(req.body);
+    res.json(fees);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+/**
+ * Get user's portfolios
+ * GET /api/trading/portfolios
+ */
+app.get('/api/trading/portfolios', authMiddleware, async (req, res) => {
+  try {
+    const portfolios = await trading.getUserPortfolios(req.user.id);
+    res.json(portfolios);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get portfolios' });
+  }
+});
+
+/**
+ * Get or create default portfolio
+ * GET /api/trading/portfolio
+ */
+app.get('/api/trading/portfolio', authMiddleware, async (req, res) => {
+  try {
+    const portfolio = await trading.getOrCreatePortfolio(req.user.id);
+    res.json(portfolio);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get portfolio' });
+  }
+});
+
+/**
+ * Get specific portfolio by ID
+ * GET /api/trading/portfolio/:id
+ */
+app.get('/api/trading/portfolio/:id', authMiddleware, async (req, res) => {
+  try {
+    const portfolio = await trading.getPortfolio(parseInt(req.params.id), req.user.id);
+    if (!portfolio) {
+      return res.status(404).json({ error: 'Portfolio not found' });
+    }
+    res.json(portfolio);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get portfolio' });
+  }
+});
+
+/**
+ * Update portfolio settings
+ * PUT /api/trading/portfolio/:id/settings
+ * Body: { brokerProfile?, maxPositionPercent?, maxLeverage?, ... }
+ */
+app.put('/api/trading/portfolio/:id/settings', authMiddleware, express.json(), async (req, res) => {
+  try {
+    const portfolio = await trading.updatePortfolioSettings(
+      parseInt(req.params.id), 
+      req.user.id, 
+      req.body
+    );
+    if (!portfolio) {
+      return res.status(404).json({ error: 'Portfolio not found' });
+    }
+    res.json(portfolio);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to update portfolio settings' });
+  }
+});
+
+/**
+ * Set initial capital (and reset portfolio)
+ * PUT /api/trading/portfolio/:id/capital
+ * Body: { initialCapital: number }
+ */
+app.put('/api/trading/portfolio/:id/capital', authMiddleware, express.json(), async (req, res) => {
+  try {
+    console.log('Set capital request:', { body: req.body, params: req.params, userId: req.user?.id });
+    
+    let { initialCapital } = req.body;
+    
+    // Accept both string and number
+    if (typeof initialCapital === 'string') {
+      initialCapital = parseFloat(initialCapital);
+    }
+    
+    if (typeof initialCapital !== 'number' || isNaN(initialCapital)) {
+      console.log('Invalid capital value:', { initialCapital, type: typeof initialCapital, body: req.body });
+      return res.status(400).json({ error: 'initialCapital must be a valid number' });
+    }
+    
+    const portfolio = await trading.setInitialCapital(
+      parseInt(req.params.id), 
+      req.user.id, 
+      initialCapital
+    );
+    console.log('Capital set successfully:', { portfolioId: portfolio.id, newCapital: initialCapital });
+    res.json(portfolio);
+  } catch (e) {
+    console.error('Set capital error:', e.message);
+    res.status(400).json({ error: e.message || 'Failed to set initial capital' });
+  }
+});
+
+/**
+ * Reset portfolio
+ * POST /api/trading/portfolio/:id/reset
+ */
+app.post('/api/trading/portfolio/:id/reset', authMiddleware, async (req, res) => {
+  try {
+    const portfolio = await trading.resetPortfolio(parseInt(req.params.id), req.user.id);
+    res.json(portfolio);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to reset portfolio' });
+  }
+});
+
+/**
+ * Get portfolio metrics and performance
+ * GET /api/trading/portfolio/:id/metrics
+ */
+app.get('/api/trading/portfolio/:id/metrics', authMiddleware, async (req, res) => {
+  try {
+    const metrics = await trading.getPortfolioMetrics(parseInt(req.params.id), req.user.id);
+    res.json(metrics);
+  } catch (e) {
+    console.error('Get metrics error:', e);
+    res.status(500).json({ error: 'Failed to get portfolio metrics' });
+  }
+});
+
+/**
+ * Get open positions
+ * GET /api/trading/portfolio/:id/positions
+ */
+app.get('/api/trading/portfolio/:id/positions', authMiddleware, async (req, res) => {
+  try {
+    const positions = await trading.getOpenPositions(parseInt(req.params.id), req.user.id);
+    res.json(positions);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get positions' });
+  }
+});
+
+/**
+ * Get all positions (including closed)
+ * GET /api/trading/portfolio/:id/positions/all
+ */
+app.get('/api/trading/portfolio/:id/positions/all', authMiddleware, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 100;
+    const positions = await trading.getAllPositions(parseInt(req.params.id), req.user.id, limit);
+    res.json(positions);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get positions' });
+  }
+});
+
+/**
+ * Update position current price
+ * PUT /api/trading/position/:id/price
+ * Body: { currentPrice }
+ */
+app.put('/api/trading/position/:id/price', authMiddleware, express.json(), async (req, res) => {
+  try {
+    const { currentPrice } = req.body;
+    if (typeof currentPrice !== 'number') {
+      return res.status(400).json({ error: 'currentPrice is required' });
+    }
+    
+    const position = await trading.updatePositionPrice(
+      parseInt(req.params.id), 
+      req.user.id, 
+      currentPrice
+    );
+    
+    if (!position) {
+      return res.status(404).json({ error: 'Position not found' });
+    }
+    res.json(position);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to update position price' });
+  }
+});
+
+/**
+ * Close a position
+ * POST /api/trading/position/:id/close
+ * Body: { currentPrice }
+ */
+app.post('/api/trading/position/:id/close', authMiddleware, express.json(), async (req, res) => {
+  try {
+    const { currentPrice } = req.body;
+    if (typeof currentPrice !== 'number') {
+      return res.status(400).json({ error: 'currentPrice is required' });
+    }
+    
+    const result = await trading.closePosition(
+      parseInt(req.params.id), 
+      req.user.id, 
+      currentPrice
+    );
+    
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to close position' });
+  }
+});
+
+/**
+ * Execute a market order
+ * POST /api/trading/order/market
+ * Body: { portfolioId, symbol, side, quantity, currentPrice, productType?, leverage?, stopLoss?, takeProfit?, knockoutLevel? }
+ */
+app.post('/api/trading/order/market', authMiddleware, express.json(), async (req, res) => {
+  try {
+    const { portfolioId, symbol, side, quantity, currentPrice, ...options } = req.body;
+    
+    if (!portfolioId || !symbol || !side || !quantity || !currentPrice) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: portfolioId, symbol, side, quantity, currentPrice' 
+      });
+    }
+    
+    if (!['buy', 'sell', 'short'].includes(side)) {
+      return res.status(400).json({ error: 'Invalid side. Must be buy, sell, or short' });
+    }
+    
+    const result = await trading.executeMarketOrder({
+      userId: req.user.id,
+      portfolioId,
+      symbol: symbol.toUpperCase(),
+      side,
+      quantity,
+      currentPrice,
+      ...options
+    });
+    
+    res.json(result);
+  } catch (e) {
+    console.error('Market order error:', e);
+    res.status(500).json({ error: 'Failed to execute market order' });
+  }
+});
+
+/**
+ * Get transaction history
+ * GET /api/trading/portfolio/:id/transactions
+ */
+app.get('/api/trading/portfolio/:id/transactions', authMiddleware, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
+    const transactions = await trading.getTransactionHistory(
+      parseInt(req.params.id), 
+      req.user.id, 
+      limit, 
+      offset
+    );
+    res.json(transactions);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get transactions' });
+  }
+});
+
+/**
+ * Get fee summary
+ * GET /api/trading/portfolio/:id/fees
+ */
+app.get('/api/trading/portfolio/:id/fees', authMiddleware, async (req, res) => {
+  try {
+    const summary = await trading.getFeeSummary(parseInt(req.params.id), req.user.id);
+    res.json(summary);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get fee summary' });
+  }
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });
@@ -762,12 +1068,30 @@ const startServer = async () => {
   if (process.env.DATABASE_URL) {
     try {
       await db.initializeDatabase();
+      await trading.initializeTradingSchema();
       console.log('Database connected and initialized');
       
       // Schedule session cleanup every hour
       setInterval(() => {
         db.cleanupExpiredSessions();
       }, 60 * 60 * 1000);
+      
+      // Schedule overnight fee processing daily at 00:00 UTC
+      const scheduleOvernightFees = () => {
+        const now = new Date();
+        const midnight = new Date(now);
+        midnight.setUTCHours(24, 0, 0, 0);
+        const msUntilMidnight = midnight.getTime() - now.getTime();
+        
+        setTimeout(() => {
+          trading.processOvernightFees();
+          // Then run every 24 hours
+          setInterval(() => {
+            trading.processOvernightFees();
+          }, 24 * 60 * 60 * 1000);
+        }, msUntilMidnight);
+      };
+      scheduleOvernightFees();
     } catch (e) {
       console.error('Database initialization failed:', e.message);
       console.log('Server will start without database features');

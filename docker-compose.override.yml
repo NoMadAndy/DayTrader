@@ -25,7 +25,10 @@ services:
     environment:
       - APP_ENV=development
       - CHOKIDAR_USEPOLLING=true
-      - VITE_API_BASE_URL=http://backend:3001
+      # BACKEND_URL is for Vite's internal proxy (Docker internal network)
+      - BACKEND_URL=http://backend:3001
+      # VITE_API_BASE_URL should be empty for relative URLs in browser
+      - VITE_API_BASE_URL=
       - VITE_FINNHUB_API_KEY=${VITE_FINNHUB_API_KEY:-}
       - VITE_ALPHA_VANTAGE_API_KEY=${VITE_ALPHA_VANTAGE_API_KEY:-}
       - VITE_TWELVE_DATA_API_KEY=${VITE_TWELVE_DATA_API_KEY:-}
@@ -50,12 +53,11 @@ services:
       - ML_SERVICE_URL=http://ml-service:8000
       - DATABASE_URL=postgresql://${POSTGRES_USER:-daytrader}:${POSTGRES_PASSWORD:-daytrader_secret}@postgres:5432/${POSTGRES_DB:-daytrader}
 
+  # Development ml-service (CPU-only, with hot reload)
   ml-service:
     build:
       context: ./ml-service
       dockerfile: Dockerfile.dev
-    ports:
-      - "${ML_SERVICE_PORT:-8000}:8000"
     volumes:
       - ./ml-service/app:/app/app:ro
       - ml-models-dev:/app/models

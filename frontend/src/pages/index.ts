@@ -9,3 +9,5 @@ export { WatchlistPage } from './WatchlistPage';
 export { SettingsPage } from './SettingsPage';
 export { ChangelogPage } from './ChangelogPage';
 export { InfoPage } from './InfoPage';
+export { TradingPage } from './TradingPage';
+export { PortfolioPage } from './PortfolioPage';

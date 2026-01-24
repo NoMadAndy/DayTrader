@@ -1,0 +1,22 @@
+# GPU override for systems with NVIDIA GPU
+# Usage: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+#
+# For production with GPU:
+# docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d
+#
+# Requirements:
+# - NVIDIA GPU with CUDA support
+# - nvidia-container-toolkit installed
+# - Docker configured to use nvidia runtime
+
+services:
+  ml-service:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - USE_CUDA=true

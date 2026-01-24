@@ -58,3 +58,32 @@ export type {
   StockSearchResult,
   DataSourceType,
 } from './types';
+
+// Trading Service (Paper Trading / Börsenspiel)
+export {
+  getBrokerProfiles,
+  getProductTypes,
+  calculateFees,
+  getPortfolios,
+  getOrCreatePortfolio,
+  getPortfolio,
+  updatePortfolioSettings,
+  setInitialCapital,
+  resetPortfolio,
+  getPortfolioMetrics,
+  getOpenPositions,
+  getAllPositions,
+  updatePositionPrice,
+  closePosition,
+  executeMarketOrder,
+  getTransactionHistory,
+  getFeeSummary,
+  calculatePositionPnL,
+  formatCurrency,
+  formatPercent,
+  getProductTypeName,
+  getSideName,
+  calculateBreakEvenPrice,
+  calculateRiskReward,
+  validateOrder,
+} from './tradingService';

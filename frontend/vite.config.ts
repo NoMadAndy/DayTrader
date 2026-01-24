@@ -9,9 +9,11 @@ export default defineConfig({
     allowedHosts: true,  // Erlaubt alle Hosts (für Reverseproxy)
     proxy: {
       // Proxy API requests to backend in development
+      // Uses BACKEND_URL (Docker internal) not VITE_API_BASE_URL (browser-facing)
       '/api': {
-        target: process.env.VITE_API_BASE_URL || 'http://localhost:3001',
+        target: process.env.BACKEND_URL || 'http://localhost:3001',
         changeOrigin: true,
+        secure: false,
       },
     },
   },

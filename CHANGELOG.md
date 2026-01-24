@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-01-24
+
+### Added
+- **Paper Trading / Börsenspiel** - Vollständige Trading-Simulation mit virtuellem Geld
+  - **Virtuelles Portfolio** mit 100.000€ Startkapital
+  - **Mehrere Produkttypen**: Aktien, CFDs, Knock-Out Zertifikate, Faktor-Zertifikate
+  - **Realistische Handelsgebühren**: Kommissionen, Spreads, Overnight-Gebühren
+  - **Hebelprodukte** mit bis zu 1:30 Hebel (ESMA-konform)
+  - **Margin-System** mit Margin-Warnung und Liquidationsrisiko-Anzeige
+  
+- **Trading-Seite** (`/trading`)
+  - Interaktive Order-Eingabe mit Live-Kostenvorschau
+  - Symbol-Auswahl mit Echtzeit-Kursen
+  - Produkttyp-Wahl (Aktie/CFD/Knockout/Faktor)
+  - Hebel-Slider für CFDs und Hebelprodukte
+  - Stop-Loss und Take-Profit Eingabe
+  - Detaillierte Gebührenvorschau (Kommission, Spread, Break-Even)
+  - Offene Positionen mit Live-P&L
+  - Liquidations-Preis Anzeige für gehebelte Positionen
+  
+- **Portfolio-Seite** (`/portfolio`)
+  - Übersicht: Gesamtwert, Bargeld, P&L-Anzeige
+  - Trading-Statistiken: Win-Rate, Ø Gewinn/Verlust
+  - Gebühren-Aufschlüsselung nach Typ
+  - Positionshistorie (offen & geschlossen)
+  - Transaktions-Historie
+  - Broker-Profil Auswahl
+  - Portfolio-Reset Funktion
+
+- **Broker-Profile** mit unterschiedlichen Gebührenstrukturen
+  - **Discount**: 1€ flat, 0.1% Spread
+  - **Standard**: 4.95€ + 0.25%, 0.15% Spread
+  - **Premium**: 9.90€ flat, 0.05% Spread
+  - **Market Maker**: 0€ Kommission, 0.30% Spread
+
+- **Backend Trading-Modul** (`backend/src/trading.js`)
+  - Neue Datenbank-Tabellen: portfolios, positions, orders, transactions, fee_log
+  - Gebühren-Berechnung für alle Produkttypen
+  - Overnight-Fee Verarbeitung (täglich um Mitternacht)
+  - Portfolio-Metriken und Performance-Tracking
+  - Tenant-isolierte Datenhaltung
+
+- **Trading API-Endpoints**
+  - `GET /api/trading/broker-profiles` - Broker-Konfigurationen
+  - `GET /api/trading/product-types` - Produkttyp-Konfigurationen
+  - `POST /api/trading/calculate-fees` - Gebührenberechnung
+  - `GET/POST /api/trading/portfolio` - Portfolio-Verwaltung
+  - `GET/POST /api/trading/portfolio/:id/positions` - Positionen
+  - `POST /api/trading/order/market` - Market Orders
+  - `POST /api/trading/position/:id/close` - Position schließen
+  - `GET /api/trading/portfolio/:id/transactions` - Transaktionshistorie
+  - `GET /api/trading/portfolio/:id/metrics` - Performance-Metriken
+
+### Changed
+- Navigation erweitert mit "Paper Trading" und "Portfolio" Menüpunkten
+
 ## [1.3.0] - 2026-01-24
 
 ### Added

@@ -18,6 +18,56 @@ A modern, AI-powered stock technical analysis platform for day trading education
 - 🔐 **User Accounts**: Optional login/registration for settings persistence
 - 📋 **Watchlist**: Personal watchlist with trading signals for all positions
 - 🧭 **Multi-Page Navigation**: Dedicated pages for Dashboard, Watchlist, Settings, Info, and Changelog
+- 🎮 **Paper Trading**: Stock market simulation with virtual money (see below)
+
+## Paper Trading / Börsenspiel
+
+Trade with virtual money to test your strategies without real risk!
+
+### Features
+
+- **100,000€ Virtual Starting Capital**
+- **Multiple Product Types**:
+  - Stocks (no leverage)
+  - CFDs (up to 1:30 leverage)
+  - Knock-Out Certificates (up to 1:100 leverage)
+  - Factor Certificates (2x-10x daily leverage)
+- **Realistic Trading Fees**:
+  - Commission fees (flat or percentage-based)
+  - Spread costs
+  - Overnight fees for leveraged positions
+- **Broker Profiles** with different fee structures:
+  - Discount (low fees)
+  - Standard (typical online broker)
+  - Premium (best execution)
+  - Market Maker (zero commission, wider spreads)
+- **Risk Management**:
+  - Stop-Loss and Take-Profit orders
+  - Margin monitoring with warnings
+  - Liquidation price display for leveraged positions
+- **Performance Tracking**:
+  - Win rate statistics
+  - P&L breakdown
+  - Fee analysis
+  - Transaction history
+
+### How to Use
+
+1. **Login** (required for paper trading)
+2. Navigate to **Paper Trading** page
+3. Select a symbol and product type
+4. Set quantity, leverage (if applicable), and optional stop-loss/take-profit
+5. Review fees and click **Buy** or **Short**
+6. Monitor your positions and close them anytime
+7. Check your **Portfolio** page for performance metrics
+
+### Regulatory Compliance (Simulated)
+
+The simulation follows ESMA retail leverage limits:
+- Forex: 1:30 max
+- Major Indices: 1:20 max
+- Stocks: 1:5 max
+- Crypto: 1:2 max
 
 ## Getting Started
 

@@ -13,7 +13,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { DataServiceProvider } from './hooks';
 import { Navigation } from './components/Navigation';
-import { DashboardPage, WatchlistPage, SettingsPage, ChangelogPage, InfoPage } from './pages';
+import { DashboardPage, WatchlistPage, SettingsPage, ChangelogPage, InfoPage, TradingPage, PortfolioPage } from './pages';
 import { initializeAuth } from './services/authService';
 
 // Build info from Vite config
@@ -59,6 +59,8 @@ function AppContent() {
                 />
               } 
             />
+            <Route path="/trading" element={<TradingPage />} />
+            <Route path="/portfolio" element={<PortfolioPage />} />
             <Route path="/watchlist" element={<WatchlistPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/info" element={<InfoPage />} />
