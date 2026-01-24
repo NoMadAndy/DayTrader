@@ -243,12 +243,13 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4 h-full flex flex-col">
       {/* Header with controls */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+        <h3 className="text-base sm:text-lg font-semibold text-white flex items-center gap-2">
           <span>📋</span>
-          Watchlist ({watchlistItems.length})
+          <span className="hidden sm:inline">Watchlist</span>
+          <span className="text-gray-400 font-normal">({watchlistItems.length})</span>
         </h3>
         <button
           onClick={refreshWatchlist}
@@ -267,14 +268,14 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
         </button>
       </div>
 
-      {/* Filters and Sort */}
+      {/* Filters and Sort - responsive */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1 bg-slate-700/50 rounded-lg p-1">
+        <div className="flex items-center gap-0.5 sm:gap-1 bg-slate-700/50 rounded-lg p-0.5 sm:p-1">
           {(['hourly', 'daily', 'weekly', 'longTerm'] as const).map(period => (
             <button
               key={period}
               onClick={() => setFilterPeriod(period)}
-              className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+              className={`px-1.5 sm:px-2 py-1 rounded text-xs font-medium transition-colors ${
                 filterPeriod === period 
                   ? 'bg-blue-600 text-white' 
                   : 'text-gray-400 hover:text-white'
@@ -284,10 +285,10 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-1 bg-slate-700/50 rounded-lg p-1">
+        <div className="flex items-center gap-0.5 sm:gap-1 bg-slate-700/50 rounded-lg p-0.5 sm:p-1">
           <button
             onClick={() => setSortBy('name')}
-            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+            className={`px-1.5 sm:px-2 py-1 rounded text-xs font-medium transition-colors ${
               sortBy === 'name' 
                 ? 'bg-slate-600 text-white' 
                 : 'text-gray-400 hover:text-white'
@@ -297,7 +298,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
           </button>
           <button
             onClick={() => setSortBy('score')}
-            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+            className={`px-1.5 sm:px-2 py-1 rounded text-xs font-medium transition-colors ${
               sortBy === 'score' 
                 ? 'bg-slate-600 text-white' 
                 : 'text-gray-400 hover:text-white'
@@ -309,59 +310,60 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
       </div>
 
       {/* Watchlist Items */}
-      <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+      <div className="space-y-2 flex-1 overflow-y-auto pr-1 -mr-1">
         {displayItems.map(item => (
           <div 
             key={item.symbol}
-            className={`bg-slate-800/50 rounded-lg p-3 border transition-colors cursor-pointer ${
+            className={`bg-slate-800/50 rounded-lg p-2.5 sm:p-3 border transition-colors cursor-pointer ${
               currentSymbol === item.symbol 
                 ? 'border-blue-500/50 bg-blue-500/10' 
                 : 'border-slate-700/50 hover:border-slate-600'
             }`}
             onClick={() => onSelectSymbol?.(item.symbol)}
           >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 flex-1 min-w-0">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 ${
+            {/* Main row: Symbol + Price + Signal */}
+            <div className="flex items-center justify-between gap-2">
+              {/* Left: Symbol & Name */}
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-white font-bold text-xs sm:text-sm flex-shrink-0 ${
                   item.isCustom 
                     ? 'bg-gradient-to-br from-green-500 to-teal-600' 
                     : 'bg-gradient-to-br from-blue-500 to-purple-600'
                 }`}>
                   {item.symbol.charAt(0)}
                 </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-white">{item.symbol}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-semibold text-white text-sm sm:text-base">{item.symbol}</span>
                     {item.isCustom && (
-                      <span className="text-xs text-green-400 bg-green-500/20 px-1 py-0.5 rounded">
-                        Custom
-                      </span>
+                      <span className="text-[10px] text-green-400 bg-green-500/20 px-1 rounded">Custom</span>
                     )}
                   </div>
                   <div className="text-xs text-gray-400 truncate">{item.name}</div>
                 </div>
               </div>
               
-              <div className="flex items-center gap-3 flex-shrink-0">
+              {/* Right: Price + Signal + Actions */}
+              <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
                 {/* Price Info */}
                 {item.isLoading ? (
-                  <div className="w-16 h-4 bg-slate-700 rounded animate-pulse" />
+                  <div className="w-14 h-8 bg-slate-700 rounded animate-pulse" />
                 ) : item.error ? (
-                  <span className="text-xs text-red-400">{item.error}</span>
+                  <span className="text-[10px] text-red-400">{item.error}</span>
                 ) : (
                   <div className="text-right">
                     <div className="text-sm font-medium text-white">
                       ${item.currentPrice?.toFixed(2)}
                     </div>
-                    <div className={`text-xs ${(item.priceChange ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    <div className={`text-[10px] sm:text-xs ${(item.priceChange ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {(item.priceChange ?? 0) >= 0 ? '+' : ''}{item.priceChange?.toFixed(2)}%
                     </div>
                   </div>
                 )}
 
-                {/* Signal Badge */}
+                {/* Signal Badge - compact on mobile */}
                 {!item.isLoading && !item.error && (
-                  <SignalBadge signal={item.signals} />
+                  <SignalBadge signal={item.signals} small />
                 )}
 
                 {/* Remove Button (for custom only) */}
@@ -371,10 +373,10 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                       e.stopPropagation();
                       handleRemoveSymbol(item.symbol);
                     }}
-                    className="p-1.5 hover:bg-red-500/20 rounded text-gray-400 hover:text-red-400 transition-colors"
+                    className="p-1 hover:bg-red-500/20 rounded text-gray-400 hover:text-red-400 transition-colors"
                     title="Entfernen"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
@@ -382,9 +384,9 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
               </div>
             </div>
 
-            {/* Signal Details Row */}
+            {/* Signal Details Row - hidden on very small screens */}
             {!item.isLoading && !item.error && item.signals && (
-              <div className="mt-2 pt-2 border-t border-slate-700/50 flex items-center gap-2 text-xs">
+              <div className="mt-2 pt-2 border-t border-slate-700/50 hidden sm:flex items-center gap-1.5 text-[10px] sm:text-xs">
                 <span className="text-gray-500">Signale:</span>
                 {(['hourly', 'daily', 'weekly', 'longTerm'] as const).map(period => {
                   const periodSignal = item.signals?.[period];
@@ -392,7 +394,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                   return (
                     <span
                       key={period}
-                      className={`px-1.5 py-0.5 rounded ${
+                      className={`px-1 sm:px-1.5 py-0.5 rounded ${
                         period === filterPeriod ? 'ring-1 ring-blue-500' : ''
                       } ${display?.bgColor || 'bg-slate-700'}`}
                       title={`${periodLabels[period]}: ${periodSignal?.reasoning || 'N/A'}`}
@@ -469,19 +471,15 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
         )}
       </div>
 
-      {/* Legend */}
-      <div className="text-xs text-gray-500 space-y-1 pt-2 border-t border-slate-700">
-        <p className="font-medium text-gray-400">Legende:</p>
-        <div className="flex flex-wrap gap-2">
-          <span className="flex items-center gap-1"><span className="text-green-400">🚀</span> Starker Kauf</span>
-          <span className="flex items-center gap-1"><span className="text-green-400">📈</span> Kauf</span>
-          <span className="flex items-center gap-1"><span className="text-yellow-400">➡️</span> Halten</span>
-          <span className="flex items-center gap-1"><span className="text-red-400">📉</span> Verkauf</span>
-          <span className="flex items-center gap-1"><span className="text-red-400">⚠️</span> Starker Verkauf</span>
+      {/* Legend - compact */}
+      <div className="text-[10px] sm:text-xs text-gray-500 pt-2 border-t border-slate-700 flex-shrink-0">
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          <span className="flex items-center gap-0.5"><span>🚀</span> Stark Kauf</span>
+          <span className="flex items-center gap-0.5"><span>📈</span> Kauf</span>
+          <span className="flex items-center gap-0.5"><span>➡️</span> Halten</span>
+          <span className="flex items-center gap-0.5"><span>📉</span> Verkauf</span>
+          <span className="flex items-center gap-0.5"><span>⚠️</span> Stark Verk.</span>
         </div>
-        <p className="mt-2">
-          <strong>Haltedauer:</strong> 1h = Scalping, 1d = Daytrading, 1w = Swing, Long = Investment
-        </p>
       </div>
     </div>
   );
