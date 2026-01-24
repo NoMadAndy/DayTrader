@@ -22,6 +22,14 @@ import type {
   ClosePositionResponse,
   CalculateFeesRequest,
   ProductType,
+  Order,
+  CreatePendingOrderRequest,
+  CreatePendingOrderResponse,
+  CancelOrderResponse,
+  CheckTriggersResponse,
+  EquityCurvePoint,
+  LeaderboardEntry,
+  UserRank,
 } from '../types/trading';
 
 // API_BASE should be empty for relative URLs or full URL for external backend
@@ -448,6 +456,125 @@ export function validateOrder(
   };
 }
 
+// ============================================================================
+// Extended Features: Pending Orders, Equity Curve, Leaderboard
+// ============================================================================
+
+/**
+ * Create a pending limit or stop order
+ */
+export async function createPendingOrder(
+  request: CreatePendingOrderRequest
+): Promise<CreatePendingOrderResponse> {
+  const response = await fetch(`${API_BASE}/trading/order/pending`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(request),
+  });
+  return handleResponse<CreatePendingOrderResponse>(response);
+}
+
+/**
+ * Cancel a pending order
+ */
+export async function cancelOrder(orderId: number): Promise<CancelOrderResponse> {
+  const response = await fetch(`${API_BASE}/trading/order/${orderId}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<CancelOrderResponse>(response);
+}
+
+/**
+ * Get pending orders for portfolio
+ */
+export async function getPendingOrders(portfolioId: number): Promise<Order[]> {
+  const response = await fetch(`${API_BASE}/trading/portfolio/${portfolioId}/orders/pending`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<Order[]>(response);
+}
+
+/**
+ * Update position stop-loss and take-profit levels
+ */
+export async function updatePositionLevels(
+  positionId: number,
+  levels: { stopLoss?: number; takeProfit?: number }
+): Promise<Position> {
+  const response = await fetch(`${API_BASE}/trading/position/${positionId}/levels`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(levels),
+  });
+  return handleResponse<Position>(response);
+}
+
+/**
+ * Check pending orders and position triggers with current prices
+ * This triggers limit/stop orders and stop-loss/take-profit/knockout
+ */
+export async function checkTriggers(
+  prices: Record<string, number>
+): Promise<CheckTriggersResponse> {
+  const response = await fetch(`${API_BASE}/trading/check-triggers`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ prices }),
+  });
+  return handleResponse<CheckTriggersResponse>(response);
+}
+
+/**
+ * Get equity curve (portfolio value history)
+ */
+export async function getEquityCurve(
+  portfolioId: number,
+  days = 30
+): Promise<EquityCurvePoint[]> {
+  const response = await fetch(
+    `${API_BASE}/trading/portfolio/${portfolioId}/equity-curve?days=${days}`,
+    { headers: getAuthHeaders() }
+  );
+  return handleResponse<EquityCurvePoint[]>(response);
+}
+
+/**
+ * Get global leaderboard
+ */
+export async function getLeaderboard(
+  limit = 50,
+  timeframe: 'all' | 'day' | 'week' | 'month' = 'all'
+): Promise<LeaderboardEntry[]> {
+  const response = await fetch(
+    `${API_BASE}/trading/leaderboard?limit=${limit}&timeframe=${timeframe}`
+  );
+  return handleResponse<LeaderboardEntry[]>(response);
+}
+
+/**
+ * Get current user's rank in leaderboard
+ */
+export async function getUserRank(): Promise<UserRank> {
+  const response = await fetch(`${API_BASE}/trading/leaderboard/rank`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<UserRank>(response);
+}
+
+/**
+ * Get order type display name
+ */
+export function getOrderTypeName(orderType: string): string {
+  const names: Record<string, string> = {
+    market: 'Market',
+    limit: 'Limit',
+    stop: 'Stop',
+    stop_limit: 'Stop-Limit',
+  };
+  return names[orderType] || orderType;
+}
+
 export default {
   getBrokerProfiles,
   getProductTypes,
@@ -456,6 +583,7 @@ export default {
   getOrCreatePortfolio,
   getPortfolio,
   updatePortfolioSettings,
+  setInitialCapital,
   resetPortfolio,
   getPortfolioMetrics,
   getOpenPositions,
@@ -473,4 +601,14 @@ export default {
   calculateBreakEvenPrice,
   calculateRiskReward,
   validateOrder,
+  // Extended features
+  createPendingOrder,
+  cancelOrder,
+  getPendingOrders,
+  updatePositionLevels,
+  checkTriggers,
+  getEquityCurve,
+  getLeaderboard,
+  getUserRank,
+  getOrderTypeName,
 };

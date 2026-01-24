@@ -304,6 +304,89 @@ export interface CalculateFeesRequest {
 }
 
 // ============================================================================
+// Extended Features: Pending Orders, Equity Curve, Leaderboard
+// ============================================================================
+
+export interface CreatePendingOrderRequest {
+  portfolioId: number;
+  symbol: string;
+  side: OrderSide;
+  quantity: number;
+  orderType: 'limit' | 'stop' | 'stop_limit';
+  limitPrice?: number;
+  stopPrice?: number;
+  productType?: ProductType;
+  leverage?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  knockoutLevel?: number;
+}
+
+export interface CreatePendingOrderResponse {
+  success: boolean;
+  error?: string;
+  order?: Order;
+  reservedCash?: number;
+}
+
+export interface CancelOrderResponse {
+  success: boolean;
+  error?: string;
+  returnedCash?: number;
+}
+
+export interface CheckTriggersRequest {
+  prices: Record<string, number>;
+}
+
+export interface CheckTriggersResponse {
+  executedOrders: Array<{
+    orderId: number;
+    success: boolean;
+    order?: Order;
+    position?: Position;
+  }>;
+  triggeredPositions: Array<{
+    positionId: number;
+    symbol: string;
+    reason: 'stop_loss' | 'take_profit' | 'knockout' | 'margin_call';
+    closePrice: number;
+    realizedPnl: number;
+  }>;
+}
+
+export interface EquityCurvePoint {
+  date: string;
+  totalValue: number;
+  cashBalance: number;
+  positionsValue: number;
+  unrealizedPnl: number;
+  realizedPnl: number;
+  marginUsed: number;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  portfolioId: number;
+  name: string;
+  username: string;
+  initialCapital: number;
+  currentValue: number;
+  totalReturnPct: number;
+  totalTrades: number;
+  winningTrades: number;
+  winRate: number;
+}
+
+export interface UserRank {
+  rank: number | null;
+  totalParticipants: number;
+  currentValue: number;
+  totalReturnPct: number;
+  message?: string;
+}
+
+// ============================================================================
 // UI State Types
 // ============================================================================
 

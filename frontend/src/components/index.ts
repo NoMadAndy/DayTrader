@@ -15,3 +15,5 @@ export { DataFreshnessIndicator, type DataTimestamps } from './DataFreshnessIndi
 export { WatchlistPanel } from './WatchlistPanel';
 export { Navigation } from './Navigation';
 export { CompanyInfoPanel } from './CompanyInfoPanel';
+export { EquityChart } from './EquityChart';
+export { PendingOrders } from './PendingOrders';

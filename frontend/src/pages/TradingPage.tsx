@@ -22,6 +22,8 @@ import {
   getProductTypeName,
   getSideName,
   validateOrder,
+  createPendingOrder,
+  getOrderTypeName,
 } from '../services/tradingService';
 import type {
   Portfolio,
@@ -32,8 +34,9 @@ import type {
   ProductType,
   OrderSide,
   ExecuteOrderRequest,
+  OrderType,
 } from '../types/trading';
-import { StockSelector } from '../components';
+import { StockSelector, PendingOrders } from '../components';
 
 export function TradingPage() {
   const { dataService } = useDataService();
@@ -58,6 +61,9 @@ export function TradingPage() {
   const [leverage, setLeverage] = useState<number>(1);
   const [stopLoss, setStopLoss] = useState<string>('');
   const [takeProfit, setTakeProfit] = useState<string>('');
+  const [orderType, setOrderType] = useState<OrderType>('market');
+  const [limitPrice, setLimitPrice] = useState<string>('');
+  const [stopOrderPrice, setStopOrderPrice] = useState<string>('');
   
   // Fee preview
   const [feePreview, setFeePreview] = useState<FeeCalculation | null>(null);
@@ -171,6 +177,60 @@ export function TradingPage() {
   const handleSubmitOrder = async () => {
     if (!portfolio || !feePreview) return;
     
+    // For pending orders (limit/stop)
+    if (orderType !== 'market') {
+      try {
+        setOrderLoading(true);
+        setError(null);
+        
+        const parsedLimitPrice = parseFloat(limitPrice);
+        const parsedStopPrice = parseFloat(stopOrderPrice);
+        
+        // Validate required prices
+        if (orderType === 'limit' && (isNaN(parsedLimitPrice) || parsedLimitPrice <= 0)) {
+          setError('Bitte gültigen Limit-Preis eingeben');
+          return;
+        }
+        if (orderType === 'stop' && (isNaN(parsedStopPrice) || parsedStopPrice <= 0)) {
+          setError('Bitte gültigen Stop-Preis eingeben');
+          return;
+        }
+        if (orderType === 'stop_limit' && ((isNaN(parsedStopPrice) || parsedStopPrice <= 0) || (isNaN(parsedLimitPrice) || parsedLimitPrice <= 0))) {
+          setError('Bitte gültigen Stop- und Limit-Preis eingeben');
+          return;
+        }
+        
+        const result = await createPendingOrder({
+          portfolioId: portfolio.id,
+          symbol: selectedSymbol,
+          side,
+          quantity,
+          orderType: orderType as 'limit' | 'stop' | 'stop_limit',
+          limitPrice: orderType === 'limit' || orderType === 'stop_limit' ? parsedLimitPrice : undefined,
+          stopPrice: orderType === 'stop' || orderType === 'stop_limit' ? parsedStopPrice : undefined,
+          productType,
+          leverage: productType !== 'stock' ? leverage : 1,
+        });
+        
+        if (result.success) {
+          setSuccessMessage(`${getOrderTypeName(orderType)}-Order erstellt für ${selectedSymbol}`);
+          await loadPortfolioData();
+          setQuantity(10);
+          setLimitPrice('');
+          setStopOrderPrice('');
+          setTimeout(() => setSuccessMessage(null), 5000);
+        } else {
+          setError(result.error || 'Order konnte nicht erstellt werden');
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Order fehlgeschlagen');
+      } finally {
+        setOrderLoading(false);
+      }
+      return;
+    }
+    
+    // Market order
     const request: ExecuteOrderRequest = {
       portfolioId: portfolio.id,
       symbol: selectedSymbol,
@@ -420,6 +480,65 @@ export function TradingPage() {
               />
             </div>
             
+            {/* Order Type */}
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-1">Order-Typ</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(['market', 'limit', 'stop', 'stop_limit'] as OrderType[]).map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setOrderType(type)}
+                    className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                      orderType === type
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    {getOrderTypeName(type)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            {/* Limit/Stop Price Fields */}
+            {orderType !== 'market' && (
+              <div className="mb-4 space-y-2">
+                {(orderType === 'stop' || orderType === 'stop_limit') && (
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">Stop-Preis</label>
+                    <input
+                      type="number"
+                      value={stopOrderPrice}
+                      onChange={(e) => setStopOrderPrice(e.target.value)}
+                      placeholder={`z.B. ${(currentPrice * 0.98).toFixed(2)}`}
+                      step="0.01"
+                      className="w-full px-3 py-2 bg-slate-700 rounded-lg text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                    />
+                  </div>
+                )}
+                {(orderType === 'limit' || orderType === 'stop_limit') && (
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">
+                      {orderType === 'limit' ? 'Limit-Preis' : 'Limit-Preis (nach Stop)'}
+                    </label>
+                    <input
+                      type="number"
+                      value={limitPrice}
+                      onChange={(e) => setLimitPrice(e.target.value)}
+                      placeholder={`z.B. ${(currentPrice * 0.95).toFixed(2)}`}
+                      step="0.01"
+                      className="w-full px-3 py-2 bg-slate-700 rounded-lg text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                    />
+                  </div>
+                )}
+                <div className="text-xs text-gray-500 p-2 bg-slate-900/50 rounded">
+                  {orderType === 'limit' && '📌 Order wird ausgeführt wenn der Preis das Limit erreicht oder unterschreitet'}
+                  {orderType === 'stop' && '📌 Order wird zum Marktpreis ausgeführt wenn der Stop-Preis erreicht wird'}
+                  {orderType === 'stop_limit' && '📌 Bei Erreichen des Stop-Preises wird eine Limit-Order platziert'}
+                </div>
+              </div>
+            )}
+            
             {/* Leverage (for non-stock products) */}
             {productType !== 'stock' && (
               <div className="mb-4">
@@ -505,11 +624,13 @@ export function TradingPage() {
             {/* Submit Button */}
             <button
               onClick={handleSubmitOrder}
-              disabled={orderLoading || !feePreview || currentPrice <= 0}
+              disabled={orderLoading || !feePreview || currentPrice <= 0 || (orderType !== 'market' && !limitPrice && !stopOrderPrice)}
               className={`w-full py-3 rounded-lg font-semibold text-white transition-colors ${
-                side === 'buy'
-                  ? 'bg-green-600 hover:bg-green-700 disabled:bg-green-900'
-                  : 'bg-red-600 hover:bg-red-700 disabled:bg-red-900'
+                orderType !== 'market' 
+                  ? 'bg-purple-600 hover:bg-purple-700 disabled:bg-purple-900'
+                  : side === 'buy'
+                    ? 'bg-green-600 hover:bg-green-700 disabled:bg-green-900'
+                    : 'bg-red-600 hover:bg-red-700 disabled:bg-red-900'
               } disabled:cursor-not-allowed`}
             >
               {orderLoading ? (
@@ -517,6 +638,8 @@ export function TradingPage() {
                   <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-white"></div>
                   Wird ausgeführt...
                 </span>
+              ) : orderType !== 'market' ? (
+                `📋 ${getOrderTypeName(orderType)}-Order erstellen`
               ) : (
                 `${side === 'buy' ? '📈 KAUFEN' : '📉 SHORT'} - ${formatCurrency(feePreview?.marginRequired || 0)}`
               )}
@@ -697,6 +820,16 @@ export function TradingPage() {
                 Kritisches Margin-Level: {metrics.marginLevel?.toFixed(1)}%. 
                 Positionen können automatisch geschlossen werden!
               </p>
+            </div>
+          )}
+          
+          {/* Pending Orders */}
+          {portfolio && (
+            <div className="mt-4">
+              <PendingOrders 
+                portfolioId={portfolio.id}
+                onOrderCancelled={loadPortfolioData}
+              />
             </div>
           )}
         </div>

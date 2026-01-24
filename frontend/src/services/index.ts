@@ -86,4 +86,14 @@ export {
   calculateBreakEvenPrice,
   calculateRiskReward,
   validateOrder,
+  // Extended features
+  createPendingOrder,
+  cancelOrder,
+  getPendingOrders,
+  updatePositionLevels,
+  checkTriggers,
+  getEquityCurve,
+  getLeaderboard,
+  getUserRank,
+  getOrderTypeName,
 } from './tradingService';

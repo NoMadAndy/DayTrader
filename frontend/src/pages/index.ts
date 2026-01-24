@@ -11,3 +11,4 @@ export { ChangelogPage } from './ChangelogPage';
 export { InfoPage } from './InfoPage';
 export { TradingPage } from './TradingPage';
 export { PortfolioPage } from './PortfolioPage';
+export { LeaderboardPage } from './LeaderboardPage';

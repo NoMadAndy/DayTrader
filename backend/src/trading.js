@@ -1380,6 +1380,638 @@ function formatTransaction(row) {
   };
 }
 
+// ============================================================================
+// Limit & Stop Order Functions
+// ============================================================================
+
+/**
+ * Create a pending limit or stop order
+ */
+export async function createPendingOrder(params) {
+  const { 
+    userId, portfolioId, symbol, side, quantity, 
+    orderType, // 'limit', 'stop', 'stop_limit'
+    limitPrice, stopPrice,
+    productType = 'stock', leverage = 1, stopLoss, takeProfit, knockoutLevel
+  } = params;
+  
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    
+    // Validate order type and prices
+    if (orderType === 'limit' && !limitPrice) {
+      throw new Error('Limit price required for limit order');
+    }
+    if (orderType === 'stop' && !stopPrice) {
+      throw new Error('Stop price required for stop order');
+    }
+    if (orderType === 'stop_limit' && (!limitPrice || !stopPrice)) {
+      throw new Error('Both limit and stop price required for stop-limit order');
+    }
+    
+    // Get portfolio
+    const portfolioResult = await client.query(
+      `SELECT * FROM portfolios WHERE id = $1 AND user_id = $2`,
+      [portfolioId, userId]
+    );
+    
+    if (portfolioResult.rows.length === 0) {
+      throw new Error('Portfolio not found');
+    }
+    
+    const portfolio = portfolioResult.rows[0];
+    const brokerProfile = portfolio.broker_profile || 'standard';
+    
+    // Calculate estimated fees (using limit/stop price)
+    const estimatePrice = limitPrice || stopPrice;
+    const fees = calculateFees({
+      productType,
+      side,
+      quantity,
+      price: estimatePrice,
+      leverage,
+      brokerProfile,
+    });
+    
+    // Reserve margin for the order
+    const requiredCash = side === 'buy' 
+      ? fees.marginRequired + fees.totalFees 
+      : fees.totalFees;
+    
+    if (parseFloat(portfolio.cash_balance) < requiredCash) {
+      throw new Error(`Insufficient funds. Required: ${requiredCash.toFixed(2)}, Available: ${portfolio.cash_balance}`);
+    }
+    
+    // Create pending order
+    const orderResult = await client.query(
+      `INSERT INTO orders (
+        portfolio_id, user_id, symbol, product_type, order_type, side,
+        quantity, limit_price, stop_price, leverage, knockout_level, 
+        stop_loss, take_profit, commission_fee, spread_cost, total_fees, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'pending')
+      RETURNING *`,
+      [
+        portfolioId, userId, symbol, productType, orderType, side,
+        quantity, limitPrice, stopPrice, leverage, knockoutLevel,
+        stopLoss, takeProfit, fees.commission, fees.spreadCost, fees.totalFees
+      ]
+    );
+    
+    // Reserve cash for the order
+    await client.query(
+      `UPDATE portfolios SET cash_balance = cash_balance - $2, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [portfolioId, requiredCash]
+    );
+    
+    await client.query('COMMIT');
+    
+    return {
+      success: true,
+      order: formatOrder(orderResult.rows[0]),
+      reservedCash: requiredCash,
+    };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('Create pending order error:', e);
+    return {
+      success: false,
+      error: e.message,
+    };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Cancel a pending order
+ */
+export async function cancelOrder(orderId, userId) {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    
+    // Get order
+    const orderResult = await client.query(
+      `SELECT o.*, p.id as portfolio_id FROM orders o
+       JOIN portfolios p ON o.portfolio_id = p.id
+       WHERE o.id = $1 AND o.user_id = $2 AND o.status = 'pending'`,
+      [orderId, userId]
+    );
+    
+    if (orderResult.rows.length === 0) {
+      throw new Error('Order not found or not pending');
+    }
+    
+    const order = orderResult.rows[0];
+    
+    // Calculate reserved cash to return
+    const fees = calculateFees({
+      productType: order.product_type,
+      side: order.side,
+      quantity: parseFloat(order.quantity),
+      price: order.limit_price || order.stop_price,
+      leverage: parseFloat(order.leverage),
+    });
+    
+    const reservedCash = order.side === 'buy' 
+      ? fees.marginRequired + fees.totalFees 
+      : fees.totalFees;
+    
+    // Cancel order
+    await client.query(
+      `UPDATE orders SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [orderId]
+    );
+    
+    // Return reserved cash
+    await client.query(
+      `UPDATE portfolios SET cash_balance = cash_balance + $2, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [order.portfolio_id, reservedCash]
+    );
+    
+    await client.query('COMMIT');
+    
+    return {
+      success: true,
+      returnedCash: reservedCash,
+    };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('Cancel order error:', e);
+    return {
+      success: false,
+      error: e.message,
+    };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Get pending orders for a portfolio
+ */
+export async function getPendingOrders(portfolioId, userId) {
+  try {
+    const result = await query(
+      `SELECT * FROM orders 
+       WHERE portfolio_id = $1 AND user_id = $2 AND status = 'pending'
+       ORDER BY created_at DESC`,
+      [portfolioId, userId]
+    );
+    return result.rows.map(formatOrder);
+  } catch (e) {
+    console.error('Get pending orders error:', e);
+    throw e;
+  }
+}
+
+/**
+ * Check and execute pending orders based on current prices
+ * Call this with live price data to trigger limit/stop orders
+ */
+export async function checkPendingOrders(priceUpdates) {
+  // priceUpdates: { symbol: currentPrice, ... }
+  const client = await getClient();
+  const executedOrders = [];
+  
+  try {
+    // Get all pending orders for symbols with price updates
+    const symbols = Object.keys(priceUpdates);
+    if (symbols.length === 0) return executedOrders;
+    
+    const pendingOrders = await client.query(
+      `SELECT o.*, p.broker_profile, p.cash_balance
+       FROM orders o
+       JOIN portfolios p ON o.portfolio_id = p.id
+       WHERE o.status = 'pending' AND o.symbol = ANY($1)`,
+      [symbols]
+    );
+    
+    for (const order of pendingOrders.rows) {
+      const currentPrice = priceUpdates[order.symbol];
+      if (!currentPrice) continue;
+      
+      let shouldExecute = false;
+      
+      // Check if order should be triggered
+      if (order.order_type === 'limit') {
+        if (order.side === 'buy' && currentPrice <= parseFloat(order.limit_price)) {
+          shouldExecute = true;
+        } else if ((order.side === 'sell' || order.side === 'short') && currentPrice >= parseFloat(order.limit_price)) {
+          shouldExecute = true;
+        }
+      } else if (order.order_type === 'stop') {
+        if (order.side === 'buy' && currentPrice >= parseFloat(order.stop_price)) {
+          shouldExecute = true;
+        } else if ((order.side === 'sell' || order.side === 'short') && currentPrice <= parseFloat(order.stop_price)) {
+          shouldExecute = true;
+        }
+      } else if (order.order_type === 'stop_limit') {
+        // Stop-limit: first check stop trigger, then limit condition
+        const stopTriggered = (order.side === 'buy' && currentPrice >= parseFloat(order.stop_price)) ||
+                             ((order.side === 'sell' || order.side === 'short') && currentPrice <= parseFloat(order.stop_price));
+        if (stopTriggered) {
+          const limitMet = (order.side === 'buy' && currentPrice <= parseFloat(order.limit_price)) ||
+                          ((order.side === 'sell' || order.side === 'short') && currentPrice >= parseFloat(order.limit_price));
+          shouldExecute = limitMet;
+        }
+      }
+      
+      if (shouldExecute) {
+        // Execute the order as a market order at current price
+        const result = await executeMarketOrder({
+          userId: order.user_id,
+          portfolioId: order.portfolio_id,
+          symbol: order.symbol,
+          side: order.side,
+          quantity: parseFloat(order.quantity),
+          currentPrice,
+          productType: order.product_type,
+          leverage: parseFloat(order.leverage),
+          stopLoss: order.stop_loss ? parseFloat(order.stop_loss) : undefined,
+          takeProfit: order.take_profit ? parseFloat(order.take_profit) : undefined,
+          knockoutLevel: order.knockout_level ? parseFloat(order.knockout_level) : undefined,
+        });
+        
+        if (result.success) {
+          // Update original pending order status
+          await client.query(
+            `UPDATE orders SET status = 'filled', filled_at = CURRENT_TIMESTAMP, filled_price = $2
+             WHERE id = $1`,
+            [order.id, currentPrice]
+          );
+          executedOrders.push({ orderId: order.id, ...result });
+        }
+      }
+    }
+    
+    return executedOrders;
+  } catch (e) {
+    console.error('Check pending orders error:', e);
+    return executedOrders;
+  } finally {
+    client.release();
+  }
+}
+
+// ============================================================================
+// Stop-Loss, Take-Profit & Knock-Out Automation
+// ============================================================================
+
+/**
+ * Check all open positions for stop-loss, take-profit, and knock-out triggers
+ * Call this with live price data
+ */
+export async function checkPositionTriggers(priceUpdates) {
+  // priceUpdates: { symbol: currentPrice, ... }
+  const client = await getClient();
+  const triggeredPositions = [];
+  
+  try {
+    const symbols = Object.keys(priceUpdates);
+    if (symbols.length === 0) return triggeredPositions;
+    
+    // Get all open positions for symbols with price updates
+    const positions = await client.query(
+      `SELECT p.*, pf.broker_profile
+       FROM positions p
+       JOIN portfolios pf ON p.portfolio_id = pf.id
+       WHERE p.is_open = true AND p.symbol = ANY($1)`,
+      [symbols]
+    );
+    
+    for (const pos of positions.rows) {
+      const currentPrice = priceUpdates[pos.symbol];
+      if (!currentPrice) continue;
+      
+      let triggerReason = null;
+      
+      // Check Knock-Out (highest priority)
+      if (pos.knockout_level) {
+        const knockoutLevel = parseFloat(pos.knockout_level);
+        if (pos.side === 'long' && currentPrice <= knockoutLevel) {
+          triggerReason = 'knockout';
+        } else if (pos.side === 'short' && currentPrice >= knockoutLevel) {
+          triggerReason = 'knockout';
+        }
+      }
+      
+      // Check Stop-Loss
+      if (!triggerReason && pos.stop_loss) {
+        const stopLoss = parseFloat(pos.stop_loss);
+        if (pos.side === 'long' && currentPrice <= stopLoss) {
+          triggerReason = 'stop_loss';
+        } else if (pos.side === 'short' && currentPrice >= stopLoss) {
+          triggerReason = 'stop_loss';
+        }
+      }
+      
+      // Check Take-Profit
+      if (!triggerReason && pos.take_profit) {
+        const takeProfit = parseFloat(pos.take_profit);
+        if (pos.side === 'long' && currentPrice >= takeProfit) {
+          triggerReason = 'take_profit';
+        } else if (pos.side === 'short' && currentPrice <= takeProfit) {
+          triggerReason = 'take_profit';
+        }
+      }
+      
+      // Check Liquidation (margin call)
+      if (!triggerReason && parseFloat(pos.leverage) > 1) {
+        const liquidationPrice = calculateLiquidationPrice(pos);
+        if (liquidationPrice) {
+          if (pos.side === 'long' && currentPrice <= liquidationPrice) {
+            triggerReason = 'margin_call';
+          } else if (pos.side === 'short' && currentPrice >= liquidationPrice) {
+            triggerReason = 'margin_call';
+          }
+        }
+      }
+      
+      if (triggerReason) {
+        // Close the position
+        const closePrice = triggerReason === 'knockout' ? parseFloat(pos.knockout_level) : currentPrice;
+        const result = await closePosition(pos.id, pos.user_id, closePrice, triggerReason);
+        
+        if (result.success) {
+          triggeredPositions.push({
+            positionId: pos.id,
+            symbol: pos.symbol,
+            reason: triggerReason,
+            closePrice,
+            realizedPnl: result.realizedPnl,
+          });
+        }
+      }
+    }
+    
+    return triggeredPositions;
+  } catch (e) {
+    console.error('Check position triggers error:', e);
+    return triggeredPositions;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Update position stop-loss and take-profit levels
+ */
+export async function updatePositionLevels(positionId, userId, { stopLoss, takeProfit }) {
+  try {
+    const result = await query(
+      `UPDATE positions 
+       SET stop_loss = COALESCE($3, stop_loss),
+           take_profit = COALESCE($4, take_profit)
+       WHERE id = $1 AND user_id = $2 AND is_open = true
+       RETURNING *`,
+      [positionId, userId, stopLoss, takeProfit]
+    );
+    
+    if (result.rows.length === 0) {
+      throw new Error('Position not found');
+    }
+    
+    return formatPosition(result.rows[0]);
+  } catch (e) {
+    console.error('Update position levels error:', e);
+    throw e;
+  }
+}
+
+// ============================================================================
+// Portfolio Equity Curve & Snapshots
+// ============================================================================
+
+/**
+ * Get equity curve data (portfolio value over time)
+ */
+export async function getEquityCurve(portfolioId, userId, days = 30) {
+  try {
+    // Verify ownership
+    const portfolio = await getPortfolio(portfolioId, userId);
+    if (!portfolio) {
+      throw new Error('Portfolio not found');
+    }
+    
+    const result = await query(
+      `SELECT 
+        DATE(recorded_at) as date,
+        AVG(total_value) as total_value,
+        AVG(cash_balance) as cash_balance,
+        AVG(positions_value) as positions_value,
+        AVG(unrealized_pnl) as unrealized_pnl,
+        AVG(realized_pnl) as realized_pnl,
+        AVG(margin_used) as margin_used
+       FROM portfolio_snapshots
+       WHERE portfolio_id = $1 AND recorded_at >= NOW() - INTERVAL '${days} days'
+       GROUP BY DATE(recorded_at)
+       ORDER BY date ASC`,
+      [portfolioId]
+    );
+    
+    // If no snapshots, return current state as single point
+    if (result.rows.length === 0) {
+      const metrics = await getPortfolioMetrics(portfolioId, userId);
+      return [{
+        date: new Date().toISOString().split('T')[0],
+        totalValue: metrics.totalValue,
+        cashBalance: metrics.cashBalance,
+        positionsValue: metrics.positionsValue,
+        unrealizedPnl: metrics.unrealizedPnl,
+        realizedPnl: metrics.realizedPnl,
+        marginUsed: metrics.marginUsed,
+      }];
+    }
+    
+    return result.rows.map(row => ({
+      date: row.date,
+      totalValue: parseFloat(row.total_value),
+      cashBalance: parseFloat(row.cash_balance),
+      positionsValue: parseFloat(row.positions_value || 0),
+      unrealizedPnl: parseFloat(row.unrealized_pnl || 0),
+      realizedPnl: parseFloat(row.realized_pnl || 0),
+      marginUsed: parseFloat(row.margin_used || 0),
+    }));
+  } catch (e) {
+    console.error('Get equity curve error:', e);
+    throw e;
+  }
+}
+
+/**
+ * Save daily portfolio snapshots for all portfolios
+ * Should be called once daily (e.g., at market close)
+ */
+export async function saveDailySnapshots() {
+  const client = await getClient();
+  try {
+    // Get all active portfolios
+    const portfolios = await client.query(
+      `SELECT id, user_id FROM portfolios WHERE is_active = true`
+    );
+    
+    let savedCount = 0;
+    for (const portfolio of portfolios.rows) {
+      try {
+        await savePortfolioSnapshot(portfolio.id);
+        savedCount++;
+      } catch (e) {
+        console.error(`Failed to save snapshot for portfolio ${portfolio.id}:`, e);
+      }
+    }
+    
+    console.log(`Saved ${savedCount} portfolio snapshots`);
+    return savedCount;
+  } catch (e) {
+    console.error('Save daily snapshots error:', e);
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// ============================================================================
+// Leaderboard Functions
+// ============================================================================
+
+/**
+ * Get global leaderboard by total return
+ */
+export async function getLeaderboard(limit = 50, timeframe = 'all') {
+  try {
+    let timeCondition = '';
+    if (timeframe === 'day') {
+      timeCondition = "AND ps.recorded_at >= NOW() - INTERVAL '1 day'";
+    } else if (timeframe === 'week') {
+      timeCondition = "AND ps.recorded_at >= NOW() - INTERVAL '7 days'";
+    } else if (timeframe === 'month') {
+      timeCondition = "AND ps.recorded_at >= NOW() - INTERVAL '30 days'";
+    }
+    
+    // Calculate returns based on snapshots or current state
+    const result = await query(
+      `WITH portfolio_stats AS (
+        SELECT 
+          p.id as portfolio_id,
+          p.name,
+          p.initial_capital,
+          u.username,
+          COALESCE(
+            (SELECT total_value FROM portfolio_snapshots 
+             WHERE portfolio_id = p.id 
+             ORDER BY recorded_at DESC LIMIT 1),
+            p.cash_balance
+          ) as current_value,
+          (SELECT COUNT(*) FROM positions WHERE portfolio_id = p.id AND is_open = false) as total_trades,
+          (SELECT COUNT(*) FROM positions WHERE portfolio_id = p.id AND is_open = false AND realized_pnl > 0) as winning_trades
+        FROM portfolios p
+        JOIN users u ON p.user_id = u.id
+        WHERE p.is_active = true
+      )
+      SELECT 
+        portfolio_id,
+        name,
+        username,
+        initial_capital,
+        current_value,
+        total_trades,
+        winning_trades,
+        ((current_value - initial_capital) / initial_capital * 100) as total_return_pct,
+        CASE WHEN total_trades > 0 
+          THEN (winning_trades::float / total_trades * 100) 
+          ELSE 0 
+        END as win_rate
+      FROM portfolio_stats
+      WHERE total_trades > 0
+      ORDER BY total_return_pct DESC
+      LIMIT $1`,
+      [limit]
+    );
+    
+    return result.rows.map((row, index) => ({
+      rank: index + 1,
+      portfolioId: row.portfolio_id,
+      name: row.name,
+      username: row.username,
+      initialCapital: parseFloat(row.initial_capital),
+      currentValue: parseFloat(row.current_value),
+      totalReturnPct: parseFloat(row.total_return_pct || 0),
+      totalTrades: parseInt(row.total_trades),
+      winningTrades: parseInt(row.winning_trades),
+      winRate: parseFloat(row.win_rate || 0),
+    }));
+  } catch (e) {
+    console.error('Get leaderboard error:', e);
+    throw e;
+  }
+}
+
+/**
+ * Get user's rank in leaderboard
+ */
+export async function getUserRank(userId) {
+  try {
+    const result = await query(
+      `WITH ranked_portfolios AS (
+        SELECT 
+          p.id,
+          p.user_id,
+          COALESCE(
+            (SELECT total_value FROM portfolio_snapshots 
+             WHERE portfolio_id = p.id 
+             ORDER BY recorded_at DESC LIMIT 1),
+            p.cash_balance
+          ) as current_value,
+          p.initial_capital,
+          ROW_NUMBER() OVER (
+            ORDER BY (
+              COALESCE(
+                (SELECT total_value FROM portfolio_snapshots 
+                 WHERE portfolio_id = p.id 
+                 ORDER BY recorded_at DESC LIMIT 1),
+                p.cash_balance
+              ) - p.initial_capital
+            ) / p.initial_capital DESC
+          ) as rank
+        FROM portfolios p
+        WHERE p.is_active = true
+          AND EXISTS (SELECT 1 FROM positions WHERE portfolio_id = p.id AND is_open = false)
+      )
+      SELECT rank, current_value, initial_capital,
+             ((current_value - initial_capital) / initial_capital * 100) as total_return_pct
+      FROM ranked_portfolios
+      WHERE user_id = $1`,
+      [userId]
+    );
+    
+    if (result.rows.length === 0) {
+      return null;
+    }
+    
+    const totalParticipants = await query(
+      `SELECT COUNT(DISTINCT p.id) as count
+       FROM portfolios p
+       WHERE p.is_active = true
+         AND EXISTS (SELECT 1 FROM positions WHERE portfolio_id = p.id AND is_open = false)`
+    );
+    
+    return {
+      rank: parseInt(result.rows[0].rank),
+      totalParticipants: parseInt(totalParticipants.rows[0].count),
+      currentValue: parseFloat(result.rows[0].current_value),
+      totalReturnPct: parseFloat(result.rows[0].total_return_pct || 0),
+    };
+  } catch (e) {
+    console.error('Get user rank error:', e);
+    throw e;
+  }
+}
+
 export default {
   BROKER_PROFILES,
   PRODUCT_TYPES,
@@ -1391,6 +2023,7 @@ export default {
   getUserPortfolios,
   getPortfolio,
   updatePortfolioSettings,
+  setInitialCapital,
   resetPortfolio,
   getOpenPositions,
   getAllPositions,
@@ -1402,4 +2035,15 @@ export default {
   getFeeSummary,
   getPortfolioMetrics,
   savePortfolioSnapshot,
+  // New features
+  createPendingOrder,
+  cancelOrder,
+  getPendingOrders,
+  checkPendingOrders,
+  checkPositionTriggers,
+  updatePositionLevels,
+  getEquityCurve,
+  saveDailySnapshots,
+  getLeaderboard,
+  getUserRank,
 };

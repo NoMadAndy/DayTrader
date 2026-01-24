@@ -21,6 +21,7 @@ import {
   getProductTypeName,
   getSideName,
 } from '../services/tradingService';
+import { EquityChart } from '../components';
 import type {
   Portfolio,
   Position,
@@ -356,6 +357,16 @@ export function PortfolioPage() {
                 </div>
               </div>
             )}
+            
+            {/* Portfolio Equity Curve */}
+            <div className="bg-slate-900/50 rounded-lg p-4">
+              <h3 className="text-lg font-semibold mb-3">📈 Portfolio-Entwicklung</h3>
+              <EquityChart 
+                portfolioId={portfolio!.id}
+                days={90}
+                height={250}
+              />
+            </div>
           </div>
         )}
         

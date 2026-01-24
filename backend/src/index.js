@@ -1051,6 +1051,166 @@ app.get('/api/trading/portfolio/:id/fees', authMiddleware, async (req, res) => {
   }
 });
 
+// ============================================================================
+// Extended Trading Features: Limit/Stop Orders, Automation, Leaderboard
+// ============================================================================
+
+/**
+ * Create a pending limit or stop order
+ * POST /api/trading/order/pending
+ * Body: { portfolioId, symbol, side, quantity, orderType, limitPrice?, stopPrice?, ... }
+ */
+app.post('/api/trading/order/pending', authMiddleware, express.json(), async (req, res) => {
+  try {
+    const { portfolioId, symbol, side, quantity, orderType, limitPrice, stopPrice, ...options } = req.body;
+    
+    if (!portfolioId || !symbol || !side || !quantity || !orderType) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: portfolioId, symbol, side, quantity, orderType' 
+      });
+    }
+    
+    if (!['limit', 'stop', 'stop_limit'].includes(orderType)) {
+      return res.status(400).json({ error: 'Invalid orderType. Must be limit, stop, or stop_limit' });
+    }
+    
+    const result = await trading.createPendingOrder({
+      userId: req.user.id,
+      portfolioId,
+      symbol: symbol.toUpperCase(),
+      side,
+      quantity,
+      orderType,
+      limitPrice,
+      stopPrice,
+      ...options
+    });
+    
+    res.json(result);
+  } catch (e) {
+    console.error('Create pending order error:', e);
+    res.status(500).json({ error: 'Failed to create pending order' });
+  }
+});
+
+/**
+ * Cancel a pending order
+ * DELETE /api/trading/order/:id
+ */
+app.delete('/api/trading/order/:id', authMiddleware, async (req, res) => {
+  try {
+    const result = await trading.cancelOrder(parseInt(req.params.id), req.user.id);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to cancel order' });
+  }
+});
+
+/**
+ * Get pending orders for portfolio
+ * GET /api/trading/portfolio/:id/orders/pending
+ */
+app.get('/api/trading/portfolio/:id/orders/pending', authMiddleware, async (req, res) => {
+  try {
+    const orders = await trading.getPendingOrders(parseInt(req.params.id), req.user.id);
+    res.json(orders);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get pending orders' });
+  }
+});
+
+/**
+ * Update position stop-loss and take-profit levels
+ * PUT /api/trading/position/:id/levels
+ * Body: { stopLoss?, takeProfit? }
+ */
+app.put('/api/trading/position/:id/levels', authMiddleware, express.json(), async (req, res) => {
+  try {
+    const { stopLoss, takeProfit } = req.body;
+    
+    const position = await trading.updatePositionLevels(
+      parseInt(req.params.id),
+      req.user.id,
+      { stopLoss, takeProfit }
+    );
+    
+    res.json(position);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to update position levels' });
+  }
+});
+
+/**
+ * Check pending orders and position triggers with price updates
+ * POST /api/trading/check-triggers
+ * Body: { prices: { symbol: price, ... } }
+ * This endpoint processes all automated triggers
+ */
+app.post('/api/trading/check-triggers', authMiddleware, express.json(), async (req, res) => {
+  try {
+    const { prices } = req.body;
+    
+    if (!prices || typeof prices !== 'object') {
+      return res.status(400).json({ error: 'prices object required' });
+    }
+    
+    const [executedOrders, triggeredPositions] = await Promise.all([
+      trading.checkPendingOrders(prices),
+      trading.checkPositionTriggers(prices),
+    ]);
+    
+    res.json({
+      executedOrders,
+      triggeredPositions,
+    });
+  } catch (e) {
+    console.error('Check triggers error:', e);
+    res.status(500).json({ error: 'Failed to check triggers' });
+  }
+});
+
+/**
+ * Get equity curve data
+ * GET /api/trading/portfolio/:id/equity-curve
+ */
+app.get('/api/trading/portfolio/:id/equity-curve', authMiddleware, async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 30;
+    const data = await trading.getEquityCurve(parseInt(req.params.id), req.user.id, days);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get equity curve' });
+  }
+});
+
+/**
+ * Get global leaderboard
+ * GET /api/trading/leaderboard
+ */
+app.get('/api/trading/leaderboard', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const timeframe = req.query.timeframe || 'all'; // all, day, week, month
+    const leaderboard = await trading.getLeaderboard(limit, timeframe);
+    res.json(leaderboard);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get leaderboard' });
+  }
+});
+
+/**
+ * Get user's rank in leaderboard
+ * GET /api/trading/leaderboard/rank
+ */
+app.get('/api/trading/leaderboard/rank', authMiddleware, async (req, res) => {
+  try {
+    const rank = await trading.getUserRank(req.user.id);
+    res.json(rank || { rank: null, message: 'No trading history yet' });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get user rank' });
+  }
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });
@@ -1092,6 +1252,26 @@ const startServer = async () => {
         }, msUntilMidnight);
       };
       scheduleOvernightFees();
+      
+      // Schedule daily portfolio snapshots at 22:00 UTC (after US market close)
+      const scheduleDailySnapshots = () => {
+        const now = new Date();
+        const snapshotTime = new Date(now);
+        snapshotTime.setUTCHours(22, 0, 0, 0);
+        if (snapshotTime <= now) {
+          snapshotTime.setDate(snapshotTime.getDate() + 1);
+        }
+        const msUntilSnapshot = snapshotTime.getTime() - now.getTime();
+        
+        setTimeout(() => {
+          trading.saveDailySnapshots();
+          // Then run every 24 hours
+          setInterval(() => {
+            trading.saveDailySnapshots();
+          }, 24 * 60 * 60 * 1000);
+        }, msUntilSnapshot);
+      };
+      scheduleDailySnapshots();
     } catch (e) {
       console.error('Database initialization failed:', e.message);
       console.log('Server will start without database features');

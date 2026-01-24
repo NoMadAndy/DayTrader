@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Erweiterte Trading-Features für Börsenspiel**
+  
+  - **Limit- und Stop-Orders** - Neben Market-Orders können nun auch Limit-, Stop- und Stop-Limit-Orders erstellt werden
+    - Neue Order-Typ-Auswahl im Trading-Formular
+    - Pending Orders werden in der TradingPage angezeigt
+    - Orders können storniert werden (reserviertes Cash wird zurückerstattet)
+  
+  - **Automatische Order-Ausführung** - Stop-Loss, Take-Profit und Knock-Out werden automatisch ausgeführt
+    - Backend-Logik für Trigger-Prüfung (`checkPendingOrders`, `checkPositionTriggers`)
+    - Margin-Call und Zwangsliquidation bei kritischem Margin-Level
+  
+  - **Portfolio Equity-Kurve** - Grafische Darstellung der Portfolio-Entwicklung
+    - EquityChart-Komponente mit interaktivem SVG-Liniendiagramm
+    - Tägliche Snapshots werden automatisch um 22:00 UTC gespeichert
+    - 90-Tage-Historie in der Portfolio-Übersicht
+  
+  - **Leaderboard / Rangliste** - Wettbewerb zwischen Tradern
+    - Neue Seite `/leaderboard` mit globaler Rangliste
+    - Sortierung nach Rendite (%)
+    - Zeitfilter: Gesamt, Monat, Woche, Tag
+    - Eigener Rang und Statistiken
+    - Navigation über "Rangliste" im Hauptmenü
+
+- **Neue API-Endpunkte**
+  - `POST /api/trading/order/pending` - Pending Order erstellen
+  - `DELETE /api/trading/order/:id` - Order stornieren
+  - `GET /api/trading/portfolio/:id/orders/pending` - Pending Orders abrufen
+  - `PUT /api/trading/position/:id/levels` - SL/TP einer Position ändern
+  - `POST /api/trading/check-triggers` - Trigger-Prüfung manuell auslösen
+  - `GET /api/trading/portfolio/:id/equity-curve` - Equity-Kurve abrufen
+  - `GET /api/trading/leaderboard` - Globales Leaderboard
+  - `GET /api/trading/leaderboard/rank` - Eigener Rang
+
+- **Neue Komponenten**
+  - `EquityChart` - Portfolio-Wert-Verlauf als Liniendiagramm
+  - `PendingOrders` - Anzeige und Stornierung ausstehender Orders
+  - `LeaderboardPage` - Vollständige Ranglisten-Seite
+
 ## [1.4.0] - 2026-01-24
 
 ### Added
