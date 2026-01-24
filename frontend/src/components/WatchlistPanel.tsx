@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getAvailableStocks, addCustomStock, removeCustomStock, stockExists } from '../utils/mockData';
-import { DataService } from '../services/dataService';
+import { useDataService } from '../hooks';
 import { 
   calculateCombinedTradingSignals, 
   getSignalDisplay,
@@ -35,9 +35,8 @@ interface WatchlistPanelProps {
   currentSymbol?: string;
 }
 
-const dataService = new DataService();
-
 export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanelProps) {
+  const { dataService } = useDataService();
   const [watchlistItems, setWatchlistItems] = useState<WatchlistItem[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);

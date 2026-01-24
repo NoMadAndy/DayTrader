@@ -17,7 +17,7 @@ export function WatchlistPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6">
+    <div className="max-w-7xl mx-auto px-4 py-6 flex-1 flex flex-col">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white flex items-center gap-3">
           <span className="text-3xl">📋</span>
@@ -28,7 +28,7 @@ export function WatchlistPage() {
         </p>
       </div>
 
-      <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6">
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6 flex-1">
         <WatchlistPanel 
           onSelectSymbol={handleSelectSymbol}
         />

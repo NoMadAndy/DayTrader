@@ -48,7 +48,7 @@ function AppContent() {
         <Navigation />
 
         {/* Routes */}
-        <main className="flex-1">
+        <main className="flex-1 flex flex-col">
           <Routes>
             <Route 
               path="/" 
