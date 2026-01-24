@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Multi-Page Navigation** - App wurde von Single-Page auf Multi-Page Architektur umgestellt
+  - React Router für Seitennavigation integriert
+  - **Dashboard** (/) - Hauptansicht mit Charts, Prognosen und Trading-Signalen
+  - **Watchlist** (/watchlist) - Eigene Seite für Watchlist-Verwaltung
+  - **Einstellungen** (/settings) - Kombinierte Seite für API-Keys, ML, Datenquellen und Auth
+  - **Info** (/info) - Ausführliche Erklärungen zur technischen Analyse
+  - **Changelog** (/changelog) - Versionshistorie als eigene Seite
+- **Navigation Bar** - Neue Navigationsleiste ersetzt das Hamburger-Menü
+  - Logo und App-Name mit Versionsanzeige
+  - Icon-basierte Navigation mit Labels auf größeren Bildschirmen
+  - Aktiver Link wird hervorgehoben
+  - Benutzer-Avatar und Quick-Login Zugang
+  - Responsive Design für Mobile und Desktop
+
+### Changed
+- **HamburgerMenu** entfernt - Funktionalität auf eigene Seiten verteilt
+- **Settings** - API-Keys, ML-Einstellungen, Datenquellen und Auth in einer kombinierten Seite
+- **StockSelector** - Aus der Navigation entfernt, jetzt nur noch im Dashboard
+
+### Fixed
+- WatchlistPage verwendet jetzt Events für Symbol-Auswahl (kein Prop-Drilling mehr)
+
+---
+
 - **Watchlist Panel** - Neue Übersicht aller beobachteten Aktien im Hamburger-Menü
   - Zeigt alle Symbole mit aktuellem Preis und Änderung
   - Trading-Empfehlungen für 4 Haltedauern (1h, 1d, 1w, Long) pro Symbol

@@ -16,7 +16,8 @@ A modern, AI-powered stock technical analysis platform for day trading education
 - 🌐 **Real-Time Data**: Connect to multiple market data providers (Finnhub, Alpha Vantage, Twelve Data, Yahoo Finance)
 - 📰 **Financial News**: Integrated news feeds with sentiment analysis
 - 🔐 **User Accounts**: Optional login/registration for settings persistence
-- ☰ **Hamburger Menu**: Unified navigation for API settings, data sources, changelog, and account
+- 📋 **Watchlist**: Personal watchlist with trading signals for all positions
+- 🧭 **Multi-Page Navigation**: Dedicated pages for Dashboard, Watchlist, Settings, Info, and Changelog
 
 ## Getting Started
 
