@@ -11,3 +11,4 @@ export { HamburgerMenu } from './HamburgerMenu';
 export { LoginForm } from './LoginForm';
 export { RegisterForm } from './RegisterForm';
 export { ChangelogPanel } from './ChangelogPanel';
+export { DataFreshnessIndicator, type DataTimestamps } from './DataFreshnessIndicator';

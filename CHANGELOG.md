@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Data Freshness Indicator** - Neuer Indikator zeigt Alter aller Daten
+  - Farbcodierte Anzeige: Grün (aktuell), Gelb (nicht ganz aktuell), Rot (veraltet)
+  - Separate Schwellwerte für verschiedene Datentypen:
+    - Kurse: <5min grün, <30min gelb, >30min rot
+    - News: <15min grün, <1h gelb, >1h rot
+    - ML-Modelle: <24h grün, <7d gelb, >7d rot
+  - Klick öffnet Detail-Dropdown mit allen Datenquellen
+  - "Alle Daten aktualisieren" Button für synchronen Refresh
+  - Icons 📊 (Kurse), 📰 (News), 🤖 (ML) zeigen Status auf einen Blick
 - **Hamburger Menu** - Neues Hauptmenü links oben ersetzt das Zahnrad-Icon
   - API Settings mit allen Provider-Konfigurationen
   - Data Source Auswahl direkt im Menü

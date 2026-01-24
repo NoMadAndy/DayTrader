@@ -27,6 +27,8 @@ interface NewsPanelProps {
   className?: string;
   /** Callback when sentiment analysis completes */
   onSentimentChange?: (items: NewsItemWithSentiment[]) => void;
+  /** Callback to register refresh function with parent */
+  onRefreshRegister?: (refreshFn: () => void) => void;
 }
 
 // Image component with error fallback using React state
@@ -50,13 +52,21 @@ function NewsImage({ src, className }: { src: string; className: string }) {
 export function NewsPanel({ 
   symbol, 
   className = '',
-  onSentimentChange
+  onSentimentChange,
+  onRefreshRegister
 }: NewsPanelProps) {
   const { news, isLoading, error, refetch } = useNews(symbol);
   const [newsWithSentiment, setNewsWithSentiment] = useState<NewsItemWithSentiment[]>([]);
   const [sentimentLoading, setSentimentLoading] = useState(false);
   const [useMLSentiment, setUseMLSentiment] = useState(true);
   const [mlAvailable, setMlAvailable] = useState<boolean | null>(null);
+
+  // Register refresh function with parent
+  useEffect(() => {
+    if (onRefreshRegister) {
+      onRefreshRegister(refetch);
+    }
+  }, [onRefreshRegister, refetch]);
 
   // Check ML availability on mount
   useEffect(() => {

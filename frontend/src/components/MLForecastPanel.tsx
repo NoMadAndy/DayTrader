@@ -17,9 +17,11 @@ interface MLForecastPanelProps {
   stockData: OHLCV[];
   /** Optional callback to notify parent when predictions are available */
   onPredictionsChange?: (predictions: MLPredictResponse['predictions'] | null) => void;
+  /** Callback to register refresh function with parent */
+  onRefreshRegister?: (refreshFn: () => void) => void;
 }
 
-export function MLForecastPanel({ symbol, stockData, onPredictionsChange }: MLForecastPanelProps) {
+export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefreshRegister }: MLForecastPanelProps) {
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
   const [health, setHealth] = useState<MLServiceHealth | null>(null);
   const [hasModel, setHasModel] = useState(false);
@@ -98,6 +100,13 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange }: MLFo
     
     setIsLoading(false);
   }, [symbol, stockData, onPredictionsChange]);
+
+  // Register refresh function with parent
+  useEffect(() => {
+    if (onRefreshRegister && hasModel && isAvailable) {
+      onRefreshRegister(loadPrediction);
+    }
+  }, [onRefreshRegister, loadPrediction, hasModel, isAvailable]);
 
   const startTraining = async () => {
     if (!stockData || stockData.length < 150) {

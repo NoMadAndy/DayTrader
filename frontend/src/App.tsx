@@ -1,5 +1,5 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
-import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, NewsPanel, TradingSignalPanel, HamburgerMenu, type NewsItemWithSentiment } from './components';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, NewsPanel, TradingSignalPanel, HamburgerMenu, DataFreshnessIndicator, type NewsItemWithSentiment, type DataTimestamps } from './components';
 import { DataServiceProvider, useStockData, useDataService } from './hooks';
 import { generateForecast } from './utils/forecast';
 import { initializeAuth } from './services/authService';
@@ -34,15 +34,81 @@ function AppContent() {
   // State for news sentiment (from NewsPanel callback)
   const [newsWithSentiment, setNewsWithSentiment] = useState<NewsItemWithSentiment[]>([]);
 
+  // Data freshness timestamps
+  const [dataTimestamps, setDataTimestamps] = useState<DataTimestamps>({
+    financial: null,
+    news: null,
+    mlModel: null,
+  });
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Refs for refresh callbacks from child components
+  const newsRefreshRef = useRef<(() => void) | null>(null);
+  const mlRefreshRef = useRef<(() => void) | null>(null);
+
+  // Update financial data timestamp when stock data loads
+  useEffect(() => {
+    if (stockData && !isLoading) {
+      setDataTimestamps(prev => ({
+        ...prev,
+        financial: new Date(),
+      }));
+    }
+  }, [stockData, isLoading]);
+
   // Callback to receive ML predictions from MLForecastPanel
   const handleMLPredictionsChange = useCallback((predictions: MLPrediction[] | null) => {
     setMlPredictions(predictions);
+    if (predictions) {
+      setDataTimestamps(prev => ({
+        ...prev,
+        mlModel: new Date(),
+      }));
+    }
   }, []);
 
   // Callback to receive sentiment data from NewsPanel
   const handleSentimentChange = useCallback((items: NewsItemWithSentiment[]) => {
     setNewsWithSentiment(items);
+    if (items.length > 0) {
+      setDataTimestamps(prev => ({
+        ...prev,
+        news: new Date(),
+      }));
+    }
   }, []);
+
+  // Callback to register news refresh function
+  const handleNewsRefreshRegister = useCallback((refreshFn: () => void) => {
+    newsRefreshRef.current = refreshFn;
+  }, []);
+
+  // Callback to register ML refresh function
+  const handleMLRefreshRegister = useCallback((refreshFn: () => void) => {
+    mlRefreshRef.current = refreshFn;
+  }, []);
+
+  // Unified refresh all data
+  const handleRefreshAll = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      // Refresh financial data
+      refetch();
+      
+      // Refresh news if callback registered
+      if (newsRefreshRef.current) {
+        newsRefreshRef.current();
+      }
+      
+      // Refresh ML predictions if callback registered
+      if (mlRefreshRef.current) {
+        mlRefreshRef.current();
+      }
+    } finally {
+      // Give some time for visual feedback
+      setTimeout(() => setIsRefreshing(false), 1000);
+    }
+  }, [refetch]);
 
   // Collapsible section states (default: collapsed)
   const [showIndicators, setShowIndicators] = useState(false);
@@ -152,21 +218,11 @@ function AppContent() {
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <button
-                    onClick={refetch}
-                    className="p-2 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-gray-400 hover:text-white transition-colors"
-                    title="Refresh data"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                  </button>
-                  <div className="flex items-center gap-2 text-sm text-gray-400">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>Last updated: {new Date().toLocaleTimeString()}</span>
-                  </div>
+                  <DataFreshnessIndicator 
+                    timestamps={dataTimestamps}
+                    onRefresh={handleRefreshAll}
+                    isRefreshing={isRefreshing}
+                  />
                 </div>
               </div>
             </div>
@@ -194,6 +250,7 @@ function AppContent() {
                   symbol={selectedSymbol} 
                   stockData={stockData?.data ?? []} 
                   onPredictionsChange={handleMLPredictionsChange}
+                  onRefreshRegister={handleMLRefreshRegister}
                 />
               </div>
 
@@ -203,6 +260,7 @@ function AppContent() {
                   symbol={selectedSymbol} 
                   className="h-full"
                   onSentimentChange={handleSentimentChange}
+                  onRefreshRegister={handleNewsRefreshRegister}
                 />
               </div>
             </div>
