@@ -261,6 +261,46 @@ app.post('/api/user/symbols/sync', authMiddleware, express.json(), async (req, r
 // Yahoo Finance proxy endpoints
 const YAHOO_CHART_URL = 'https://query1.finance.yahoo.com/v8/finance/chart';
 const YAHOO_SEARCH_URL = 'https://query1.finance.yahoo.com/v1/finance/search';
+const YAHOO_QUOTE_URL = 'https://query2.finance.yahoo.com/v6/finance/quote';
+
+/**
+ * Proxy Yahoo Finance quote data (includes market cap, PE, etc.)
+ * GET /api/yahoo/quote/:symbols
+ * symbols can be comma-separated for batch requests
+ */
+app.get('/api/yahoo/quote/:symbols', async (req, res) => {
+  const { symbols } = req.params;
+  
+  try {
+    const url = `${YAHOO_QUOTE_URL}?symbols=${encodeURIComponent(symbols)}`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    
+    if (!response.ok) {
+      console.error(`Yahoo Finance quote error: ${response.status} ${response.statusText}`);
+      return res.status(response.status).json({ 
+        error: 'Yahoo Finance quote error',
+        status: response.status,
+        message: response.statusText
+      });
+    }
+    
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Yahoo Finance quote proxy error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch quote from Yahoo Finance',
+      message: error.message 
+    });
+  }
+});
 
 /**
  * Proxy Yahoo Finance chart data

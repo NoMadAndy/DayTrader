@@ -421,7 +421,9 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="font-semibold text-white text-sm sm:text-base">{item.symbol}</span>
                   </div>
-                  <div className="text-xs text-gray-400 truncate">{item.name}</div>
+                  <div className="text-xs text-gray-400 truncate" title={item.companyInfo?.name || item.name}>
+                    {item.companyInfo?.name || item.name}
+                  </div>
                 </div>
               </div>
               

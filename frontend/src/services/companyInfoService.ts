@@ -92,9 +92,9 @@ function getApiKeys(): { finnhub?: string; alphaVantage?: string; twelveData?: s
 }
 
 /**
- * Fetch data from Yahoo Finance chart endpoint
+ * Fetch data from Yahoo Finance chart endpoint (basic price data)
  */
-async function fetchYahooData(symbol: string): Promise<Partial<CompanyInfo> | null> {
+async function fetchYahooChartData(symbol: string): Promise<Partial<CompanyInfo> | null> {
   try {
     const response = await fetch(`${API_BASE}/yahoo/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d`);
     if (!response.ok) return null;
@@ -121,7 +121,46 @@ async function fetchYahooData(symbol: string): Promise<Partial<CompanyInfo> | nu
       changeAbsolute: change,
     };
   } catch (error) {
-    console.warn('Yahoo fetch error:', error);
+    console.warn('Yahoo chart fetch error:', error);
+    return null;
+  }
+}
+
+/**
+ * Fetch data from Yahoo Finance quote endpoint (includes market cap, PE, dividends)
+ * NOTE: Yahoo has restricted this endpoint - may return 401/404
+ * Fundamentals now primarily come from Finnhub or Alpha Vantage
+ */
+async function fetchYahooQuoteData(symbol: string): Promise<Partial<CompanyInfo> | null> {
+  try {
+    const response = await fetch(`${API_BASE}/yahoo/quote/${encodeURIComponent(symbol)}`);
+    if (!response.ok) return null;
+    
+    const data = await response.json();
+    const quote = data?.quoteResponse?.result?.[0];
+    if (!quote) return null;
+    
+    return {
+      symbol: quote.symbol,
+      name: quote.longName || quote.shortName,
+      currency: quote.currency || 'USD',
+      exchange: quote.fullExchangeName || quote.exchange,
+      priceUSD: quote.regularMarketPrice,
+      marketCapUSD: quote.marketCap,
+      peRatio: quote.trailingPE,
+      forwardPE: quote.forwardPE,
+      eps: quote.epsTrailingTwelveMonths,
+      dividendYield: quote.trailingAnnualDividendYield ? quote.trailingAnnualDividendYield * 100 : undefined,
+      dividendRate: quote.trailingAnnualDividendRate,
+      fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh,
+      fiftyTwoWeekLow: quote.fiftyTwoWeekLow,
+      volume: quote.regularMarketVolume,
+      avgVolume: quote.averageDailyVolume10Day,
+      changePercent: quote.regularMarketChangePercent,
+      changeAbsolute: quote.regularMarketChange,
+    };
+  } catch {
+    // Expected to fail - Yahoo has restricted this endpoint
     return null;
   }
 }
@@ -276,13 +315,14 @@ export async function fetchCompanyInfo(symbol: string): Promise<CompanyInfo | nu
   const apiKeys = getApiKeys();
   const dataSources: string[] = [];
   
-  // Start all fetches in parallel
-  const [yahooData, eurRate] = await Promise.all([
-    fetchYahooData(symbol),
+  // Start Yahoo fetches in parallel (quote for fundamentals, chart for backup price data)
+  const [yahooQuoteData, yahooChartData, eurRate] = await Promise.all([
+    fetchYahooQuoteData(symbol),
+    fetchYahooChartData(symbol),
     getEurUsdRate(),
   ]);
   
-  if (yahooData) dataSources.push('Yahoo');
+  if (yahooQuoteData || yahooChartData) dataSources.push('Yahoo');
   
   // Fetch from other providers if API keys are available
   const additionalFetches: Promise<Partial<CompanyInfo> | null>[] = [];
@@ -335,10 +375,19 @@ export async function fetchCompanyInfo(symbol: string): Promise<CompanyInfo | nu
     }
   };
   
-  // Apply Yahoo data first (most reliable for basic price)
-  if (yahooData) {
-    Object.entries(yahooData).forEach(([key, value]) => {
+  // Apply Yahoo quote data first (best source for fundamentals like market cap, PE, dividends)
+  if (yahooQuoteData) {
+    Object.entries(yahooQuoteData).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
+        (merged as Record<string, unknown>)[key] = value;
+      }
+    });
+  }
+  
+  // Apply Yahoo chart data as fallback for basic price data
+  if (yahooChartData) {
+    Object.entries(yahooChartData).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && merged[key as keyof CompanyInfo] === undefined) {
         (merged as Record<string, unknown>)[key] = value;
       }
     });

@@ -9,12 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Multi-Provider Datenaggregation** - Unternehmensdaten werden von allen verfügbaren Quellen zusammengeführt
-  - Yahoo Finance: Preisdaten, 52-Wochen-Range, Volumen
-  - Finnhub: Unternehmensprofil (Marktkapitalisierung, Branche, ISIN), Finanzkennzahlen (KGV, Dividendenrendite, Beta)
-  - Alpha Vantage: Unternehmensübersicht (Name, Sektor, KGV, EPS)
-  - Twelve Data: Echtzeit-Kurse
+  - Yahoo Finance: Preisdaten, 52-Wochen-Range, Volumen, Unternehmensname
+  - Finnhub (API-Key erforderlich): Unternehmensprofil (Marktkapitalisierung, Branche, ISIN), Finanzkennzahlen (KGV, Dividendenrendite, Beta)
+  - Alpha Vantage (API-Key erforderlich): Unternehmensübersicht (Name, Sektor, KGV, EPS, Marktkapitalisierung)
+  - Twelve Data (API-Key erforderlich): Echtzeit-Kurse
   - Automatischer Fallback: Wenn eine Quelle keine Daten hat, werden andere abgefragt
   - Datenquellen-Anzeige: Zeigt an, von welchen Providern die Daten stammen
+  - **Hinweis**: Für vollständige Fundamentaldaten (KGV, Marktkapitalisierung, Dividenden) werden Finnhub oder Alpha Vantage API-Keys benötigt
+- **Unternehmensname in Selector und Watchlist** - Namen werden von Datenanbietern geladen
+  - StockSelector zeigt vollständigen Unternehmensnamen (z.B. "Apple Inc." statt "AAPL")
+  - Watchlist zeigt ebenfalls den vollen Namen wenn verfügbar
+  - Namen werden im Hintergrund geladen und automatisch aktualisiert
 - **Erweiterte Unternehmenskennzahlen** - Neue Datenfelder hinzugefügt
   - Marktkapitalisierung in EUR und USD
   - KGV (P/E Ratio) mit Forward P/E

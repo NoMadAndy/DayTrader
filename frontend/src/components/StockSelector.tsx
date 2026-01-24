@@ -10,10 +10,12 @@ import {
   addCustomSymbolToServer, 
   removeCustomSymbolFromServer 
 } from '../services/userSettingsService';
+import { fetchCompanyInfo } from '../services/companyInfoService';
 
 interface Stock {
   symbol: string;
   name: string;
+  fullName?: string; // Loaded from CompanyInfo
 }
 
 interface StockSelectorProps {
@@ -43,16 +45,35 @@ export function StockSelector({ selectedSymbol, onSelect }: StockSelectorProps) 
     async function loadStocks() {
       setIsLoading(true);
       
+      let loadedStocks: Stock[];
+      
       if (authState.isAuthenticated) {
         // Load user's symbols from server
         const serverSymbols = await getCustomSymbols();
-        setStocks(serverSymbols.map(s => ({ symbol: s.symbol, name: s.name || s.symbol })));
+        loadedStocks = serverSymbols.map(s => ({ symbol: s.symbol, name: s.name || s.symbol }));
       } else {
         // Use default stocks for non-authenticated users
-        setStocks(DEFAULT_STOCKS.map(s => ({ symbol: s.symbol, name: s.name })));
+        loadedStocks = DEFAULT_STOCKS.map(s => ({ symbol: s.symbol, name: s.name }));
       }
       
+      setStocks(loadedStocks);
       setIsLoading(false);
+      
+      // Load full company names in background
+      loadedStocks.forEach(async (stock) => {
+        try {
+          const info = await fetchCompanyInfo(stock.symbol);
+          if (info?.name && info.name !== stock.symbol) {
+            setStocks(prev => prev.map(s => 
+              s.symbol === stock.symbol 
+                ? { ...s, fullName: info.name }
+                : s
+            ));
+          }
+        } catch {
+          // Ignore errors for individual stocks
+        }
+      });
     }
     
     loadStocks();
@@ -135,7 +156,9 @@ export function StockSelector({ selectedSymbol, onSelect }: StockSelectorProps) 
         </div>
         <div className="text-left">
           <div className="text-white font-semibold">{selectedSymbol}</div>
-          <div className="text-gray-400 text-sm truncate max-w-[120px]">{selectedStock?.name || selectedSymbol}</div>
+          <div className="text-gray-400 text-sm truncate max-w-[120px]" title={selectedStock?.fullName || selectedStock?.name || selectedSymbol}>
+            {selectedStock?.fullName || selectedStock?.name || selectedSymbol}
+          </div>
         </div>
         <svg className={`w-5 h-5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -181,7 +204,9 @@ export function StockSelector({ selectedSymbol, onSelect }: StockSelectorProps) 
                     </div>
                     <div className="text-left flex-1 min-w-0">
                       <div className="text-white font-medium">{stock.symbol}</div>
-                      <div className="text-gray-400 text-sm truncate">{stock.name}</div>
+                      <div className="text-gray-400 text-sm truncate" title={stock.fullName || stock.name}>
+                        {stock.fullName || stock.name}
+                      </div>
                     </div>
                     {authState.isAuthenticated && (
                       <button
