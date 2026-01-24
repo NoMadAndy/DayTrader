@@ -209,15 +209,18 @@ export function StockSelector({ selectedSymbol, onSelect }: StockSelectorProps) 
                       </div>
                     </div>
                     {authState.isAuthenticated && (
-                      <button
+                      <span
+                        role="button"
+                        tabIndex={0}
                         onClick={(e) => handleRemoveStock(stock.symbol, e)}
-                        className="p-1 hover:bg-red-500/20 rounded text-gray-400 hover:text-red-400 transition-colors"
+                        onKeyDown={(e) => e.key === 'Enter' && handleRemoveStock(stock.symbol, e as unknown as React.MouseEvent)}
+                        className="p-1 hover:bg-red-500/20 rounded text-gray-400 hover:text-red-400 transition-colors cursor-pointer"
                         title="Entfernen"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
-                      </button>
+                      </span>
                     )}
                     {stock.symbol === selectedSymbol && (
                       <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">

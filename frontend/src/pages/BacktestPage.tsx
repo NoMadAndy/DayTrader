@@ -394,9 +394,15 @@ export default function BacktestPage() {
 
         {/* Create Session Modal */}
         {showCreateForm && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
-              <h2 className="text-xl font-bold mb-4 dark:text-white">Neuen Backtest erstellen</h2>
+          <div 
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+            onClick={() => setShowCreateForm(false)}
+          >
+            <div 
+              className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Neuen Backtest erstellen</h2>
               <form onSubmit={handleCreateSession}>
                 <div className="space-y-4">
                   <div>
@@ -407,9 +413,10 @@ export default function BacktestPage() {
                       type="text"
                       value={newSessionName}
                       onChange={e => setNewSessionName(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg bg-white text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                       placeholder="z.B. Tech-Strategie 2023"
                       required
+                      autoFocus
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
@@ -421,7 +428,7 @@ export default function BacktestPage() {
                         type="date"
                         value={newStartDate}
                         onChange={e => setNewStartDate(e.target.value)}
-                        className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                         required
                       />
                     </div>
@@ -434,7 +441,7 @@ export default function BacktestPage() {
                         value={newEndDate}
                         onChange={e => setNewEndDate(e.target.value)}
                         max={new Date().toISOString().split('T')[0]}
-                        className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                         required
                       />
                     </div>
@@ -449,7 +456,7 @@ export default function BacktestPage() {
                       onChange={e => setNewCapital(Number(e.target.value))}
                       min={1000}
                       max={10000000}
-                      className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                     />
                   </div>
                 </div>
@@ -457,14 +464,14 @@ export default function BacktestPage() {
                   <button
                     type="button"
                     onClick={() => setShowCreateForm(false)}
-                    className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                    className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
                   >
                     Abbrechen
                   </button>
                   <button
                     type="submit"
                     disabled={loading}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition"
                   >
                     {loading ? 'Wird erstellt...' : 'Erstellen'}
                   </button>
@@ -644,7 +651,7 @@ export default function BacktestPage() {
                         <select
                           value={selectedSymbol}
                           onChange={e => setSelectedSymbol(e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                          className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                         >
                           {POPULAR_SYMBOLS.map(s => (
                             <option key={s} value={s}>
@@ -663,7 +670,7 @@ export default function BacktestPage() {
                             }
                           }}
                           placeholder="Anderes Symbol..."
-                          className="w-full mt-2 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
+                          className="w-full mt-2 px-3 py-2 border-2 border-gray-300 rounded-lg bg-white text-gray-900 placeholder-gray-400 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                         />
                       </div>
 
@@ -706,7 +713,7 @@ export default function BacktestPage() {
                           value={tradeQuantity}
                           onChange={e => setTradeQuantity(Number(e.target.value))}
                           min={1}
-                          className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                          className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                         />
                       </div>
 
