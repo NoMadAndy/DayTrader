@@ -78,12 +78,18 @@ export async function getEurUsdRate(): Promise<number> {
 
 /**
  * Get API keys from localStorage
+ * Reads from 'daytrader_api_config' which is the same storage used by ApiConfigPanel
  */
 function getApiKeys(): { finnhub?: string; alphaVantage?: string; twelveData?: string } {
   try {
-    const stored = localStorage.getItem('daytrader_api_keys');
+    const stored = localStorage.getItem('daytrader_api_config');
     if (stored) {
-      return JSON.parse(stored);
+      const config = JSON.parse(stored);
+      return {
+        finnhub: config.finnhubApiKey || undefined,
+        alphaVantage: config.alphaVantageApiKey || undefined,
+        twelveData: config.twelveDataApiKey || undefined,
+      };
     }
   } catch {
     // Ignore
@@ -315,6 +321,13 @@ export async function fetchCompanyInfo(symbol: string): Promise<CompanyInfo | nu
   const apiKeys = getApiKeys();
   const dataSources: string[] = [];
   
+  // Debug: Log which API keys are available
+  console.log(`[CompanyInfo] Fetching ${symbol}, API keys available:`, {
+    finnhub: !!apiKeys.finnhub,
+    alphaVantage: !!apiKeys.alphaVantage,
+    twelveData: !!apiKeys.twelveData,
+  });
+  
   // Start Yahoo fetches in parallel (quote for fundamentals, chart for backup price data)
   const [yahooQuoteData, yahooChartData, eurRate] = await Promise.all([
     fetchYahooQuoteData(symbol),
@@ -326,6 +339,7 @@ export async function fetchCompanyInfo(symbol: string): Promise<CompanyInfo | nu
   
   // Fetch from other providers if API keys are available
   const additionalFetches: Promise<Partial<CompanyInfo> | null>[] = [];
+  const fetchLabels: string[] = [];
   
   if (apiKeys.finnhub) {
     additionalFetches.push(
@@ -333,17 +347,29 @@ export async function fetchCompanyInfo(symbol: string): Promise<CompanyInfo | nu
       fetchFinnhubMetrics(symbol, apiKeys.finnhub),
       fetchFinnhubQuote(symbol, apiKeys.finnhub)
     );
+    fetchLabels.push('Finnhub Profile', 'Finnhub Metrics', 'Finnhub Quote');
   }
   
   if (apiKeys.alphaVantage) {
     additionalFetches.push(fetchAlphaVantageOverview(symbol, apiKeys.alphaVantage));
+    fetchLabels.push('Alpha Vantage Overview');
   }
   
   if (apiKeys.twelveData) {
     additionalFetches.push(fetchTwelveDataQuote(symbol, apiKeys.twelveData));
+    fetchLabels.push('Twelve Data Quote');
   }
   
   const additionalResults = await Promise.all(additionalFetches);
+  
+  // Debug: Log what each provider returned
+  additionalResults.forEach((result, idx) => {
+    if (result) {
+      console.log(`[CompanyInfo] ${fetchLabels[idx]} returned:`, result);
+    } else {
+      console.log(`[CompanyInfo] ${fetchLabels[idx]} returned null`);
+    }
+  });
   
   // Track which sources provided data
   let finnhubIdx = 0;
