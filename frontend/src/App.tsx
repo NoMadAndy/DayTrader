@@ -45,25 +45,44 @@ function AppContent() {
   // Refs for refresh callbacks from child components
   const newsRefreshRef = useRef<(() => void) | null>(null);
   const mlRefreshRef = useRef<(() => void) | null>(null);
+  
+  // Track last loaded data to detect actual changes
+  const lastStockDataRef = useRef<string | null>(null);
 
-  // Update financial data timestamp when stock data loads
+  // Update financial data timestamp when stock data actually changes
   useEffect(() => {
     if (stockData && !isLoading) {
-      setDataTimestamps(prev => ({
-        ...prev,
-        financial: new Date(),
-      }));
+      // Create a simple fingerprint of the data
+      const dataFingerprint = `${stockData.symbol}-${stockData.data.length}-${stockData.data[stockData.data.length - 1]?.close}`;
+      
+      if (lastStockDataRef.current !== dataFingerprint) {
+        lastStockDataRef.current = dataFingerprint;
+        setDataTimestamps(prev => ({
+          ...prev,
+          financial: new Date(),
+        }));
+      }
     }
   }, [stockData, isLoading]);
+
+  // Track last news data to detect actual changes
+  const lastNewsCountRef = useRef<number>(0);
+  
+  // Track last ML predictions to detect actual changes  
+  const lastMLPredictionRef = useRef<string | null>(null);
 
   // Callback to receive ML predictions from MLForecastPanel
   const handleMLPredictionsChange = useCallback((predictions: MLPrediction[] | null) => {
     setMlPredictions(predictions);
-    if (predictions) {
-      setDataTimestamps(prev => ({
-        ...prev,
-        mlModel: new Date(),
-      }));
+    if (predictions && predictions.length > 0) {
+      const predFingerprint = `${predictions[0].date}-${predictions[0].predicted_price}`;
+      if (lastMLPredictionRef.current !== predFingerprint) {
+        lastMLPredictionRef.current = predFingerprint;
+        setDataTimestamps(prev => ({
+          ...prev,
+          mlModel: new Date(),
+        }));
+      }
     }
   }, []);
 
@@ -71,10 +90,15 @@ function AppContent() {
   const handleSentimentChange = useCallback((items: NewsItemWithSentiment[]) => {
     setNewsWithSentiment(items);
     if (items.length > 0) {
-      setDataTimestamps(prev => ({
-        ...prev,
-        news: new Date(),
-      }));
+      // Only update timestamp when news count changes or first item changes
+      const newsFingerprint = `${items.length}-${items[0]?.headline?.substring(0, 20)}`;
+      if (lastNewsCountRef.current !== items.length || newsFingerprint !== lastNewsCountRef.current.toString()) {
+        lastNewsCountRef.current = items.length;
+        setDataTimestamps(prev => ({
+          ...prev,
+          news: new Date(),
+        }));
+      }
     }
   }, []);
 
