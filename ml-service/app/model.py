@@ -476,10 +476,11 @@ class StockPredictor:
         X_scaled = self.scaler_X.transform(X)
         
         # Get the last sequence
-        if len(X_scaled) < settings.sequence_length:
-            raise ValueError(f"Need at least {settings.sequence_length} data points")
+        seq_len = self.model_metadata.get('sequence_length', settings.sequence_length)
+        if len(X_scaled) < seq_len:
+            raise ValueError(f"Need at least {seq_len} data points")
         
-        last_sequence = X_scaled[-settings.sequence_length:]
+        last_sequence = X_scaled[-seq_len:]
         X_input = torch.FloatTensor(last_sequence).unsqueeze(0).to(self.device)
         
         # Predict
@@ -488,13 +489,28 @@ class StockPredictor:
             predictions_scaled = self.model(X_input).cpu().numpy()[0]
         
         # Inverse transform to get actual prices
-        predictions = self.scaler_y.inverse_transform(
+        predictions_raw = self.scaler_y.inverse_transform(
             predictions_scaled.reshape(-1, 1)
         ).flatten()
         
+        # Sanity check: predictions should be within reasonable range of current price
+        # If predictions deviate more than 50% from current price, they are likely wrong
+        current_price = ohlcv_data[-1]['close']
+        predictions = []
+        for pred in predictions_raw:
+            change_pct = (pred - current_price) / current_price
+            if abs(change_pct) > 0.5:  # More than 50% change is unrealistic for short-term
+                # Clamp to reasonable range (max +/- 20% from current price over forecast period)
+                logger.warning(f"Prediction {pred:.2f} is {change_pct*100:.1f}% from current price {current_price:.2f}, clamping")
+                max_change = 0.20  # 20% max
+                if change_pct > 0:
+                    pred = current_price * (1 + max_change)
+                else:
+                    pred = current_price * (1 - max_change)
+            predictions.append(pred)
+        
         # Calculate prediction confidence based on model uncertainty
         # Using simple heuristic: confidence decreases with forecast horizon
-        current_price = ohlcv_data[-1]['close']
         confidences = []
         for i, pred in enumerate(predictions):
             # Base confidence decreases linearly with days
