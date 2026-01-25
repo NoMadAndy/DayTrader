@@ -13,11 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Trading Signal Panel** - Kombinierte Handelssignale (Stündlich, Täglich, Wöchentlich, Langfristig)
     - Basiert auf technischen Indikatoren für den simulierten Zeitpunkt
     - Zeigt Bias (Bullish/Bearish/Neutral) und Volatilitäts-Indikator
+    - Integriert ML-Predictions in die Signal-Berechnung
     
   - **AI Forecast Panel** - Preisprognosen für historische Daten
     - Generiert Preis-Targets basierend auf den Daten bis zum Simulationsdatum
     - Zeigt Support/Resistance-Levels, Konfidenz und Trend-Signal
     - Vollständige technische Indikator-Analyse
+  
+  - **ML Forecast Panel** - LSTM Neural Network Vorhersagen
+    - Trainiert Modelle auf historischen Daten bis zum Simulationsdatum
+    - Zeigt Preisprognosen für die nächsten Tage
+    - GPU-Unterstützung wenn verfügbar
+    - Predictions werden in Trading-Signale integriert
     
   - **Interaktiver Chart** - Vollständiger Candlestick-Chart wie im Dashboard
     - Alle technischen Indikatoren: SMA20/50, EMA12/26, Bollinger Bands, MACD, RSI, Volume

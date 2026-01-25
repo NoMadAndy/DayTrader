@@ -31,9 +31,18 @@ import {
   type BacktestPosition,
   type BacktestResults,
 } from '../services/tradingService';
-import { StockChart, ForecastPanel, TradingSignalPanel, IndicatorControls } from '../components';
+import { StockChart, ForecastPanel, TradingSignalPanel, IndicatorControls, MLForecastPanel } from '../components';
 import { generateForecast } from '../utils/forecast';
 import type { OHLCV, ForecastResult } from '../types/stock';
+
+// ML Prediction type for trading signals
+interface MLPrediction {
+  date: string;
+  day: number;
+  predicted_price: number;
+  confidence: number;
+  change_pct: number;
+}
 
 // Popular symbols for backtesting
 const POPULAR_SYMBOLS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'JPM', 'V', 'WMT'];
@@ -86,6 +95,14 @@ export default function BacktestPage() {
   const [showMACD, setShowMACD] = useState(true);
   const [showRSI, setShowRSI] = useState(true);
   const [showVolume, setShowVolume] = useState(true);
+
+  // ML Predictions state
+  const [mlPredictions, setMlPredictions] = useState<MLPrediction[] | null>(null);
+
+  // Callback to receive ML predictions from MLForecastPanel
+  const handleMLPredictionsChange = useCallback((predictions: MLPrediction[] | null) => {
+    setMlPredictions(predictions);
+  }, []);
 
   // Subscribe to auth changes
   useEffect(() => {
@@ -726,15 +743,25 @@ export default function BacktestPage() {
                           className=""
                           forecast={forecast}
                           stockData={chartData}
+                          mlPredictions={mlPredictions ?? undefined}
                           currentPrice={currentPrice}
                         />
                       )}
 
-                      {/* AI Forecast */}
+                      {/* AI Forecast (Technical Analysis) */}
                       {forecast && currentPrice && (
                         <ForecastPanel
                           forecast={forecast}
                           currentPrice={currentPrice}
+                        />
+                      )}
+
+                      {/* ML Forecast Panel (LSTM Neural Network) */}
+                      {chartData.length >= 60 && currentPrice && (
+                        <MLForecastPanel
+                          symbol={selectedSymbol}
+                          stockData={chartData}
+                          onPredictionsChange={handleMLPredictionsChange}
                         />
                       )}
 
