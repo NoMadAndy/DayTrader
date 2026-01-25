@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.6.2] - 2026-01-25
 
 ### Added
+- **Langzeit-Historische Daten für Backtesting** - Unterstützt jetzt Backtests von 2000 bis heute
+  
+  - **Datenbankgestützte Preishistorie** - Historische Kursdaten werden in PostgreSQL gespeichert
+    - Einmaliges Laden von Yahoo Finance (bis zu 20+ Jahre Daten)
+    - Daten werden für alle Benutzer konsistent geteilt
+    - Automatisches Laden bei erstem Zugriff auf einen Zeitraum
+    - Schnelles Abrufen aus DB bei wiederholtem Zugriff
+    
+  - **Neue Backend-API Endpoints**
+    - `GET /api/historical-prices/:symbol` - Historische Preise abrufen
+    - `GET /api/historical-prices/:symbol/availability` - Verfügbarkeit prüfen
+    - `GET /api/historical-prices/symbols/available` - Alle gecachten Symbole
+    - `POST /api/historical-prices/:symbol/refresh` - Daten aktualisieren
+
 - **Dashboard-Analyse im Backtesting** - Vollständige Marktanalyse für historische Daten
   
   - **Trading Signal Panel** - Kombinierte Handelssignale (Stündlich, Täglich, Wöchentlich, Langfristig)

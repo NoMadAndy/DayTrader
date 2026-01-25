@@ -116,12 +116,34 @@ export async function initializeDatabase() {
       );
     `);
 
+    // Create historical_prices table for cached long-term price data
+    // This data is shared across all users for consistency
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS historical_prices (
+        id SERIAL PRIMARY KEY,
+        symbol VARCHAR(20) NOT NULL,
+        date DATE NOT NULL,
+        open DECIMAL(15, 4) NOT NULL,
+        high DECIMAL(15, 4) NOT NULL,
+        low DECIMAL(15, 4) NOT NULL,
+        close DECIMAL(15, 4) NOT NULL,
+        volume BIGINT DEFAULT 0,
+        adj_close DECIMAL(15, 4),
+        source VARCHAR(50) DEFAULT 'yahoo',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(symbol, date)
+      );
+    `);
+
     // Create indexes for better query performance
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
       CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
       CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
       CREATE INDEX IF NOT EXISTS idx_custom_symbols_user_id ON custom_symbols(user_id);
+      CREATE INDEX IF NOT EXISTS idx_historical_prices_symbol ON historical_prices(symbol);
+      CREATE INDEX IF NOT EXISTS idx_historical_prices_symbol_date ON historical_prices(symbol, date);
+      CREATE INDEX IF NOT EXISTS idx_historical_prices_date ON historical_prices(date);
     `);
 
     await client.query('COMMIT');

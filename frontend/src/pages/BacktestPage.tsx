@@ -15,7 +15,6 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getAuthState, subscribeToAuth, type AuthState } from '../services/authService';
-import { useDataService } from '../hooks/useDataService';
 import {
   createBacktestSession,
   getBacktestSessions,
@@ -27,6 +26,7 @@ import {
   deleteBacktestSession,
   formatCurrency,
   formatPercent,
+  getHistoricalPrices,
   type BacktestSession,
   type BacktestPosition,
   type BacktestResults,
@@ -49,7 +49,6 @@ const POPULAR_SYMBOLS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META'
 
 export default function BacktestPage() {
   const [authState, setAuthState] = useState<AuthState>(getAuthState());
-  const dataService = useDataService();
 
   // Sessions list
   const [sessions, setSessions] = useState<BacktestSession[]>([]);
@@ -172,37 +171,38 @@ export default function BacktestPage() {
     if (!activeSession) return;
 
     try {
-      const startDate = new Date(activeSession.startDate);
-      const endDate = new Date(activeSession.endDate);
-      const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 30;
+      setLoading(true);
+      
+      // Use backend API for historical data (supports long-term data from DB)
+      // Add 30 days buffer before start date for indicator calculations
+      const bufferStart = new Date(activeSession.startDate);
+      bufferStart.setDate(bufferStart.getDate() - 60); // 60 days buffer for SMA50, etc.
+      const startDateStr = bufferStart.toISOString().split('T')[0];
+      
+      console.log(`[Backtest] Loading historical data for ${selectedSymbol} from ${startDateStr} to ${activeSession.endDate}`);
+      
+      const response = await getHistoricalPrices(selectedSymbol, startDateStr, activeSession.endDate);
+      
+      if (response?.prices && response.prices.length > 0) {
+        setHistoricalData(response.prices);
 
-      const stockData = await dataService.dataService.fetchStockData(selectedSymbol, days);
-
-      if (stockData?.data && stockData.data.length > 0) {
-        const converted = stockData.data.map(d => ({
-          date: new Date(d.time * 1000).toISOString().split('T')[0],
-          close: d.close,
-          open: d.open,
-          high: d.high,
-          low: d.low,
-          volume: d.volume,
-        }));
-        
-        const filtered = converted.filter(d => {
-          return d.date >= activeSession.startDate && d.date <= activeSession.endDate;
-        });
-        setHistoricalData(filtered);
-
-        const currentDateData = filtered.find(
+        const currentDateData = response.prices.find(
           d => d.date === activeSession.currentDate
         );
         setCurrentPrice(currentDateData?.close || null);
+        
+        console.log(`[Backtest] Loaded ${response.prices.length} price records for ${selectedSymbol}`);
       } else {
+        console.warn(`[Backtest] No historical data found for ${selectedSymbol}`);
         setHistoricalData([]);
+        setCurrentPrice(null);
       }
     } catch (e) {
       console.error('Failed to load historical data:', e);
+      setError(`Fehler beim Laden historischer Daten für ${selectedSymbol}: ${e instanceof Error ? e.message : 'Unknown error'}`);
       setHistoricalData([]);
+    } finally {
+      setLoading(false);
     }
   };
 

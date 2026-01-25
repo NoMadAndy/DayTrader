@@ -1347,6 +1347,132 @@ app.get('/api/trading/leaderboard/rank', authMiddleware, async (req, res) => {
 });
 
 // ============================================================================
+// Historical Prices Endpoints (for Backtesting)
+// ============================================================================
+
+import * as historicalPrices from './historicalPrices.js';
+
+/**
+ * Get historical prices for a symbol and date range
+ * GET /api/historical-prices/:symbol
+ * Query params: startDate, endDate (YYYY-MM-DD format)
+ */
+app.get('/api/historical-prices/:symbol', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const { startDate, endDate } = req.query;
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'startDate and endDate are required' });
+    }
+    
+    // Check if data exists in database
+    const availability = await historicalPrices.checkHistoricalDataAvailability(symbol, startDate, endDate);
+    
+    if (!availability.hasData) {
+      // Fetch from Yahoo Finance and store in database
+      console.log(`[API] Fetching historical data for ${symbol} (${startDate} to ${endDate})`);
+      const fetchResult = await historicalPrices.fetchAndStoreHistoricalData(symbol, startDate, endDate);
+      
+      if (!fetchResult.success) {
+        return res.status(404).json({ 
+          error: 'Could not fetch historical data',
+          details: fetchResult.error,
+          symbol,
+          startDate,
+          endDate
+        });
+      }
+    }
+    
+    // Get data from database
+    const prices = await historicalPrices.getHistoricalPrices(symbol, startDate, endDate);
+    
+    res.json({
+      symbol: symbol.toUpperCase(),
+      startDate,
+      endDate,
+      recordCount: prices.length,
+      prices
+    });
+  } catch (e) {
+    console.error('Get historical prices error:', e);
+    res.status(500).json({ error: e.message || 'Failed to get historical prices' });
+  }
+});
+
+/**
+ * Check if historical data is available
+ * GET /api/historical-prices/:symbol/availability
+ */
+app.get('/api/historical-prices/:symbol/availability', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const { startDate, endDate } = req.query;
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'startDate and endDate are required' });
+    }
+    
+    const availability = await historicalPrices.checkHistoricalDataAvailability(symbol, startDate, endDate);
+    res.json({
+      symbol: symbol.toUpperCase(),
+      ...availability
+    });
+  } catch (e) {
+    console.error('Check availability error:', e);
+    res.status(500).json({ error: e.message || 'Failed to check data availability' });
+  }
+});
+
+/**
+ * Get all symbols with historical data in database
+ * GET /api/historical-prices/symbols/available
+ */
+app.get('/api/historical-prices/symbols/available', async (req, res) => {
+  try {
+    const symbols = await historicalPrices.getAvailableSymbols();
+    res.json({ symbols });
+  } catch (e) {
+    console.error('Get available symbols error:', e);
+    res.status(500).json({ error: e.message || 'Failed to get available symbols' });
+  }
+});
+
+/**
+ * Force refresh historical data for a symbol
+ * POST /api/historical-prices/:symbol/refresh
+ */
+app.post('/api/historical-prices/:symbol/refresh', authMiddleware, async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const { startDate, endDate } = req.body;
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'startDate and endDate are required in body' });
+    }
+    
+    const result = await historicalPrices.fetchAndStoreHistoricalData(symbol, startDate, endDate);
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        symbol: symbol.toUpperCase(),
+        recordsInserted: result.recordsInserted
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error
+      });
+    }
+  } catch (e) {
+    console.error('Refresh historical data error:', e);
+    res.status(500).json({ error: e.message || 'Failed to refresh historical data' });
+  }
+});
+
+// ============================================================================
 // Backtesting Endpoints
 // ============================================================================
 

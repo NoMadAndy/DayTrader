@@ -806,6 +806,110 @@ export async function deleteBacktestSession(sessionId: number): Promise<{ succes
   return handleResponse(response);
 }
 
+// ============================================================================
+// Historical Prices API (for Backtesting)
+// ============================================================================
+
+/**
+ * Historical price record from database
+ */
+export interface HistoricalPrice {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+/**
+ * Response from historical prices API
+ */
+export interface HistoricalPricesResponse {
+  symbol: string;
+  startDate: string;
+  endDate: string;
+  recordCount: number;
+  prices: HistoricalPrice[];
+}
+
+/**
+ * Data availability check response
+ */
+export interface HistoricalDataAvailability {
+  symbol: string;
+  hasData: boolean;
+  existingDates: number;
+  requiredDates: number;
+}
+
+/**
+ * Symbol with historical data info
+ */
+export interface AvailableSymbol {
+  symbol: string;
+  minDate: string;
+  maxDate: string;
+  recordCount: number;
+}
+
+/**
+ * Get historical prices for a symbol
+ * Automatically fetches from Yahoo Finance if not in database
+ */
+export async function getHistoricalPrices(
+  symbol: string,
+  startDate: string,
+  endDate: string
+): Promise<HistoricalPricesResponse> {
+  const response = await fetch(
+    `${API_BASE}/historical-prices/${encodeURIComponent(symbol)}?startDate=${startDate}&endDate=${endDate}`,
+    { headers: { 'Content-Type': 'application/json' } }
+  );
+  return handleResponse<HistoricalPricesResponse>(response);
+}
+
+/**
+ * Check if historical data is available in database
+ */
+export async function checkHistoricalDataAvailability(
+  symbol: string,
+  startDate: string,
+  endDate: string
+): Promise<HistoricalDataAvailability> {
+  const response = await fetch(
+    `${API_BASE}/historical-prices/${encodeURIComponent(symbol)}/availability?startDate=${startDate}&endDate=${endDate}`,
+    { headers: { 'Content-Type': 'application/json' } }
+  );
+  return handleResponse<HistoricalDataAvailability>(response);
+}
+
+/**
+ * Get all symbols with historical data in database
+ */
+export async function getAvailableHistoricalSymbols(): Promise<{ symbols: AvailableSymbol[] }> {
+  const response = await fetch(`${API_BASE}/historical-prices/symbols/available`, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return handleResponse<{ symbols: AvailableSymbol[] }>(response);
+}
+
+/**
+ * Force refresh historical data for a symbol
+ */
+export async function refreshHistoricalData(
+  symbol: string,
+  startDate: string,
+  endDate: string
+): Promise<{ success: boolean; recordsInserted?: number; error?: string }> {
+  const response = await fetch(`${API_BASE}/historical-prices/${encodeURIComponent(symbol)}/refresh`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ startDate, endDate }),
+  });
+  return handleResponse(response);
+}
+
 /**
  * Get order type display name
  */
@@ -864,4 +968,9 @@ export default {
   advanceBacktestTime,
   getBacktestResults,
   deleteBacktestSession,
+  // Historical Prices
+  getHistoricalPrices,
+  checkHistoricalDataAvailability,
+  getAvailableHistoricalSymbols,
+  refreshHistoricalData,
 };
