@@ -23,7 +23,7 @@ export const DEFAULT_ML_SETTINGS: MLSettings = {
   forecastDays: 14,
   epochs: 100,
   learningRate: 0.001,
-  useCuda: false,
+  useCuda: true,
   preloadFinbert: false,
 };
 
