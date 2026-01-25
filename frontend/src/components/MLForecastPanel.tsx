@@ -115,9 +115,30 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
     const result = await mlService.predict(symbol, stockData);
     
     if (result) {
-      setPrediction(result);
-      // Notify parent about new predictions
-      onPredictionsChange?.(result.predictions);
+      // Validate that the prediction is for the correct symbol
+      if (result.symbol && result.symbol.toUpperCase() !== symbol.toUpperCase()) {
+        console.error(`Prediction symbol mismatch: got ${result.symbol}, expected ${symbol}`);
+        setError(`Modell-Fehler: Vorhersage ist für ${result.symbol}, nicht ${symbol}`);
+        setPrediction(null);
+        onPredictionsChange?.(null);
+      } else {
+        // Also validate that current_price makes sense (within 5% of actual latest price)
+        const actualPrice = stockData[stockData.length - 1]?.close;
+        if (actualPrice && result.current_price) {
+          const priceDiff = Math.abs(result.current_price - actualPrice) / actualPrice;
+          if (priceDiff > 0.05) {
+            console.error(`Price mismatch: prediction has $${result.current_price.toFixed(2)}, actual is $${actualPrice.toFixed(2)}`);
+            setError(`Modell-Daten veraltet: Bitte Modell neu trainieren`);
+            setPrediction(null);
+            onPredictionsChange?.(null);
+            setIsLoading(false);
+            return;
+          }
+        }
+        setPrediction(result);
+        // Notify parent about new predictions
+        onPredictionsChange?.(result.predictions);
+      }
     } else {
       setError('Failed to get prediction');
       onPredictionsChange?.(null);

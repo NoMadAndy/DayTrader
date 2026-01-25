@@ -381,15 +381,31 @@ async def predict(request: PredictRequest):
                 status_code=404,
                 detail=f"No trained model found for {symbol}. Train a model first using /api/ml/train"
             )
+        # Verify the loaded model is for the correct symbol
+        if predictor.model_metadata.get('symbol', '').upper() != symbol:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model mismatch: loaded model is for {predictor.model_metadata.get('symbol')}, not {symbol}"
+            )
         predictors[symbol] = predictor
     
     predictor = predictors[symbol]
     
-    # Validate data
-    if len(request.data) < settings.sequence_length:
+    # Double-check symbol matches (in case of cached predictor with wrong symbol)
+    if predictor.symbol.upper() != symbol:
+        # Remove invalid cached predictor and try again
+        del predictors[symbol]
         raise HTTPException(
             status_code=400,
-            detail=f"Need at least {settings.sequence_length} data points for prediction"
+            detail=f"Cached model mismatch. Please try again."
+        )
+    
+    # Validate data
+    seq_len = predictor.model_metadata.get('sequence_length', settings.sequence_length)
+    if len(request.data) < seq_len:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Need at least {seq_len} data points for prediction"
         )
     
     # Convert to dict format
