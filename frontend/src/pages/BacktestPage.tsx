@@ -15,6 +15,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getAuthState, subscribeToAuth, type AuthState } from '../services/authService';
+import { getCustomSymbols } from '../services/userSettingsService';
+import { POPULAR_STOCKS } from '../utils/defaultStocks';
 import {
   createBacktestSession,
   getBacktestSessions,
@@ -44,9 +46,6 @@ interface MLPrediction {
   change_pct: number;
 }
 
-// Popular symbols for backtesting
-const POPULAR_SYMBOLS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'JPM', 'V', 'WMT'];
-
 export default function BacktestPage() {
   const [authState, setAuthState] = useState<AuthState>(getAuthState());
 
@@ -66,10 +65,18 @@ export default function BacktestPage() {
   // Trading form
   const [selectedSymbol, setSelectedSymbol] = useState('AAPL');
   const [customSymbol, setCustomSymbol] = useState('');
+  const [userSymbols, setUserSymbols] = useState<string[]>([]);
   const [tradeSide, setTradeSide] = useState<'buy' | 'sell'>('buy');
   const [tradeQuantity, setTradeQuantity] = useState(10);
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [historicalData, setHistoricalData] = useState<any[]>([]);
+
+  // Combined symbol list (user symbols + popular stocks, deduplicated)
+  const allSymbols = useMemo(() => {
+    const popularSymbols = POPULAR_STOCKS.map(s => s.symbol);
+    const combined = [...new Set([...userSymbols, ...popularSymbols])];
+    return combined.sort();
+  }, [userSymbols]);
 
   // Time controls
   const [advanceDays] = useState(1);
@@ -107,6 +114,21 @@ export default function BacktestPage() {
   useEffect(() => {
     return subscribeToAuth(setAuthState);
   }, []);
+
+  // Load user's custom symbols
+  useEffect(() => {
+    async function loadUserSymbols() {
+      if (authState.isAuthenticated && authState.user) {
+        try {
+          const symbols = await getCustomSymbols();
+          setUserSymbols(symbols.map(s => s.symbol));
+        } catch (err) {
+          console.warn('Failed to load user symbols:', err);
+        }
+      }
+    }
+    loadUserSymbols();
+  }, [authState.isAuthenticated, authState.user]);
 
   // Load sessions on mount
   useEffect(() => {
@@ -854,13 +876,13 @@ export default function BacktestPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     {/* Symbol Selection */}
                     <div>
-                      <label className="block text-sm text-gray-400 mb-2">Symbol</label>
+                      <label className="block text-sm text-gray-400 mb-2">Symbol ({allSymbols.length} verfügbar)</label>
                       <select
                         value={selectedSymbol}
                         onChange={e => setSelectedSymbol(e.target.value)}
                         className="w-full px-4 py-2.5 bg-slate-900 border border-slate-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                       >
-                        {POPULAR_SYMBOLS.map(s => (
+                        {allSymbols.map(s => (
                           <option key={s} value={s}>{s}</option>
                         ))}
                       </select>
