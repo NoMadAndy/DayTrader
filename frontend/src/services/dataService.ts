@@ -323,9 +323,10 @@ export class DataService {
         }
       }
 
-    // Fallback to mock data
-    console.log('All providers failed, falling back to mock data');
-    return getMockData(symbol, days);
+      // Fallback to mock data
+      console.log('All providers failed, falling back to mock data');
+      return getMockData(symbol, days);
+    });
   }
 
   /**
