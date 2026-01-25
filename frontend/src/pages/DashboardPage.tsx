@@ -26,11 +26,27 @@ interface DashboardPageProps {
 export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageProps) {
   const { data: stockData, isLoading, refetch } = useStockData(selectedSymbol);
 
-  // Auto-refresh: fetch cached data every second (server updates real API every 60s)
-  const { isRefreshing: isAutoRefreshing, isActive } = useSimpleAutoRefresh(
-    () => { refetch(); },
-    { interval: 1000, enabled: true }
-  );
+  // Local state for live price updates (doesn't cause full re-render)
+  const [livePrice, setLivePrice] = useState<{ price: number; change: number } | null>(null);
+  
+  // Lightweight price refresh - only updates the displayed price
+  const refreshPriceOnly = useCallback(async () => {
+    if (!stockData || stockData.data.length === 0) return;
+    
+    // Get latest cached data
+    const lastPoint = stockData.data[stockData.data.length - 1];
+    const prevPoint = stockData.data.length > 1 ? stockData.data[stockData.data.length - 2] : lastPoint;
+    const change = ((lastPoint.close - prevPoint.close) / prevPoint.close) * 100;
+    
+    // Only update state if price changed
+    setLivePrice(prev => {
+      if (prev?.price === lastPoint.close) return prev;
+      return { price: lastPoint.close, change };
+    });
+  }, [stockData]);
+
+  // Auto-refresh price every second (lightweight, UI-friendly)
+  useSimpleAutoRefresh(refreshPriceOnly, { interval: 1000, enabled: !!stockData });
 
   // State for ML predictions (shared with NewsPanel for combined trading signals)
   const [mlPredictions, setMlPredictions] = useState<MLPrediction[] | null>(null);

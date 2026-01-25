@@ -9,7 +9,7 @@
  * - Authenticated users manage their own symbols completely
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DEFAULT_STOCKS } from '../utils/mockData';
 import { useDataService, useSimpleAutoRefresh } from '../hooks';
@@ -207,23 +207,39 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
     refreshWatchlist();
   }, []);
 
-  // Auto-refresh: fetch cached data every second (server updates real API every 60s)
-  // Use ref to track if initial load is done
-  const initialLoadDoneRef = useRef(false);
-  useEffect(() => {
-    if (watchlistItems.length > 0 && !isLoadingSymbols) {
-      initialLoadDoneRef.current = true;
-    }
-  }, [watchlistItems.length, isLoadingSymbols]);
-
-  const { isActive } = useSimpleAutoRefresh(
-    () => {
-      if (initialLoadDoneRef.current && !isRefreshing) {
-        refreshWatchlist();
+  // Lightweight price-only refresh (doesn't reload company info or signals)
+  const refreshPricesOnly = useCallback(async () => {
+    if (watchlistItems.length === 0) return;
+    
+    // Fetch only latest prices from cache
+    const symbols = watchlistItems.map(item => item.symbol);
+    
+    // Update prices one by one without blocking UI
+    for (const symbol of symbols) {
+      try {
+        const stockData = await dataService.fetchStockData(symbol);
+        if (stockData && stockData.data.length > 0) {
+          const currentPrice = stockData.data[stockData.data.length - 1].close;
+          const previousPrice = stockData.data.length > 1 
+            ? stockData.data[stockData.data.length - 2].close 
+            : currentPrice;
+          const priceChange = ((currentPrice - previousPrice) / previousPrice) * 100;
+          
+          // Only update if price actually changed
+          setWatchlistItems(prev => prev.map(item => 
+            item.symbol === symbol && item.currentPrice !== currentPrice
+              ? { ...item, currentPrice, priceChange }
+              : item
+          ));
+        }
+      } catch {
+        // Silently ignore errors during price refresh
       }
-    },
-    { interval: 2000, enabled: true } // 2 seconds for watchlist (many symbols)
-  );
+    }
+  }, [watchlistItems.length]);
+
+  // Auto-refresh prices every 2 seconds (lightweight, UI-friendly)
+  useSimpleAutoRefresh(refreshPricesOnly, { interval: 2000, enabled: watchlistItems.length > 0 });
 
   // Add new symbol (only for authenticated users)
   const handleAddSymbol = useCallback(async () => {

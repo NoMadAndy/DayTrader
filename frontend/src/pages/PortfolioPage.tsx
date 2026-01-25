@@ -4,7 +4,7 @@
  * Shows portfolio performance, transaction history, and detailed analytics.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getAuthState, subscribeToAuth, type AuthState } from '../services/authService';
 import { useSimpleAutoRefresh } from '../hooks';
 import {
@@ -97,22 +97,27 @@ export function PortfolioPage() {
     loadData();
   }, [loadData]);
 
-  // Auto-refresh: fetch cached data every second (server updates real API every 60s)
-  const initialLoadDoneRef = useRef(false);
-  useEffect(() => {
-    if (portfolio && !loading) {
-      initialLoadDoneRef.current = true;
+  // Lightweight metrics-only refresh (doesn't reload entire portfolio)
+  const refreshMetricsOnly = useCallback(async () => {
+    if (!portfolio || !authState.isAuthenticated) return;
+    
+    try {
+      const newMetrics = await getPortfolioMetrics(portfolio.id);
+      // Only update if values actually changed
+      setMetrics(prev => {
+        if (prev?.totalValue === newMetrics.totalValue && 
+            prev?.totalPnL === newMetrics.totalPnL) {
+          return prev;
+        }
+        return newMetrics;
+      });
+    } catch {
+      // Silently ignore errors during auto-refresh
     }
-  }, [portfolio, loading]);
+  }, [portfolio, authState.isAuthenticated]);
 
-  const { isActive } = useSimpleAutoRefresh(
-    () => {
-      if (initialLoadDoneRef.current && authState.isAuthenticated) {
-        loadData();
-      }
-    },
-    { interval: 2000, enabled: authState.isAuthenticated } // 2 seconds
-  );
+  // Auto-refresh metrics every 2 seconds (lightweight, UI-friendly)
+  useSimpleAutoRefresh(refreshMetricsOnly, { interval: 2000, enabled: !!portfolio });
   
   const handleReset = async () => {
     if (!portfolio) return;
