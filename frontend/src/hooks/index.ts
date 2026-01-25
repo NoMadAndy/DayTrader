@@ -17,3 +17,5 @@ export {
   formatRefreshInterval,
   formatTimeUntilRefresh,
 } from './useAutoRefresh';
+
+export { useSimpleAutoRefresh } from './useSimpleAutoRefresh';

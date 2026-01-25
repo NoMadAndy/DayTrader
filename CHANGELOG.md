@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-01-25
+
+### Fixed
+- **Stabiles Client-seitiges Auto-Refresh** - Behebt Infinite-Loop-Bug
+  - Neuer `useSimpleAutoRefresh` Hook mit stabilen Refs (keine Dependency-Loops)
+  - Dashboard aktualisiert jede Sekunde
+  - Watchlist/Portfolio aktualisieren alle 2 Sekunden (mehr Symbole)
+  - Pausiert automatisch wenn Tab im Hintergrund (schont Ressourcen)
+  - Belastet API nicht - nur Server-Cache wird abgefragt
+  - Server-seitige Background Jobs aktualisieren weiterhin den Cache alle 60s
+
 ## [1.6.0] - 2026-01-25
 
 ### Added

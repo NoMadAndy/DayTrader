@@ -6,7 +6,7 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, NewsPanel, TradingSignalPanel, DataFreshnessIndicator, type NewsItemWithSentiment, type DataTimestamps } from '../components';
-import { useStockData } from '../hooks';
+import { useStockData, useSimpleAutoRefresh } from '../hooks';
 import { generateForecast } from '../utils/forecast';
 
 // ML Prediction type for trading signals
@@ -26,9 +26,11 @@ interface DashboardPageProps {
 export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageProps) {
   const { data: stockData, isLoading, refetch } = useStockData(selectedSymbol);
 
-  // Note: Auto-refresh is now handled server-side via background jobs
-  // The server updates quotes every 60 seconds for all watched symbols
-  // Frontend just needs to refetch periodically to get cached data
+  // Auto-refresh: fetch cached data every second (server updates real API every 60s)
+  const { isRefreshing: isAutoRefreshing, isActive } = useSimpleAutoRefresh(
+    () => { refetch(); },
+    { interval: 1000, enabled: true }
+  );
 
   // State for ML predictions (shared with NewsPanel for combined trading signals)
   const [mlPredictions, setMlPredictions] = useState<MLPrediction[] | null>(null);

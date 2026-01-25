@@ -4,8 +4,9 @@
  * Shows portfolio performance, transaction history, and detailed analytics.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { getAuthState, subscribeToAuth, type AuthState } from '../services/authService';
+import { useSimpleAutoRefresh } from '../hooks';
 import {
   getOrCreatePortfolio,
   getPortfolioMetrics,
@@ -96,8 +97,22 @@ export function PortfolioPage() {
     loadData();
   }, [loadData]);
 
-  // Note: Auto-refresh is now handled server-side via background jobs
-  // The server updates quotes every 60 seconds for all watched symbols
+  // Auto-refresh: fetch cached data every second (server updates real API every 60s)
+  const initialLoadDoneRef = useRef(false);
+  useEffect(() => {
+    if (portfolio && !loading) {
+      initialLoadDoneRef.current = true;
+    }
+  }, [portfolio, loading]);
+
+  const { isActive } = useSimpleAutoRefresh(
+    () => {
+      if (initialLoadDoneRef.current && authState.isAuthenticated) {
+        loadData();
+      }
+    },
+    { interval: 2000, enabled: authState.isAuthenticated } // 2 seconds
+  );
   
   const handleReset = async () => {
     if (!portfolio) return;

@@ -9,10 +9,10 @@
  * - Authenticated users manage their own symbols completely
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DEFAULT_STOCKS } from '../utils/mockData';
-import { useDataService } from '../hooks';
+import { useDataService, useSimpleAutoRefresh } from '../hooks';
 import { 
   calculateCombinedTradingSignals, 
   getSignalDisplay,
@@ -207,8 +207,23 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
     refreshWatchlist();
   }, []);
 
-  // Note: Auto-refresh is now handled server-side via background jobs
-  // The server updates quotes every 60 seconds for all watched symbols
+  // Auto-refresh: fetch cached data every second (server updates real API every 60s)
+  // Use ref to track if initial load is done
+  const initialLoadDoneRef = useRef(false);
+  useEffect(() => {
+    if (watchlistItems.length > 0 && !isLoadingSymbols) {
+      initialLoadDoneRef.current = true;
+    }
+  }, [watchlistItems.length, isLoadingSymbols]);
+
+  const { isActive } = useSimpleAutoRefresh(
+    () => {
+      if (initialLoadDoneRef.current && !isRefreshing) {
+        refreshWatchlist();
+      }
+    },
+    { interval: 2000, enabled: true } // 2 seconds for watchlist (many symbols)
+  );
 
   // Add new symbol (only for authenticated users)
   const handleAddSymbol = useCallback(async () => {
