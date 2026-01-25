@@ -1,8 +1,89 @@
-import type { ForecastResult, TrendSignal } from '../types/stock';
+import type { ForecastResult, TrendSignal, IndicatorAnalysis } from '../types/stock';
 
 interface ForecastPanelProps {
   forecast: ForecastResult;
   currentPrice: number;
+}
+
+// Agreement-Typen
+type AgreementLevel = 'strong' | 'moderate' | 'weak' | 'conflicting';
+
+// Signal zu numerischem Score konvertieren
+function signalToScore(signal: TrendSignal): number {
+  switch (signal) {
+    case 'STRONG_BUY': return 75;
+    case 'BUY': return 35;
+    case 'NEUTRAL': return 0;
+    case 'SELL': return -35;
+    case 'STRONG_SELL': return -75;
+    default: return 0;
+  }
+}
+
+// Agreement zwischen einem Indikator und anderen berechnen
+function calculateIndicatorAgreement(
+  indicator: IndicatorAnalysis,
+  allIndicators: IndicatorAnalysis[]
+): AgreementLevel {
+  const otherIndicators = allIndicators.filter(i => i.name !== indicator.name);
+  if (otherIndicators.length === 0) return 'moderate';
+  
+  const myScore = signalToScore(indicator.signal);
+  const otherScores = otherIndicators.map(i => signalToScore(i.signal));
+  
+  // Zähle wie viele in gleicher Richtung sind
+  const sameDirection = otherScores.filter(s => 
+    (myScore >= 0 && s >= 0) || (myScore < 0 && s < 0) || (myScore === 0 && Math.abs(s) < 20)
+  ).length;
+  
+  const agreementRatio = sameDirection / otherScores.length;
+  
+  // Prüfe auch Stärke der Übereinstimmung
+  const avgOtherScore = otherScores.reduce((a, b) => a + b, 0) / otherScores.length;
+  const strengthMatch = Math.abs(myScore - avgOtherScore) < 40;
+  
+  if (agreementRatio >= 0.8 && strengthMatch) return 'strong';
+  if (agreementRatio >= 0.5) return 'moderate';
+  if (agreementRatio > 0.2) return 'weak';
+  return 'conflicting';
+}
+
+// Agreement-Styling
+function getAgreementStyle(agreement: AgreementLevel) {
+  switch (agreement) {
+    case 'strong':
+      return {
+        border: 'border-green-500/50',
+        indicator: '●',
+        indicatorColor: 'text-green-400',
+        label: 'Starke Übereinstimmung',
+        bgTint: 'ring-1 ring-green-500/20'
+      };
+    case 'moderate':
+      return {
+        border: 'border-slate-600',
+        indicator: '◐',
+        indicatorColor: 'text-blue-400',
+        label: 'Moderate Übereinstimmung',
+        bgTint: ''
+      };
+    case 'weak':
+      return {
+        border: 'border-yellow-500/30 border-dashed',
+        indicator: '○',
+        indicatorColor: 'text-yellow-400',
+        label: 'Schwache Übereinstimmung',
+        bgTint: ''
+      };
+    case 'conflicting':
+      return {
+        border: 'border-red-500/30 border-dashed',
+        indicator: '⚠',
+        indicatorColor: 'text-red-400',
+        label: 'Widersprüchlich zu anderen',
+        bgTint: 'bg-red-500/5'
+      };
+  }
 }
 
 function SignalBadge({ signal }: { signal: TrendSignal }) {
@@ -113,21 +194,49 @@ export function ForecastPanel({ forecast, currentPrice }: ForecastPanelProps) {
 
       {/* Indicator Details */}
       <div>
-        <h3 className="text-white font-semibold mb-3">Technical Indicators</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-white font-semibold">Technical Indicators</h3>
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <span>Agreement:</span>
+            <span className="text-green-400">● stark</span>
+            <span className="text-blue-400">◐ moderat</span>
+            <span className="text-yellow-400">○ schwach</span>
+            <span className="text-red-400">⚠ widerspr.</span>
+          </div>
+        </div>
         <div className="space-y-3">
-          {forecast.indicators.map((indicator, index) => (
-            <div key={index} className="bg-slate-900/50 rounded-lg p-4">
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <SignalIcon signal={indicator.signal} />
-                  <span className="text-white font-medium">{indicator.name}</span>
+          {forecast.indicators.map((indicator, index) => {
+            const agreement = calculateIndicatorAgreement(indicator, forecast.indicators);
+            const agreementStyle = getAgreementStyle(agreement);
+            
+            return (
+              <div 
+                key={index} 
+                className={`bg-slate-900/50 rounded-lg p-4 border ${agreementStyle.border} ${agreementStyle.bgTint}`}
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <SignalIcon signal={indicator.signal} />
+                    <span className="text-white font-medium">{indicator.name}</span>
+                    <span 
+                      className={`${agreementStyle.indicatorColor} text-sm`}
+                      title={agreementStyle.label}
+                    >
+                      {agreementStyle.indicator}
+                    </span>
+                  </div>
+                  <SignalBadge signal={indicator.signal} />
                 </div>
-                <SignalBadge signal={indicator.signal} />
+                <div className="text-gray-400 text-sm mb-2">{indicator.value}</div>
+                <p className="text-gray-300 text-sm">{indicator.explanation}</p>
+                {agreement === 'conflicting' && (
+                  <p className="text-red-400/80 text-xs mt-2 italic">
+                    ⚠ Dieser Indikator widerspricht der Mehrheit - mit Vorsicht interpretieren
+                  </p>
+                )}
               </div>
-              <div className="text-gray-400 text-sm mb-2">{indicator.value}</div>
-              <p className="text-gray-300 text-sm">{indicator.explanation}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

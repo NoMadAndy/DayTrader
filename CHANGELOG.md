@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tags mit starkem Agreement haben grüne Umrandung, widersprüchliche haben gestrichelte rote Umrandung
   - Tooltip zeigt Original-Gewicht und effektives Gewicht nach Agreement-Anpassung
   - Legende in der Footer-Zeile erklärt die Symbole
+- **Technical Indicator Agreement** - Auch im AI Forecast Panel zeigt jeder technische Indikator sein Agreement an
+  - Jeder Indikator (RSI, MACD, Bollinger, etc.) zeigt Übereinstimmung mit anderen
+  - Widersprüchliche Indikatoren erhalten gestrichelte rote Umrandung und Warnhinweis
+  - Legende oben rechts im Indicator-Bereich
 
 ### Changed
 - **BREAKING: Mock-Daten komplett entfernt** - Die Anwendung zeigt jetzt nur noch echte, aktuelle Marktdaten an
