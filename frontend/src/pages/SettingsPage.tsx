@@ -241,9 +241,9 @@ export function SettingsPage() {
           {activeTab === 'api' && (
             <div className="space-y-6">
               <div className="flex items-center gap-3 mb-4">
-                <div className={`w-3 h-3 rounded-full ${hasAnyKey ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                <div className={`w-3 h-3 rounded-full ${hasAnyKey ? 'bg-green-500' : 'bg-blue-500'}`} />
                 <span className="text-sm text-gray-400">
-                  {hasAnyKey ? 'API-Schlüssel konfiguriert' : 'Keine API-Schlüssel konfiguriert (Mock-Daten werden verwendet)'}
+                  {hasAnyKey ? 'API-Schlüssel konfiguriert' : 'Yahoo Finance wird verwendet (kein API-Schlüssel nötig)'}
                 </span>
               </div>
 

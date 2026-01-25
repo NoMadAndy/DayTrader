@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-01-25
+
+### Changed
+- **BREAKING: Mock-Daten komplett entfernt** - Die Anwendung zeigt jetzt nur noch echte, aktuelle Marktdaten an
+  - Yahoo Finance ist der neue Standard-Provider (kein API-Key erforderlich)
+  - Mock-Data-Option aus Datenquellen-Auswahl entfernt
+  - Alle simulierten/erfundenen Daten aus der Codebasis entfernt
+  - Bei API-Fehlern wird `null` zurückgegeben statt gefälschte Daten
+  - Standard-Aktienliste (AAPL, MSFT, etc.) bleibt für Watchlist erhalten, Preise kommen live von APIs
+
+### Removed
+- `mockData.ts` - Alle Mock-Datengenerierung entfernt
+- `'mock'` Datenquelle aus dem Typ `DataSourceType`
+- Mock-Fallback bei API-Fehlern (zeigt jetzt Fehlermeldung)
+- Mock-bezogene UI-Elemente und Hinweise
+
 ## [1.6.3] - 2026-01-25
 
 ### Added

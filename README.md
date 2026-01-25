@@ -138,20 +138,19 @@ VITE_TWELVE_DATA_API_KEY=your_twelve_data_api_key
 # Get your free key at: https://newsapi.org/register
 VITE_NEWS_API_KEY=your_newsapi_key
 
-# Preferred data source (yahoo, finnhub, alphaVantage, twelveData, mock)
-# Default is 'yahoo' if not specified
-VITE_PREFERRED_DATA_SOURCE=finnhub
+# Preferred data source (yahoo, finnhub, alphaVantage, twelveData)
+# Default is 'yahoo' (requires no API key)
+VITE_PREFERRED_DATA_SOURCE=yahoo
 ```
 
 ### Supported Data Providers
 
 | Provider | API Key Required | Features | Free Tier Limits |
 |----------|-----------------|----------|------------------|
+| **Yahoo Finance** | No | Quotes, Historical Data | Default (no key needed) |
 | **Finnhub** | Yes | Quotes, Candles, News | 60 calls/min |
 | **Alpha Vantage** | Yes | Quotes, Daily Data | 5 calls/min, 500/day |
 | **Twelve Data** | Yes | Quotes, Time Series | 8 calls/min, 800/day |
-| **Yahoo Finance** | No | Quotes, Historical Data | Uses backend proxy |
-| **Mock Data** | No | Simulated data | Unlimited (demo only) |
 
 ## User Authentication & Settings
 

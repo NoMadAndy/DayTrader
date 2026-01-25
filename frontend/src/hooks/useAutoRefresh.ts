@@ -58,11 +58,6 @@ function calculateOptimalInterval(
 ): number {
   const config = PROVIDER_RATE_LIMITS[source];
   
-  // If mock, use fast interval
-  if (source === 'mock') {
-    return MIN_REFRESH_INTERVAL;
-  }
-  
   // Calculate based on per-minute limit
   // We want to use at most 50% of available per-minute quota for auto-refresh
   const quotaForAutoRefresh = Math.floor(config.requestsPerMinute * 0.5);

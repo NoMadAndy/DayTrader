@@ -59,14 +59,6 @@ export const PROVIDER_RATE_LIMITS: Record<DataSourceType, RateLimitConfig> = {
     cooldownMs: 500,
     cacheDurationMs: 60000,   // 1 minute cache
     priority: 1
-  },
-  mock: {
-    requestsPerMinute: Infinity,
-    requestsPerDay: Infinity,
-    burstLimit: Infinity,
-    cooldownMs: 0,
-    cacheDurationMs: 0,
-    priority: 0
   }
 };
 
@@ -207,8 +199,6 @@ export class RateLimiter {
    * Check if a request is allowed for a provider
    */
   canMakeRequest(source: DataSourceType): boolean {
-    if (source === 'mock') return true;
-
     const config = PROVIDER_RATE_LIMITS[source];
     const stats = this.stats.get(source) || this.createEmptyStats();
     const now = Date.now();
@@ -245,8 +235,6 @@ export class RateLimiter {
    * Record a request
    */
   recordRequest(source: DataSourceType, endpoint: string): void {
-    if (source === 'mock') return;
-
     const stats = this.stats.get(source) || this.createEmptyStats();
     const now = Date.now();
 
@@ -366,8 +354,6 @@ export class RateLimiter {
    * Get time until next request is allowed
    */
   getWaitTime(source: DataSourceType): number {
-    if (source === 'mock') return 0;
-
     const config = PROVIDER_RATE_LIMITS[source];
     const stats = this.stats.get(source) || this.createEmptyStats();
     const now = Date.now();
@@ -424,7 +410,6 @@ export class RateLimiter {
   ): DataSourceType | null {
     // Try preferred source first if it has quota
     if (preferredSource && 
-        preferredSource !== 'mock' && 
         availableSources.includes(preferredSource) &&
         this.canMakeRequest(preferredSource)) {
       return preferredSource;
@@ -432,7 +417,7 @@ export class RateLimiter {
 
     // Sort by priority (lower = better) and filter by available quota
     const sourcesWithQuota = availableSources
-      .filter(s => s !== 'mock' && this.canMakeRequest(s))
+      .filter(s => this.canMakeRequest(s))
       .sort((a, b) => {
         const configA = PROVIDER_RATE_LIMITS[a];
         const configB = PROVIDER_RATE_LIMITS[b];

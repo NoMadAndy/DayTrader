@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { DEFAULT_STOCKS } from '../utils/mockData';
+import { DEFAULT_STOCKS } from '../utils/defaultStocks';
 import { 
   getAuthState, 
   subscribeToAuth, 

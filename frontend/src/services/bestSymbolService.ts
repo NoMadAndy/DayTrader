@@ -5,7 +5,7 @@
  * based on trading signals. Uses cached stock data for quick analysis.
  */
 
-import { DEFAULT_STOCKS } from '../utils/mockData';
+import { DEFAULT_STOCKS } from '../utils/defaultStocks';
 import { getAuthState } from './authService';
 import { getCustomSymbols } from './userSettingsService';
 import { getDataService } from './dataService';

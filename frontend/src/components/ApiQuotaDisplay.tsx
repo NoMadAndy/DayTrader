@@ -20,16 +20,14 @@ const PROVIDER_DISPLAY_NAMES: Record<DataSourceType, string> = {
   finnhub: 'Finnhub',
   alphaVantage: 'Alpha Vantage',
   twelveData: 'Twelve Data',
-  yahoo: 'Yahoo Finance',
-  mock: 'Mock Data'
+  yahoo: 'Yahoo Finance'
 };
 
 const PROVIDER_COLORS: Record<DataSourceType, string> = {
   finnhub: '#00D4AA',
   alphaVantage: '#FFB800',
   twelveData: '#6366F1',
-  yahoo: '#7C3AED',
-  mock: '#6B7280'
+  yahoo: '#7C3AED'
 };
 
 export function ApiQuotaDisplay() {
@@ -172,7 +170,7 @@ export function ApiQuotaCompact() {
 
   // Show only preferred source
   const info = quotaInfo[preferredSource];
-  if (!info || preferredSource === 'mock') return null;
+  if (!info) return null;
 
   const config = PROVIDER_RATE_LIMITS[preferredSource];
   const dailyPct = config.requestsPerDay === Infinity 

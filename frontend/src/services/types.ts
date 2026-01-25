@@ -57,4 +57,4 @@ export interface StockSearchResult {
   exchange?: string;
 }
 
-export type DataSourceType = 'mock' | 'finnhub' | 'alphaVantage' | 'twelveData' | 'yahoo';
+export type DataSourceType = 'finnhub' | 'alphaVantage' | 'twelveData' | 'yahoo';

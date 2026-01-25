@@ -113,7 +113,7 @@ export function useStockData(symbol: string, days: number = 365) {
   const [data, setData] = useState<StockData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const [source, setSource] = useState<DataSourceType>('mock');
+  const [source, setSource] = useState<DataSourceType>('yahoo');
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -147,7 +147,7 @@ export function useStockData(symbol: string, days: number = 365) {
  * Hook for fetching real-time quote
  */
 export function useQuote(symbol: string, refreshInterval: number = 60000) {
-  const { dataService, preferredSource } = useDataService();
+  const { dataService } = useDataService();
   const [quote, setQuote] = useState<QuoteData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -167,12 +167,12 @@ export function useQuote(symbol: string, refreshInterval: number = 60000) {
   useEffect(() => {
     fetchQuote();
 
-    // Set up refresh interval if not using mock data
-    if (preferredSource !== 'mock' && refreshInterval > 0) {
+    // Set up refresh interval for live data updates
+    if (refreshInterval > 0) {
       const interval = setInterval(fetchQuote, refreshInterval);
       return () => clearInterval(interval);
     }
-  }, [fetchQuote, preferredSource, refreshInterval]);
+  }, [fetchQuote, refreshInterval]);
 
   return { quote, isLoading, error, refetch: fetchQuote };
 }

@@ -9,7 +9,6 @@ import { useDataService } from '../hooks';
 import type { DataSourceType } from '../services/types';
 
 const SOURCE_LABELS: Record<DataSourceType, string> = {
-  mock: '📊 Mock Data (Demo)',
   finnhub: '📈 Finnhub',
   alphaVantage: '📉 Alpha Vantage',
   twelveData: '📊 Twelve Data',
@@ -17,7 +16,6 @@ const SOURCE_LABELS: Record<DataSourceType, string> = {
 };
 
 const SOURCE_DESCRIPTIONS: Record<DataSourceType, string> = {
-  mock: 'Simulated data for testing and demos',
   finnhub: 'Real-time market data',
   alphaVantage: 'Free stock data API',
   twelveData: 'Financial data platform',
@@ -59,14 +57,12 @@ export function DataSourceSelector({ collapsed }: DataSourceSelectorProps) {
           ))}
         </div>
 
-        {preferredSource !== 'mock' && (
-          <div className="mt-3 p-2 bg-green-900/20 rounded-lg border border-green-700/30">
-            <div className="flex items-center gap-2 text-green-400 text-xs">
-              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              <span>Live data enabled</span>
-            </div>
+        <div className="mt-3 p-2 bg-green-900/20 rounded-lg border border-green-700/30">
+          <div className="flex items-center gap-2 text-green-400 text-xs">
+            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            <span>Live data enabled</span>
           </div>
-        )}
+        </div>
       </>
     );
   }
@@ -104,14 +100,12 @@ export function DataSourceSelector({ collapsed }: DataSourceSelectorProps) {
         ))}
       </div>
 
-      {preferredSource !== 'mock' && (
-        <div className="mt-3 p-2 bg-green-900/20 rounded-lg border border-green-700/30">
-          <div className="flex items-center gap-2 text-green-400 text-xs">
-            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <span>Live data enabled</span>
-          </div>
+      <div className="mt-3 p-2 bg-green-900/20 rounded-lg border border-green-700/30">
+        <div className="flex items-center gap-2 text-green-400 text-xs">
+          <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+          <span>Live data enabled</span>
         </div>
-      )}
+      </div>
     </div>
   );
 }

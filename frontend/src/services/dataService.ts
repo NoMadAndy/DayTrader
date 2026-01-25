@@ -25,7 +25,6 @@ import { AlphaVantageProvider } from './alphaVantageProvider';
 import { TwelveDataProvider } from './twelveDataProvider';
 import { YahooFinanceProvider } from './yahooFinanceProvider';
 import { NewsApiProvider } from './newsApiProvider';
-import { getStockData as getMockData, searchStocks as searchMockStocks } from '../utils/mockData';
 import { getRateLimiter, PROVIDER_RATE_LIMITS, type RateLimiter } from './rateLimiter';
 
 // Stock name mappings for display
@@ -75,7 +74,7 @@ export class DataService {
   private enableRateLimiting: boolean;
 
   constructor(config: DataServiceConfig = {}) {
-    this.preferredSource = config.preferredSource ?? 'mock';
+    this.preferredSource = config.preferredSource ?? 'yahoo';
     this.rateLimiter = getRateLimiter();
     this.enableRateLimiting = config.enableRateLimiting ?? true;
 
@@ -107,7 +106,7 @@ export class DataService {
    * Get available data sources
    */
   getAvailableSources(): DataSourceType[] {
-    const sources: DataSourceType[] = ['mock'];
+    const sources: DataSourceType[] = [];
     
     this.providers.forEach((provider, source) => {
       if (provider.isConfigured()) {
@@ -137,7 +136,7 @@ export class DataService {
    */
   private getProviderOrder(): DataSourceType[] {
     // If a specific source is preferred and available, use it first
-    if (this.preferredSource !== 'mock' && this.providers.has(this.preferredSource)) {
+    if (this.providers.has(this.preferredSource)) {
       const order: DataSourceType[] = [this.preferredSource];
       this.providers.forEach((_, source) => {
         if (source !== this.preferredSource) {
@@ -147,15 +146,15 @@ export class DataService {
       return order;
     }
 
-    // Default order: finnhub -> twelveData -> alphaVantage -> yahoo
-    return ['finnhub', 'twelveData', 'alphaVantage', 'yahoo'];
+    // Default order: yahoo -> finnhub -> twelveData -> alphaVantage (Yahoo requires no API key)
+    return ['yahoo', 'finnhub', 'twelveData', 'alphaVantage'];
   }
 
   /**
    * Check rate limit and record request
    */
   private checkAndRecordRequest(source: DataSourceType, endpoint: string): boolean {
-    if (!this.enableRateLimiting || source === 'mock') {
+    if (!this.enableRateLimiting) {
       return true;
     }
 
@@ -205,29 +204,6 @@ export class DataService {
       return cached;
     }
 
-    if (this.preferredSource === 'mock') {
-      // Return mock quote
-      const mockData = getMockData(symbol);
-      if (mockData && mockData.data.length >= 2) {
-        const latest = mockData.data[mockData.data.length - 1];
-        const previous = mockData.data[mockData.data.length - 2];
-        const quote: QuoteData = {
-          symbol,
-          price: latest.close,
-          change: latest.close - previous.close,
-          changePercent: ((latest.close - previous.close) / previous.close) * 100,
-          high: latest.high,
-          low: latest.low,
-          open: latest.open,
-          previousClose: previous.close,
-          volume: latest.volume,
-          timestamp: latest.time * 1000
-        };
-        return quote;
-      }
-      return null;
-    }
-
     // Use request deduplication
     return this.rateLimiter.deduplicateRequest(cacheKey, async () => {
       // Try providers in order, respecting rate limits
@@ -268,11 +244,6 @@ export class DataService {
       return cached;
     }
 
-    // Use mock data if preferred or as fallback
-    if (this.preferredSource === 'mock') {
-      return getMockData(symbol, days);
-    }
-
     // Use request deduplication
     return this.rateLimiter.deduplicateRequest(cacheKey, async () => {
       // Try providers in order, respecting rate limits
@@ -302,9 +273,9 @@ export class DataService {
         }
       }
 
-      // Fallback to mock data
-      console.log('All providers failed, falling back to mock data');
-      return getMockData(symbol, days);
+      // All providers failed - return null (no fake data!)
+      console.error('All providers failed for', symbol);
+      return null;
     });
   }
 
@@ -382,14 +353,6 @@ export class DataService {
       return [];
     }
 
-    // If using mock data, use mock search
-    if (this.preferredSource === 'mock') {
-      return searchMockStocks(query).map(s => ({
-        symbol: s.symbol,
-        name: s.name
-      }));
-    }
-
     // Try providers in order
     for (const source of this.getProviderOrder()) {
       const provider = this.providers.get(source);
@@ -405,11 +368,8 @@ export class DataService {
       }
     }
 
-    // Fallback to mock search
-    return searchMockStocks(query).map(s => ({
-      symbol: s.symbol,
-      name: s.name
-    }));
+    // All providers failed - return empty (no fake data!)
+    return [];
   }
 
   /**
@@ -427,7 +387,7 @@ export class DataService {
   }
 }
 
-// Singleton instance with default config (uses mock data)
+// Singleton instance with default config (uses Yahoo Finance)
 let dataServiceInstance: DataService | null = null;
 
 /**
