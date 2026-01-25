@@ -15,7 +15,8 @@ import { DataServiceProvider, useServiceWorker } from './hooks';
 import { Navigation } from './components/Navigation';
 import { DashboardPage, WatchlistPage, SettingsPage, ChangelogPage, InfoPage, TradingPage, PortfolioPage, LeaderboardPage } from './pages';
 import BacktestPage from './pages/BacktestPage';
-import { initializeAuth } from './services/authService';
+import { initializeAuth, subscribeToAuth } from './services/authService';
+import { getBestSymbolFromWatchlist, clearBestSymbolCache } from './services/bestSymbolService';
 
 // Build info from Vite config
 declare const __BUILD_VERSION__: string;
@@ -23,7 +24,8 @@ declare const __BUILD_COMMIT__: string;
 declare const __BUILD_TIME__: string;
 
 function AppContent() {
-  const [selectedSymbol, setSelectedSymbol] = useState('AAPL');
+  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+  const [isLoadingBestSymbol, setIsLoadingBestSymbol] = useState(true);
 
   // Initialize Service Worker for background updates
   const { isSupported: swSupported, periodicSyncSupported } = useServiceWorker();
@@ -37,6 +39,30 @@ function AppContent() {
   // Initialize auth on mount
   useEffect(() => {
     initializeAuth();
+  }, []);
+
+  // Load best symbol from watchlist on mount and auth changes
+  useEffect(() => {
+    const loadBestSymbol = async () => {
+      setIsLoadingBestSymbol(true);
+      try {
+        const bestSymbol = await getBestSymbolFromWatchlist();
+        setSelectedSymbol(bestSymbol);
+      } catch (error) {
+        console.error('[App] Error loading best symbol:', error);
+        setSelectedSymbol('AAPL'); // Fallback
+      }
+      setIsLoadingBestSymbol(false);
+    };
+
+    loadBestSymbol();
+
+    // Re-evaluate when auth state changes
+    const unsubscribe = subscribeToAuth(() => {
+      clearBestSymbolCache();
+      loadBestSymbol();
+    });
+    return () => unsubscribe();
   }, []);
 
   // Listen for symbol selection from Watchlist
@@ -63,10 +89,19 @@ function AppContent() {
             <Route 
               path="/" 
               element={
-                <DashboardPage 
-                  selectedSymbol={selectedSymbol} 
-                  onSymbolChange={setSelectedSymbol} 
-                />
+                isLoadingBestSymbol || !selectedSymbol ? (
+                  <div className="flex items-center justify-center flex-1">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                      <p className="text-gray-400">Analysiere Watchlist für beste Empfehlung...</p>
+                    </div>
+                  </div>
+                ) : (
+                  <DashboardPage 
+                    selectedSymbol={selectedSymbol} 
+                    onSymbolChange={setSelectedSymbol} 
+                  />
+                )
               } 
             />
             <Route path="/trading" element={<TradingPage />} />

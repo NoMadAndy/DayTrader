@@ -38,6 +38,12 @@ export {
 } from './userSettingsService';
 export type { UserSettings, CustomSymbol } from './userSettingsService';
 
+// Best Symbol Service
+export {
+  getBestSymbolFromWatchlist,
+  clearBestSymbolCache,
+} from './bestSymbolService';
+
 // ML Sentiment Service
 export {
   checkMLSentimentAvailable,

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.3] - 2026-01-25
+
+### Added
+- **Smart Default Symbol** - Dashboard zeigt automatisch die vielversprechendste Aktie
+  - Analysiert alle Symbole in der Watchlist beim App-Start
+  - Bewertet basierend auf kombinierten Trading-Signalen (täglich gewichtet)
+  - Cache für 5 Minuten für schnelle Ladezeiten
+  - Aktualisiert sich automatisch bei Login/Logout
+  - Fallback auf AAPL wenn keine Daten verfügbar
+
 ## [1.6.2] - 2026-01-25
 
 ### Added
