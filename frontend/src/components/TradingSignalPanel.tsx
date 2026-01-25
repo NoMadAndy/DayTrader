@@ -58,6 +58,44 @@ function SignalCard({
     technical: '📊',
     ml: '🤖'
   };
+
+  // Agreement styling
+  const getAgreementStyle = (agreement: SignalContribution['agreement']) => {
+    switch (agreement) {
+      case 'strong':
+        return {
+          border: 'border-green-500/50 border',
+          ring: 'ring-1 ring-green-500/30',
+          indicator: '●',
+          indicatorColor: 'text-green-400',
+          tooltip: 'Starke Übereinstimmung'
+        };
+      case 'moderate':
+        return {
+          border: '',
+          ring: '',
+          indicator: '◐',
+          indicatorColor: 'text-blue-400',
+          tooltip: 'Moderate Übereinstimmung'
+        };
+      case 'weak':
+        return {
+          border: 'border-yellow-500/30 border-dashed',
+          ring: '',
+          indicator: '○',
+          indicatorColor: 'text-yellow-400',
+          tooltip: 'Schwache Übereinstimmung'
+        };
+      case 'conflicting':
+        return {
+          border: 'border-red-500/30 border-dashed',
+          ring: '',
+          indicator: '⚠',
+          indicatorColor: 'text-red-400',
+          tooltip: 'Widersprüchliche Signale'
+        };
+    }
+  };
   
   return (
     <div className={`p-3 rounded-lg ${display.bgColor} border border-slate-700/50`}>
@@ -85,22 +123,31 @@ function SignalCard({
         </span>
       </div>
       
-      {/* Contributions breakdown */}
+      {/* Contributions breakdown with Agreement */}
       {contributions && contributions.length > 0 && (
         <div className="mt-2 flex gap-1 flex-wrap">
-          {contributions.map((contrib, idx) => (
-            <span 
-              key={idx}
-              className={`text-xs px-1.5 py-0.5 rounded ${
-                contrib.score >= 20 ? 'bg-green-500/20 text-green-400' :
-                contrib.score <= -20 ? 'bg-red-500/20 text-red-400' :
-                'bg-slate-600/50 text-gray-400'
-              }`}
-              title={`${contrib.description} (Gewicht: ${Math.round(contrib.weight * 100)}%)`}
-            >
-              {sourceIcon[contrib.source]} {contrib.score > 0 ? '+' : ''}{contrib.score}
-            </span>
-          ))}
+          {contributions.map((contrib, idx) => {
+            const agreementStyle = getAgreementStyle(contrib.agreement);
+            const weightReduced = contrib.effectiveWeight < contrib.weight * 0.9;
+            
+            return (
+              <span 
+                key={idx}
+                className={`text-xs px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                  contrib.score >= 20 ? 'bg-green-500/20 text-green-400' :
+                  contrib.score <= -20 ? 'bg-red-500/20 text-red-400' :
+                  'bg-slate-600/50 text-gray-400'
+                } ${agreementStyle.border} ${agreementStyle.ring}`}
+                title={`${contrib.description}\nGewicht: ${Math.round(contrib.weight * 100)}%${weightReduced ? ` → ${Math.round(contrib.effectiveWeight * 100)}%` : ''}\n${agreementStyle.tooltip}`}
+              >
+                {sourceIcon[contrib.source]}
+                <span>{contrib.score > 0 ? '+' : ''}{contrib.score}</span>
+                <span className={`${agreementStyle.indicatorColor} text-[10px]`} title={agreementStyle.tooltip}>
+                  {agreementStyle.indicator}
+                </span>
+              </span>
+            );
+          })}
         </div>
       )}
       
@@ -202,10 +249,17 @@ export function TradingSignalPanel({
         </div>
         
         {/* Legend */}
-        <div className="flex items-center gap-3 text-gray-600">
+        <div className="flex items-center gap-3 text-gray-600 flex-wrap">
+          <span className="text-gray-500">Quellen:</span>
           <span>📰 News</span>
           <span>📊 Technisch</span>
           <span>🤖 ML-Prognose</span>
+          <span className="text-gray-500 ml-2">|</span>
+          <span className="text-gray-500">Agreement:</span>
+          <span className="text-green-400">● stark</span>
+          <span className="text-blue-400">◐ moderat</span>
+          <span className="text-yellow-400">○ schwach</span>
+          <span className="text-red-400">⚠ widerspr.</span>
         </div>
       </div>
 

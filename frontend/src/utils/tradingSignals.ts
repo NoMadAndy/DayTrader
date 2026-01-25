@@ -26,7 +26,9 @@ export interface SignalContribution {
   source: 'sentiment' | 'technical' | 'ml';
   score: number;
   weight: number;
+  effectiveWeight: number; // Tatsächliches Gewicht nach Agreement-Anpassung
   description: string;
+  agreement: 'strong' | 'moderate' | 'weak' | 'conflicting'; // Übereinstimmung mit anderen Indikatoren
 }
 
 export interface TradingSignalSummary {
@@ -350,6 +352,39 @@ export function calculateCombinedTradingSignals(
     ? allNews.reduce((s, i) => s + i.sentimentResult.score, 0) / allNews.length 
     : 0;
 
+  // === Helper: Berechne Agreement zwischen Scores ===
+  const calculateAgreement = (
+    score: number,
+    otherScores: number[]
+  ): 'strong' | 'moderate' | 'weak' | 'conflicting' => {
+    if (otherScores.length === 0) return 'moderate'; // Kein Vergleich möglich
+    
+    const sameDirection = otherScores.filter(s => 
+      (score >= 0 && s >= 0) || (score < 0 && s < 0)
+    ).length;
+    
+    const agreementRatio = sameDirection / otherScores.length;
+    
+    // Prüfe auch Stärke der Übereinstimmung
+    const avgOtherScore = otherScores.reduce((a, b) => a + b, 0) / otherScores.length;
+    const strengthMatch = Math.abs(score - avgOtherScore) < 30;
+    
+    if (agreementRatio === 1 && strengthMatch) return 'strong';
+    if (agreementRatio >= 0.5) return 'moderate';
+    if (agreementRatio > 0) return 'weak';
+    return 'conflicting';
+  };
+
+  // === Helper: Agreement-Faktor für Gewichtung ===
+  const getAgreementFactor = (agreement: 'strong' | 'moderate' | 'weak' | 'conflicting'): number => {
+    switch (agreement) {
+      case 'strong': return 1.0;      // Volle Gewichtung
+      case 'moderate': return 0.85;   // Leicht reduziert
+      case 'weak': return 0.6;        // Deutlich reduziert
+      case 'conflicting': return 0.4; // Stark reduziert
+    }
+  };
+
   // === Helper: Kombiniere Scores mit Gewichtung ===
   const combineScores = (
     period: 'hourly' | 'daily' | 'weekly' | 'longTerm',
@@ -358,23 +393,18 @@ export function calculateCombinedTradingSignals(
     sentimentDescription: string
   ): { score: number; confidence: number; contributions: SignalContribution[] } => {
     const weights = WEIGHTS[period];
-    const periodContributions: SignalContribution[] = [];
     
-    let totalScore = 0;
-    let totalConfidence = 0;
-    let activeWeightSum = 0;
-
+    // Erst alle Scores sammeln
+    const rawScores: { source: 'sentiment' | 'technical' | 'ml'; score: number; weight: number; confidence: number; description: string }[] = [];
+    
     // Sentiment
     if (newsItems.length > 0) {
       const sentimentContrib = sentimentScore * 100;
-      totalScore += sentimentContrib * weights.sentiment;
-      totalConfidence += sentimentConfidence * weights.sentiment;
-      activeWeightSum += weights.sentiment;
-      
-      periodContributions.push({
+      rawScores.push({
         source: 'sentiment',
-        score: Math.round(sentimentContrib),
+        score: sentimentContrib,
         weight: weights.sentiment,
+        confidence: sentimentConfidence,
         description: sentimentDescription
       });
     }
@@ -382,14 +412,11 @@ export function calculateCombinedTradingSignals(
     // Technical
     if (forecast) {
       const technical = calculateTechnicalScore(forecast, stockData, period);
-      totalScore += technical.score * weights.technical;
-      totalConfidence += technical.confidence * weights.technical;
-      activeWeightSum += weights.technical;
-      
-      periodContributions.push({
+      rawScores.push({
         source: 'technical',
-        score: Math.round(technical.score),
+        score: technical.score,
         weight: weights.technical,
+        confidence: technical.confidence,
         description: technical.description
       });
     }
@@ -397,17 +424,40 @@ export function calculateCombinedTradingSignals(
     // ML Predictions
     if (mlPredictions && mlPredictions.length > 0) {
       const ml = calculateMLScore(mlPredictions, currentPrice, period);
-      totalScore += ml.score * weights.ml;
-      totalConfidence += ml.confidence * weights.ml;
-      activeWeightSum += weights.ml;
-      
-      periodContributions.push({
+      rawScores.push({
         source: 'ml',
-        score: Math.round(ml.score),
+        score: ml.score,
         weight: weights.ml,
+        confidence: ml.confidence,
         description: ml.description
       });
     }
+
+    // Jetzt Agreement berechnen und effektive Gewichte anpassen
+    const periodContributions: SignalContribution[] = [];
+    let totalScore = 0;
+    let totalConfidence = 0;
+    let activeWeightSum = 0;
+
+    rawScores.forEach((item, idx) => {
+      const otherScores = rawScores.filter((_, i) => i !== idx).map(s => s.score);
+      const agreement = calculateAgreement(item.score, otherScores);
+      const agreementFactor = getAgreementFactor(agreement);
+      const effectiveWeight = item.weight * agreementFactor;
+      
+      totalScore += item.score * effectiveWeight;
+      totalConfidence += item.confidence * effectiveWeight;
+      activeWeightSum += effectiveWeight;
+      
+      periodContributions.push({
+        source: item.source,
+        score: Math.round(item.score),
+        weight: item.weight,
+        effectiveWeight: effectiveWeight,
+        description: item.description,
+        agreement
+      });
+    });
 
     // Normalisiere auf aktive Gewichte
     const normalizedScore = activeWeightSum > 0 ? totalScore / activeWeightSum : 0;

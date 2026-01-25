@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.7.0] - 2026-01-25
 
+### Added
+- **Indicator Agreement** - Jeder Trading-Signal-Indikator zeigt jetzt sein Agreement mit anderen Quellen an
+  - Visuelle Indikatoren: ● stark (grün), ◐ moderat (blau), ○ schwach (gelb), ⚠ widersprüchlich (rot)
+  - Tags mit starkem Agreement haben grüne Umrandung, widersprüchliche haben gestrichelte rote Umrandung
+  - Tooltip zeigt Original-Gewicht und effektives Gewicht nach Agreement-Anpassung
+  - Legende in der Footer-Zeile erklärt die Symbole
+
 ### Changed
 - **BREAKING: Mock-Daten komplett entfernt** - Die Anwendung zeigt jetzt nur noch echte, aktuelle Marktdaten an
   - Yahoo Finance ist der neue Standard-Provider (kein API-Key erforderlich)
@@ -14,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Alle simulierten/erfundenen Daten aus der Codebasis entfernt
   - Bei API-Fehlern wird `null` zurückgegeben statt gefälschte Daten
   - Standard-Aktienliste (AAPL, MSFT, etc.) bleibt für Watchlist erhalten, Preise kommen live von APIs
+- **Trading-Signal-Gewichtung** - Bei niedrigem Agreement zwischen Indikatoren wird deren Gewicht automatisch reduziert
+  - Starke Übereinstimmung: 100% Gewichtung
+  - Moderate Übereinstimmung: 85% Gewichtung
+  - Schwache Übereinstimmung: 60% Gewichtung
+  - Widersprüchliche Signale: 40% Gewichtung
 
 ### Fixed
 - **ML Daten-Aktualität-Indikator** - Zeigt jetzt korrekt keinen Timestamp wenn kein Modell für das aktuelle Symbol trainiert ist
