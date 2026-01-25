@@ -192,7 +192,7 @@ export class RateLimiter {
     // Check every minute for day change
     setInterval(() => {
       const dayStart = this.getDayStart();
-      this.stats.forEach((stats, source) => {
+      this.stats.forEach((stats, _source) => {
         if (stats.dayStartTimestamp !== dayStart) {
           stats.requestsToday = 0;
           stats.dayStartTimestamp = dayStart;
@@ -292,8 +292,10 @@ export class RateLimiter {
 
   /**
    * Get cache entry if valid
+   * @param key Cache key
+   * @param _source Optional source (reserved for future per-source cache policies)
    */
-  getCached<T>(key: string, source?: DataSourceType): T | null {
+  getCached<T>(key: string, _source?: DataSourceType): T | null {
     const entry = this.cache.get(key) as CacheEntry<T> | undefined;
     if (!entry) return null;
 

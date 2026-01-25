@@ -27,7 +27,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
   const { data: stockData, isLoading, refetch } = useStockData(selectedSymbol);
 
   // Local state for live price updates (doesn't cause full re-render)
-  const [livePrice, setLivePrice] = useState<{ price: number; change: number } | null>(null);
+  const [_livePrice, setLivePrice] = useState<{ price: number; change: number } | null>(null);
   
   // Lightweight price refresh - only updates the displayed price
   const refreshPriceOnly = useCallback(async () => {

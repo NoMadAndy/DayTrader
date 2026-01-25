@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.2] - 2026-01-25
+
+### Added
+- **Dashboard-Analyse im Backtesting** - Vollständige Marktanalyse für historische Daten
+  
+  - **Trading Signal Panel** - Kombinierte Handelssignale (Stündlich, Täglich, Wöchentlich, Langfristig)
+    - Basiert auf technischen Indikatoren für den simulierten Zeitpunkt
+    - Zeigt Bias (Bullish/Bearish/Neutral) und Volatilitäts-Indikator
+    
+  - **AI Forecast Panel** - Preisprognosen für historische Daten
+    - Generiert Preis-Targets basierend auf den Daten bis zum Simulationsdatum
+    - Zeigt Support/Resistance-Levels, Konfidenz und Trend-Signal
+    - Vollständige technische Indikator-Analyse
+    
+  - **Interaktiver Chart** - Vollständiger Candlestick-Chart wie im Dashboard
+    - Alle technischen Indikatoren: SMA20/50, EMA12/26, Bollinger Bands, MACD, RSI, Volume
+    - Support/Resistance-Linien aus der AI-Prognose
+    - Zeigt nur Daten bis zum aktuellen Simulationsdatum (keine "Zukunft"-Daten)
+    
+  - **Indikator-Steuerung** - Toggle-Buttons für alle Chart-Indikatoren
+    - Ein-/Ausblenden von Moving Averages, Bollinger Bands, Momentum-Indikatoren
+    - Einstellungen bleiben während der Backtest-Session erhalten
+    
+  - **Collapsible Panels** - Aufklappbare Bereiche für bessere Übersicht
+    - Analyse-Panel, Chart und Indikator-Steuerung einzeln auf-/zuklappbar
+    - Spart Bildschirmplatz beim aktiven Trading
+
 ## [1.6.1] - 2026-01-25
 
 ### Fixed

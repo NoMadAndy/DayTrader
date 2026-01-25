@@ -106,7 +106,7 @@ export function PortfolioPage() {
       // Only update if values actually changed
       setMetrics(prev => {
         if (prev?.totalValue === newMetrics.totalValue && 
-            prev?.totalPnL === newMetrics.totalPnL) {
+            prev?.netPnl === newMetrics.netPnl) {
           return prev;
         }
         return newMetrics;

@@ -152,27 +152,6 @@ export class DataService {
   }
 
   /**
-   * Get a provider that has available quota
-   */
-  private getAvailableProvider(): DataSourceType | null {
-    if (!this.enableRateLimiting) {
-      // Return first configured provider
-      for (const source of this.getProviderOrder()) {
-        const provider = this.providers.get(source);
-        if (provider?.isConfigured()) {
-          return source;
-        }
-      }
-      return null;
-    }
-
-    const availableSources = this.getProviderOrder().filter(
-      s => this.providers.get(s)?.isConfigured()
-    );
-    return this.rateLimiter.getBestAvailableProvider(availableSources, this.preferredSource);
-  }
-
-  /**
    * Check rate limit and record request
    */
   private checkAndRecordRequest(source: DataSourceType, endpoint: string): boolean {

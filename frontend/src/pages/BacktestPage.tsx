@@ -4,10 +4,16 @@
  * Allows users to trade with historical data, simulating what would have happened
  * if they had traded at a specific time in the past.
  * 
+ * Now includes Dashboard-style analysis:
+ * - Trading Signal Panel (combined signals)
+ * - AI Forecast Panel  
+ * - Stock Chart with technical indicators
+ * - Indicator Controls
+ * 
  * Redesigned to match the consistent dark slate theme of the application.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getAuthState, subscribeToAuth, type AuthState } from '../services/authService';
 import { useDataService } from '../hooks/useDataService';
 import {
@@ -25,6 +31,9 @@ import {
   type BacktestPosition,
   type BacktestResults,
 } from '../services/tradingService';
+import { StockChart, ForecastPanel, TradingSignalPanel, IndicatorControls } from '../components';
+import { generateForecast } from '../utils/forecast';
+import type { OHLCV, ForecastResult } from '../types/stock';
 
 // Popular symbols for backtesting
 const POPULAR_SYMBOLS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'JPM', 'V', 'WMT'];
@@ -62,6 +71,21 @@ export default function BacktestPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Dashboard-style analysis state
+  const [showAnalysisPanel, setShowAnalysisPanel] = useState(true);
+  const [showIndicators, setShowIndicators] = useState(false);
+  const [showChart, setShowChart] = useState(false);
+  
+  // Chart indicator toggles
+  const [showSMA20, setShowSMA20] = useState(true);
+  const [showSMA50, setShowSMA50] = useState(true);
+  const [showEMA12, setShowEMA12] = useState(false);
+  const [showEMA26, setShowEMA26] = useState(false);
+  const [showBollingerBands, setShowBollingerBands] = useState(false);
+  const [showMACD, setShowMACD] = useState(true);
+  const [showRSI, setShowRSI] = useState(true);
+  const [showVolume, setShowVolume] = useState(true);
 
   // Subscribe to auth changes
   useEffect(() => {
@@ -162,6 +186,43 @@ export default function BacktestPage() {
     } catch (e) {
       console.error('Failed to load historical data:', e);
       setHistoricalData([]);
+    }
+  };
+
+  // Convert historical data to OHLCV format for charts (up to current simulation date)
+  const chartData: OHLCV[] = useMemo(() => {
+    if (!activeSession || historicalData.length === 0) return [];
+    
+    // Filter data up to and including current simulation date
+    const dataUntilNow = historicalData.filter(d => d.date <= activeSession.currentDate);
+    
+    return dataUntilNow.map(d => ({
+      time: Math.floor(new Date(d.date).getTime() / 1000),
+      open: d.open,
+      high: d.high,
+      low: d.low,
+      close: d.close,
+      volume: d.volume,
+    }));
+  }, [historicalData, activeSession?.currentDate]);
+
+  // Generate AI Forecast based on historical data up to current simulation date
+  const forecast: ForecastResult | null = useMemo(() => {
+    if (chartData.length < 50) return null; // Need enough data for indicators
+    return generateForecast(chartData);
+  }, [chartData]);
+
+  // Indicator toggle handler
+  const handleIndicatorToggle = (indicator: string, value: boolean) => {
+    switch (indicator) {
+      case 'showSMA20': setShowSMA20(value); break;
+      case 'showSMA50': setShowSMA50(value); break;
+      case 'showEMA12': setShowEMA12(value); break;
+      case 'showEMA26': setShowEMA26(value); break;
+      case 'showBollingerBands': setShowBollingerBands(value); break;
+      case 'showMACD': setShowMACD(value); break;
+      case 'showRSI': setShowRSI(value); break;
+      case 'showVolume': setShowVolume(value); break;
     }
   };
 
@@ -633,6 +694,128 @@ export default function BacktestPage() {
                   </div>
                 )}
               </div>
+
+              {/* Analysis Panel - Dashboard-style analysis for historical data */}
+              {activeSession.status === 'active' && chartData.length > 0 && (
+                <div className="bg-slate-800/50 rounded-xl border border-slate-700">
+                  <button
+                    onClick={() => setShowAnalysisPanel(!showAnalysisPanel)}
+                    className="w-full flex items-center justify-between p-5 text-left"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">📊</span>
+                      <h3 className="font-semibold text-lg">Marktanalyse zum {activeSession.currentDate}</h3>
+                    </div>
+                    <svg
+                      className={`w-5 h-5 text-gray-400 transition-transform ${showAnalysisPanel ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  
+                  {showAnalysisPanel && (
+                    <div className="px-5 pb-5 space-y-4">
+                      {/* Trading Signals Panel */}
+                      {forecast && currentPrice && (
+                        <TradingSignalPanel
+                          newsItems={[]}
+                          symbol={selectedSymbol}
+                          className=""
+                          forecast={forecast}
+                          stockData={chartData}
+                          currentPrice={currentPrice}
+                        />
+                      )}
+
+                      {/* AI Forecast */}
+                      {forecast && currentPrice && (
+                        <ForecastPanel
+                          forecast={forecast}
+                          currentPrice={currentPrice}
+                        />
+                      )}
+
+                      {/* Indicator Controls - Collapsible */}
+                      <div className="bg-slate-900/50 rounded-xl border border-slate-700">
+                        <button
+                          onClick={() => setShowIndicators(!showIndicators)}
+                          className="w-full flex items-center justify-between p-4 text-left"
+                        >
+                          <h4 className="text-white font-semibold">Chart-Indikatoren</h4>
+                          <svg
+                            className={`w-5 h-5 text-gray-400 transition-transform ${showIndicators ? 'rotate-180' : ''}`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        {showIndicators && (
+                          <div className="px-4 pb-4">
+                            <IndicatorControls
+                              showSMA20={showSMA20}
+                              showSMA50={showSMA50}
+                              showEMA12={showEMA12}
+                              showEMA26={showEMA26}
+                              showBollingerBands={showBollingerBands}
+                              showMACD={showMACD}
+                              showRSI={showRSI}
+                              showVolume={showVolume}
+                              onToggle={handleIndicatorToggle}
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Stock Chart - Collapsible */}
+                      <div className="bg-slate-900/50 rounded-xl border border-slate-700">
+                        <button
+                          onClick={() => setShowChart(!showChart)}
+                          className="w-full flex items-center justify-between p-4 text-left"
+                        >
+                          <h4 className="text-white font-semibold">📈 Chart bis {activeSession.currentDate}</h4>
+                          <svg
+                            className={`w-5 h-5 text-gray-400 transition-transform ${showChart ? 'rotate-180' : ''}`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        {showChart && chartData.length > 0 && (
+                          <div className="px-4 pb-4">
+                            <StockChart
+                              data={chartData}
+                              symbol={selectedSymbol}
+                              showSMA20={showSMA20}
+                              showSMA50={showSMA50}
+                              showEMA12={showEMA12}
+                              showEMA26={showEMA26}
+                              showBollingerBands={showBollingerBands}
+                              showMACD={showMACD}
+                              showRSI={showRSI}
+                              showVolume={showVolume}
+                              supportLevel={forecast?.supportLevel}
+                              resistanceLevel={forecast?.resistanceLevel}
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Analysis Info */}
+                      <div className="text-xs text-gray-500 text-center">
+                        ⏱️ Analyse basiert auf historischen Daten bis zum Simulationsdatum.
+                        Nutze diese Informationen, um deine Trading-Entscheidungen zu treffen.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Trading Panel (only for active sessions) */}
               {activeSession.status === 'active' && (
