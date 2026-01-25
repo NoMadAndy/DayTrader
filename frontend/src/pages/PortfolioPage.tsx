@@ -4,7 +4,7 @@
  * Shows portfolio performance, transaction history, and detailed analytics.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getAuthState, subscribeToAuth, type AuthState } from '../services/authService';
 import {
   getOrCreatePortfolio,
@@ -22,7 +22,6 @@ import {
   getSideName,
 } from '../services/tradingService';
 import { EquityChart } from '../components';
-import { useAutoRefresh, formatRefreshInterval } from '../hooks';
 import type {
   Portfolio,
   Position,
@@ -96,22 +95,9 @@ export function PortfolioPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
-  
-  // Get symbols from positions for auto-refresh
-  const positionSymbols = useMemo(() => 
-    positions.filter(p => p.quantity > 0).map(p => p.symbol),
-    [positions]
-  );
-  
-  // Auto-refresh for position prices
-  const [autoRefreshState] = useAutoRefresh({
-    symbols: positionSymbols,
-    enabled: authState.isAuthenticated && positionSymbols.length > 0,
-    onQuotesUpdate: useCallback(() => {
-      // Reload data when quotes update
-      loadData();
-    }, [loadData]),
-  });
+
+  // Note: Auto-refresh is now handled server-side via background jobs
+  // The server updates quotes every 60 seconds for all watched symbols
   
   const handleReset = async () => {
     if (!portfolio) return;
@@ -203,19 +189,10 @@ export function PortfolioPage() {
         </div>
         
         {metrics && (
-          <div className="flex items-center gap-4">
-            {/* Auto-refresh indicator */}
-            {autoRefreshState.nextUpdate && positionSymbols.length > 0 && (
-              <div className="flex items-center gap-1.5 text-xs text-gray-400 bg-slate-800/50 px-2 py-1 rounded">
-                <span className={`w-1.5 h-1.5 rounded-full ${autoRefreshState.isRefreshing ? 'bg-blue-400 animate-pulse' : 'bg-green-400'}`} />
-                <span>Auto: {formatRefreshInterval(autoRefreshState.refreshInterval)}</span>
-              </div>
-            )}
-            <div className="text-right">
-              <div className="text-2xl font-bold">{formatCurrency(metrics.totalValue)}</div>
-              <div className={`text-sm ${metrics.totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {formatPercent(metrics.totalReturn)} seit Start
-              </div>
+          <div className="text-right">
+            <div className="text-2xl font-bold">{formatCurrency(metrics.totalValue)}</div>
+            <div className={`text-sm ${metrics.totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {formatPercent(metrics.totalReturn)} seit Start
             </div>
           </div>
         )}

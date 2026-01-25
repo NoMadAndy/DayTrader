@@ -6,7 +6,7 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, NewsPanel, TradingSignalPanel, DataFreshnessIndicator, type NewsItemWithSentiment, type DataTimestamps } from '../components';
-import { useStockData, useAutoRefresh, formatRefreshInterval, formatTimeUntilRefresh } from '../hooks';
+import { useStockData } from '../hooks';
 import { generateForecast } from '../utils/forecast';
 
 // ML Prediction type for trading signals
@@ -26,15 +26,9 @@ interface DashboardPageProps {
 export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageProps) {
   const { data: stockData, isLoading, refetch } = useStockData(selectedSymbol);
 
-  // Auto-refresh for real-time quote updates
-  const [autoRefreshState] = useAutoRefresh({
-    symbols: [selectedSymbol],
-    enabled: true,
-    onQuotesUpdate: useCallback(() => {
-      // Refresh stock data when quotes are updated
-      refetch();
-    }, [refetch]),
-  });
+  // Note: Auto-refresh is now handled server-side via background jobs
+  // The server updates quotes every 60 seconds for all watched symbols
+  // Frontend just needs to refetch periodically to get cached data
 
   // State for ML predictions (shared with NewsPanel for combined trading signals)
   const [mlPredictions, setMlPredictions] = useState<MLPrediction[] | null>(null);
@@ -206,23 +200,11 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
       {/* Stock Selector & Data Freshness Header */}
       <div className="flex items-center justify-between gap-2 mb-4">
         <StockSelector selectedSymbol={selectedSymbol} onSelect={onSymbolChange} />
-        <div className="flex items-center gap-2">
-          {/* Auto-refresh indicator */}
-          {autoRefreshState.nextUpdate && (
-            <div className="hidden sm:flex items-center gap-2 text-xs text-gray-400 bg-slate-800/50 px-3 py-1.5 rounded-lg">
-              <span className={`w-2 h-2 rounded-full ${autoRefreshState.isRefreshing ? 'bg-blue-400 animate-pulse' : 'bg-green-400'}`} />
-              <span>
-                Auto: {formatRefreshInterval(autoRefreshState.refreshInterval)} 
-                {' '}• Nächstes Update: {formatTimeUntilRefresh(autoRefreshState.nextUpdate)}
-              </span>
-            </div>
-          )}
-          <DataFreshnessIndicator 
-            timestamps={dataTimestamps}
+        <DataFreshnessIndicator 
+          timestamps={dataTimestamps}
           onRefresh={handleRefreshAll}
           isRefreshing={isRefreshing}
         />
-        </div>
       </div>
 
       {/* Trading Signals - Full Width at Top */}
