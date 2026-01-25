@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { mlService, type MLPredictResponse, type MLTrainStatus, type MLServiceHealth } from '../services';
+import { DataService } from '../services/dataService';
 import { DEFAULT_ML_SETTINGS, type MLSettings } from '../services/userSettingsService';
 import type { OHLCV } from '../types/stock';
 
@@ -129,19 +130,46 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
   }, [onRefreshRegister, loadPrediction, hasModel, isAvailable]);
 
   const startTraining = async () => {
-    if (!stockData || stockData.length < 150) {
-      setError('Need at least 150 data points for training');
-      return;
+    // Get ML settings from localStorage
+    const mlSettings = getMLSettings();
+    console.log('[ML Training] Using settings:', mlSettings);
+    
+    // Calculate minimum required data points
+    // Formula: sequence_length + forecast_days + 50 (buffer for train/test split)
+    const minRequired = mlSettings.sequenceLength + mlSettings.forecastDays + 50;
+    
+    let trainingData: OHLCV[] = stockData;
+    
+    // Check if we have enough data, if not fetch more
+    if (!stockData || stockData.length < minRequired) {
+      console.log(`[ML Training] Need ${minRequired} data points, have ${stockData?.length || 0}. Fetching more...`);
+      setError(null);
+      
+      try {
+        // Create a temporary DataService to fetch more data
+        const dataService = new DataService();
+        // Request extra days to account for weekends/holidays
+        const daysToFetch = Math.ceil(minRequired * 1.5);
+        const fetchedData = await dataService.fetchStockData(symbol, daysToFetch);
+        
+        if (fetchedData?.data && fetchedData.data.length >= minRequired) {
+          trainingData = fetchedData.data;
+          console.log(`[ML Training] Fetched ${trainingData.length} data points`);
+        } else {
+          setError(`Konnte nicht genug Daten laden. Benötigt: ${minRequired}, Verfügbar: ${fetchedData?.data?.length || 0}`);
+          return;
+        }
+      } catch (err) {
+        console.error('[ML Training] Failed to fetch additional data:', err);
+        setError(`Fehler beim Laden zusätzlicher Daten: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        return;
+      }
     }
 
     setIsTraining(true);
     setError(null);
     
-    // Get ML settings from localStorage
-    const mlSettings = getMLSettings();
-    console.log('[ML Training] Using settings:', mlSettings);
-    
-    const result = await mlService.startTraining(symbol, stockData, {
+    const result = await mlService.startTraining(symbol, trainingData, {
       epochs: mlSettings.epochs,
       learningRate: mlSettings.learningRate,
       sequenceLength: mlSettings.sequenceLength,
