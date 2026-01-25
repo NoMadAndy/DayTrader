@@ -1,0 +1,51 @@
+# GPU-enabled Dockerfile for ML Service
+# Uses NVIDIA CUDA base image for GPU acceleration
+
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+
+# Build arguments
+ARG BUILD_VERSION=1.4.1
+ARG BUILD_COMMIT=dev
+ARG BUILD_TIME=unknown
+
+# Set environment variables
+ENV BUILD_VERSION=${BUILD_VERSION}
+ENV BUILD_COMMIT=${BUILD_COMMIT}
+ENV BUILD_TIME=${BUILD_TIME}
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV USE_CUDA=true
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# Install Python 3.11
+RUN apt-get update && apt-get install -y \
+    python3.11 \
+    python3.11-venv \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python \
+    && ln -sf /usr/bin/pip3 /usr/bin/pip
+
+WORKDIR /app
+
+# Install PyTorch with CUDA support first (uses CUDA 12.1)
+COPY requirements.txt .
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu121 && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY app/ /app/app/
+
+# Create models directory
+RUN mkdir -p /app/models
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+
+# Run with hot reload for development
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

@@ -11,6 +11,9 @@
 
 services:
   ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile.gpu
     deploy:
       resources:
         reservations:
@@ -20,3 +23,5 @@ services:
               capabilities: [gpu]
     environment:
       - USE_CUDA=true
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
