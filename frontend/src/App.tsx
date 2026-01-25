@@ -11,7 +11,7 @@
 
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { DataServiceProvider } from './hooks';
+import { DataServiceProvider, useServiceWorker } from './hooks';
 import { Navigation } from './components/Navigation';
 import { DashboardPage, WatchlistPage, SettingsPage, ChangelogPage, InfoPage, TradingPage, PortfolioPage, LeaderboardPage } from './pages';
 import BacktestPage from './pages/BacktestPage';
@@ -24,6 +24,15 @@ declare const __BUILD_TIME__: string;
 
 function AppContent() {
   const [selectedSymbol, setSelectedSymbol] = useState('AAPL');
+
+  // Initialize Service Worker for background updates
+  const { isSupported: swSupported, periodicSyncSupported } = useServiceWorker();
+  
+  useEffect(() => {
+    if (swSupported) {
+      console.log('[App] Service Worker aktiv', periodicSyncSupported ? '(mit Periodic Sync)' : '');
+    }
+  }, [swSupported, periodicSyncSupported]);
 
   // Initialize auth on mount
   useEffect(() => {

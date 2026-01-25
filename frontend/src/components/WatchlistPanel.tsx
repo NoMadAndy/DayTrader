@@ -9,10 +9,11 @@
  * - Authenticated users manage their own symbols completely
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DEFAULT_STOCKS } from '../utils/mockData';
-import { useDataService } from '../hooks';
+import { useDataService, useAutoRefresh, formatRefreshInterval } from '../hooks';
+import type { QuoteData } from '../services/types';
 import { 
   calculateCombinedTradingSignals, 
   getSignalDisplay,
@@ -73,6 +74,9 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
   const [sortBy, setSortBy] = useState<'name' | 'score'>('name');
   const [filterPeriod, setFilterPeriod] = useState<'hourly' | 'daily' | 'weekly' | 'longTerm'>('daily');
   const [isLoadingSymbols, setIsLoadingSymbols] = useState(false);
+  
+  // Track all symbols for auto-refresh
+  const symbolsRef = useRef<string[]>([]);
 
   // Subscribe to auth state changes
   useEffect(() => {
@@ -206,6 +210,31 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
   useEffect(() => {
     refreshWatchlist();
   }, []);
+  
+  // Auto-refresh using the hook - update symbols when watchlist changes
+  useEffect(() => {
+    symbolsRef.current = watchlistItems.map(item => item.symbol);
+  }, [watchlistItems]);
+  
+  // Auto-refresh hook for background updates
+  const [autoRefreshState] = useAutoRefresh({
+    symbols: symbolsRef.current,
+    enabled: watchlistItems.length > 0,
+    onQuotesUpdate: useCallback((quotes: Map<string, QuoteData>) => {
+      // Update prices in watchlist from auto-refresh
+      setWatchlistItems(prev => prev.map(item => {
+        const quote = quotes.get(item.symbol);
+        if (quote) {
+          return {
+            ...item,
+            currentPrice: quote.price,
+            priceChange: quote.changePercent,
+          };
+        }
+        return item;
+      }));
+    }, []),
+  });
 
   // Add new symbol (only for authenticated users)
   const handleAddSymbol = useCallback(async () => {
@@ -323,21 +352,30 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
           <span className="hidden sm:inline">Watchlist</span>
           <span className="text-gray-400 font-normal">({watchlistItems.length})</span>
         </h3>
-        <button
-          onClick={refreshWatchlist}
-          disabled={isRefreshing}
-          className="p-2 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-gray-400 hover:text-white transition-colors disabled:opacity-50"
-          title="Alle aktualisieren"
-        >
-          <svg 
-            className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} 
-            fill="none" 
-            stroke="currentColor" 
-            viewBox="0 0 24 24"
+        <div className="flex items-center gap-2">
+          {/* Auto-refresh status indicator */}
+          {autoRefreshState.nextUpdate && (
+            <div className="hidden sm:flex items-center gap-1.5 text-xs text-gray-400 bg-slate-700/30 px-2 py-1 rounded">
+              <span className={`w-1.5 h-1.5 rounded-full ${autoRefreshState.isRefreshing ? 'bg-blue-400 animate-pulse' : 'bg-green-400'}`} />
+              <span>{formatRefreshInterval(autoRefreshState.refreshInterval)}</span>
+            </div>
+          )}
+          <button
+            onClick={refreshWatchlist}
+            disabled={isRefreshing}
+            className="p-2 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-gray-400 hover:text-white transition-colors disabled:opacity-50"
+            title="Alle aktualisieren"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-        </button>
+            <svg 
+              className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Filters and Sort - responsive */}

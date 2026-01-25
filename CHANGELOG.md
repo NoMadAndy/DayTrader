@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-01-25
+
+### Added
+- **Automatische Kurs-Aktualisierung** - Intelligentes Auto-Refresh-System
+  
+  - **Service Worker für Hintergrund-Updates** - Aktualisiert Kurse auch wenn Seite nicht fokussiert
+    - Periodic Background Sync API (wenn vom Browser unterstützt)
+    - Fallback auf regulären Background Sync
+    - IndexedDB-Cache für Offline-Daten
+  
+  - **Intelligentes Polling basierend auf API-Kontingent**
+    - Automatische Berechnung des optimalen Refresh-Intervalls
+    - Berücksichtigt verbleibendes tägliches und minutenbasiertes Kontingent
+    - Verwendet max. 50% der verfügbaren API-Calls für Auto-Refresh
+  
+  - **Visibility-API Integration**
+    - Schnelleres Polling wenn Seite im Vordergrund
+    - 3x langsameres Polling wenn Seite im Hintergrund
+    - Sofortiges Update beim Zurückkehren zur Seite
+  
+  - **UI-Integration auf allen Seiten**
+    - Dashboard: Zeigt Auto-Refresh-Intervall und Zeit bis zum nächsten Update
+    - Watchlist: Grüner Indikator zeigt aktives Auto-Refresh
+    - Portfolio: Positionen werden automatisch aktualisiert
+
+### Changed
+- Watchlist-Panel nutzt jetzt `useAutoRefresh` Hook statt nur manuellem Refresh
+- Portfolio-Seite aktualisiert Positionswerte automatisch
+
 ## [1.5.0] - 2026-01-25
 
 ### Added

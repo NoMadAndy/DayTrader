@@ -10,3 +10,10 @@ export {
   useNews,
   useSymbolSearch,
 } from './useDataService';
+
+export {
+  useAutoRefresh,
+  useServiceWorker,
+  formatRefreshInterval,
+  formatTimeUntilRefresh,
+} from './useAutoRefresh';
