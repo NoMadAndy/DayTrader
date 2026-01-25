@@ -154,9 +154,9 @@ export function ForecastPanel({ forecast, currentPrice }: ForecastPanelProps) {
           <div className="text-gray-400 text-sm mb-1">Price Target</div>
           <div className={`text-xl font-bold ${priceChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
             ${forecast.priceTarget.toFixed(2)}
-            <span className="text-sm ml-1">
-              ({priceChange >= 0 ? '+' : ''}{priceChangePercent.toFixed(1)}%)
-            </span>
+          </div>
+          <div className={`text-sm ${priceChange >= 0 ? 'text-green-400/70' : 'text-red-400/70'}`}>
+            {priceChange >= 0 ? '+' : ''}{priceChangePercent.toFixed(1)}%
           </div>
         </div>
         <div className="bg-slate-900/50 rounded-lg p-4">
