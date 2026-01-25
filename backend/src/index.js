@@ -1353,51 +1353,17 @@ app.get('/api/trading/leaderboard/rank', authMiddleware, async (req, res) => {
 import * as historicalPrices from './historicalPrices.js';
 
 /**
- * Get historical prices for a symbol and date range
- * GET /api/historical-prices/:symbol
- * Query params: startDate, endDate (YYYY-MM-DD format)
+ * Get all symbols with historical data in database
+ * GET /api/historical-prices/symbols/available
+ * NOTE: This route MUST be defined BEFORE the :symbol route to avoid "symbols" being parsed as a symbol
  */
-app.get('/api/historical-prices/:symbol', async (req, res) => {
+app.get('/api/historical-prices/symbols/available', async (req, res) => {
   try {
-    const { symbol } = req.params;
-    const { startDate, endDate } = req.query;
-    
-    if (!startDate || !endDate) {
-      return res.status(400).json({ error: 'startDate and endDate are required' });
-    }
-    
-    // Check if data exists in database
-    const availability = await historicalPrices.checkHistoricalDataAvailability(symbol, startDate, endDate);
-    
-    if (!availability.hasData) {
-      // Fetch from Yahoo Finance and store in database
-      console.log(`[API] Fetching historical data for ${symbol} (${startDate} to ${endDate})`);
-      const fetchResult = await historicalPrices.fetchAndStoreHistoricalData(symbol, startDate, endDate);
-      
-      if (!fetchResult.success) {
-        return res.status(404).json({ 
-          error: 'Could not fetch historical data',
-          details: fetchResult.error,
-          symbol,
-          startDate,
-          endDate
-        });
-      }
-    }
-    
-    // Get data from database
-    const prices = await historicalPrices.getHistoricalPrices(symbol, startDate, endDate);
-    
-    res.json({
-      symbol: symbol.toUpperCase(),
-      startDate,
-      endDate,
-      recordCount: prices.length,
-      prices
-    });
+    const symbols = await historicalPrices.getAvailableSymbols();
+    res.json({ symbols });
   } catch (e) {
-    console.error('Get historical prices error:', e);
-    res.status(500).json({ error: e.message || 'Failed to get historical prices' });
+    console.error('Get available symbols error:', e);
+    res.status(500).json({ error: e.message || 'Failed to get available symbols' });
   }
 });
 
@@ -1422,20 +1388,6 @@ app.get('/api/historical-prices/:symbol/availability', async (req, res) => {
   } catch (e) {
     console.error('Check availability error:', e);
     res.status(500).json({ error: e.message || 'Failed to check data availability' });
-  }
-});
-
-/**
- * Get all symbols with historical data in database
- * GET /api/historical-prices/symbols/available
- */
-app.get('/api/historical-prices/symbols/available', async (req, res) => {
-  try {
-    const symbols = await historicalPrices.getAvailableSymbols();
-    res.json({ symbols });
-  } catch (e) {
-    console.error('Get available symbols error:', e);
-    res.status(500).json({ error: e.message || 'Failed to get available symbols' });
   }
 });
 
@@ -1469,6 +1421,60 @@ app.post('/api/historical-prices/:symbol/refresh', authMiddleware, async (req, r
   } catch (e) {
     console.error('Refresh historical data error:', e);
     res.status(500).json({ error: e.message || 'Failed to refresh historical data' });
+  }
+});
+
+/**
+ * Get historical prices for a symbol and date range
+ * GET /api/historical-prices/:symbol
+ * Query params: startDate, endDate (YYYY-MM-DD format)
+ * NOTE: This route MUST be defined AFTER the more specific routes above
+ */
+app.get('/api/historical-prices/:symbol', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const { startDate, endDate } = req.query;
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'startDate and endDate are required' });
+    }
+    
+    // Normalize dates to YYYY-MM-DD format (strip any time component)
+    const normalizedStartDate = startDate.split('T')[0];
+    const normalizedEndDate = endDate.split('T')[0];
+    
+    // Check if data exists in database
+    const availability = await historicalPrices.checkHistoricalDataAvailability(symbol, normalizedStartDate, normalizedEndDate);
+    
+    if (!availability.hasData) {
+      // Fetch from Yahoo Finance and store in database
+      console.log(`[API] Fetching historical data for ${symbol} (${normalizedStartDate} to ${normalizedEndDate})`);
+      const fetchResult = await historicalPrices.fetchAndStoreHistoricalData(symbol, normalizedStartDate, normalizedEndDate);
+      
+      if (!fetchResult.success) {
+        return res.status(404).json({ 
+          error: 'Could not fetch historical data',
+          details: fetchResult.error,
+          symbol,
+          startDate: normalizedStartDate,
+          endDate: normalizedEndDate
+        });
+      }
+    }
+    
+    // Get data from database
+    const prices = await historicalPrices.getHistoricalPrices(symbol, normalizedStartDate, normalizedEndDate);
+    
+    res.json({
+      symbol: symbol.toUpperCase(),
+      startDate: normalizedStartDate,
+      endDate: normalizedEndDate,
+      recordCount: prices.length,
+      prices
+    });
+  } catch (e) {
+    console.error('Get historical prices error:', e);
+    res.status(500).json({ error: e.message || 'Failed to get historical prices' });
   }
 });
 

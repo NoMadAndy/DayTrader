@@ -4,14 +4,14 @@
  * Manages long-term historical price data in the database.
  * Data is shared across all users for consistency in backtesting.
  * 
- * Data source: Yahoo Finance (supports up to 20+ years of data via download)
+ * Data source: Yahoo Finance Chart API (supports up to 20+ years of data)
  */
 
 import { query, getClient } from './db.js';
 import fetch from 'node-fetch';
 
-// Yahoo Finance download URL for full historical data
-const YAHOO_DOWNLOAD_URL = 'https://query1.finance.yahoo.com/v7/finance/download';
+// Yahoo Finance Chart API - more reliable than download endpoint
+const YAHOO_CHART_URL = 'https://query1.finance.yahoo.com/v8/finance/chart';
 
 /**
  * Get historical prices from database
@@ -75,7 +75,7 @@ export async function checkHistoricalDataAvailability(symbol, startDate, endDate
 
 /**
  * Fetch historical data from Yahoo Finance and store in database
- * Uses the download endpoint which provides full history (20+ years)
+ * Uses the Chart API which provides full history (20+ years)
  * @param {string} symbol - Stock symbol
  * @param {string} startDate - Start date (YYYY-MM-DD)
  * @param {string} endDate - End date (YYYY-MM-DD)
@@ -89,14 +89,16 @@ export async function fetchAndStoreHistoricalData(symbol, startDate, endDate) {
     const period1 = Math.floor(new Date(startDate).getTime() / 1000);
     const period2 = Math.floor(new Date(endDate).getTime() / 1000) + 86400; // +1 day to include end date
     
-    // Fetch from Yahoo Finance download endpoint (CSV format, supports full history)
-    const url = `${YAHOO_DOWNLOAD_URL}/${upperSymbol}?period1=${period1}&period2=${period2}&interval=1d&events=history&includeAdjustedClose=true`;
+    // Use Yahoo Finance Chart API with period1/period2 parameters
+    const url = `${YAHOO_CHART_URL}/${upperSymbol}?period1=${period1}&period2=${period2}&interval=1d&includeAdjustedClose=true`;
     
     console.log(`[HistoricalPrices] Fetching ${upperSymbol} from ${startDate} to ${endDate}`);
+    console.log(`[HistoricalPrices] URL: ${url}`);
     
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
       },
     });
     
@@ -106,36 +108,49 @@ export async function fetchAndStoreHistoricalData(symbol, startDate, endDate) {
       return { success: false, recordsInserted: 0, error: `Yahoo Finance error: ${response.status}` };
     }
     
-    const csvText = await response.text();
-    const lines = csvText.trim().split('\n');
+    const data = await response.json();
     
-    if (lines.length < 2) {
+    if (!data.chart || !data.chart.result || data.chart.result.length === 0) {
+      console.error('[HistoricalPrices] No chart data in response');
       return { success: false, recordsInserted: 0, error: 'No data returned from Yahoo Finance' };
     }
     
-    // Parse CSV (skip header)
-    // Format: Date,Open,High,Low,Close,Adj Close,Volume
+    const result = data.chart.result[0];
+    const timestamps = result.timestamp;
+    const quotes = result.indicators?.quote?.[0];
+    const adjClose = result.indicators?.adjclose?.[0]?.adjclose;
+    
+    if (!timestamps || !quotes) {
+      console.error('[HistoricalPrices] Missing timestamps or quotes in response');
+      return { success: false, recordsInserted: 0, error: 'Invalid data format from Yahoo Finance' };
+    }
+    
+    // Convert to records
     const records = [];
-    for (let i = 1; i < lines.length; i++) {
-      const parts = lines[i].split(',');
-      if (parts.length >= 7) {
-        const [date, open, high, low, close, adjClose, volume] = parts;
-        
-        // Skip if any value is null or invalid
-        if (open === 'null' || high === 'null' || low === 'null' || close === 'null') {
-          continue;
-        }
-        
-        records.push({
-          date,
-          open: parseFloat(open),
-          high: parseFloat(high),
-          low: parseFloat(low),
-          close: parseFloat(close),
-          adjClose: parseFloat(adjClose),
-          volume: parseInt(volume) || 0,
-        });
+    for (let i = 0; i < timestamps.length; i++) {
+      const open = quotes.open?.[i];
+      const high = quotes.high?.[i];
+      const low = quotes.low?.[i];
+      const close = quotes.close?.[i];
+      const volume = quotes.volume?.[i];
+      
+      // Skip if any value is null or undefined
+      if (open == null || high == null || low == null || close == null) {
+        continue;
       }
+      
+      // Convert timestamp to YYYY-MM-DD
+      const date = new Date(timestamps[i] * 1000).toISOString().split('T')[0];
+      
+      records.push({
+        date,
+        open,
+        high,
+        low,
+        close,
+        volume: volume || 0,
+        adjClose: adjClose?.[i] || close,
+      });
     }
     
     if (records.length === 0) {
@@ -188,7 +203,7 @@ export async function fetchAndStoreHistoricalData(symbol, startDate, endDate) {
             adj_close = EXCLUDED.adj_close
         `;
         
-        const result = await client.query(insertQuery, values);
+        await client.query(insertQuery, values);
         insertedCount += batch.length;
       }
       

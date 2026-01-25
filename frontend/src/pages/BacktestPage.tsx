@@ -174,14 +174,17 @@ export default function BacktestPage() {
       setLoading(true);
       
       // Use backend API for historical data (supports long-term data from DB)
-      // Add 30 days buffer before start date for indicator calculations
+      // Add 60 days buffer before start date for indicator calculations
       const bufferStart = new Date(activeSession.startDate);
       bufferStart.setDate(bufferStart.getDate() - 60); // 60 days buffer for SMA50, etc.
       const startDateStr = bufferStart.toISOString().split('T')[0];
       
-      console.log(`[Backtest] Loading historical data for ${selectedSymbol} from ${startDateStr} to ${activeSession.endDate}`);
+      // Ensure endDate is in YYYY-MM-DD format (strip time component if present)
+      const endDateStr = activeSession.endDate.split('T')[0];
       
-      const response = await getHistoricalPrices(selectedSymbol, startDateStr, activeSession.endDate);
+      console.log(`[Backtest] Loading historical data for ${selectedSymbol} from ${startDateStr} to ${endDateStr}`);
+      
+      const response = await getHistoricalPrices(selectedSymbol, startDateStr, endDateStr);
       
       if (response?.prices && response.prices.length > 0) {
         setHistoricalData(response.prices);
