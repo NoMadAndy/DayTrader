@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-01-25
+
+### Added
+- **API-Datensparsamkeit** - Intelligentes Rate-Limiting für Provider mit Begrenzungen
+  
+  - **Rate-Limiter (Frontend)** - Per-Provider Quota-Tracking im Browser
+    - Alpha Vantage: 25/Tag, 5/Min (sehr konservativ)
+    - Twelve Data: 800/Tag, 8/Min
+    - Finnhub: 60/Min (großzügig)
+    - Yahoo Finance: Keine harten Limits
+  
+  - **Intelligentes Caching (Frontend)** - Provider-spezifische Cache-Dauern
+    - Alpha Vantage: 5 Min (wegen strenger Limits)
+    - Twelve Data: 3 Min
+    - Finnhub/Yahoo: 1 Min
+    - Historische Daten: 10 Min
+  
+  - **Request-Deduplizierung** - Identische gleichzeitige Anfragen werden zusammengeführt
+  
+  - **Automatischer Fallback** - Bei Rate-Limit wechselt zu anderem Provider
+  
+  - **API-Quota-Anzeige** - Neues UI-Widget zeigt verbleibendes Kontingent
+    - Pro-Provider Fortschrittsbalken (täglich + pro Minute)
+    - Warnung bei niedrigem Kontingent
+    - In den Einstellungen unter "Datenquellen" sichtbar
+
+- **Server-seitiger Cache (Backend)** - Datenbank-basierter Cache für alle Nutzer
+  
+  - **PostgreSQL Cache-Tabelle** - Persistenter Cache in `stock_data_cache`
+    - Überlebt Server-Neustarts
+    - Gemeinsam für alle Nutzer (Aktiendaten sind öffentlich)
+    - Hit-Counter für Analyse
+  
+  - **Automatische Cache-Zeiten**:
+    - Quotes: 1 Minute
+    - Intraday-Charts: 5 Minuten
+    - Tages-Charts: 1 Stunde
+    - Firmeninfos: 24 Stunden
+    - Symbol-Suche: 24 Stunden
+  
+  - **Cache-API-Endpoints**:
+    - `GET /api/cache/stats` - Cache-Statistiken und Hit-Raten
+    - `GET /api/cache/rate-limits` - Server-seitiger Rate-Limit-Status
+    - `DELETE /api/cache/:symbol` - Manuelle Cache-Invalidierung
+  
+  - **Automatische Bereinigung** - Expired Entries alle 15 Min entfernt
+
 ## [1.4.2] - 2026-01-25
 
 ### Fixed

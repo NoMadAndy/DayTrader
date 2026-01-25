@@ -12,6 +12,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import db from './db.js';
+import stockCache from './stockCache.js';
 import { registerUser, loginUser, logoutUser, authMiddleware, optionalAuthMiddleware } from './auth.js';
 import { getUserSettings, updateUserSettings, getCustomSymbols, addCustomSymbol, removeCustomSymbol, syncCustomSymbols } from './userSettings.js';
 import * as trading from './trading.js';
@@ -66,6 +67,53 @@ app.get('/api/version', (req, res) => {
     buildTime: BUILD_TIME,
     service: 'daytrader-backend'
   });
+});
+
+// ============================================================================
+// Cache Status Endpoints
+// ============================================================================
+
+/**
+ * Get cache statistics
+ * GET /api/cache/stats
+ */
+app.get('/api/cache/stats', async (req, res) => {
+  if (!process.env.DATABASE_URL) {
+    return res.json({ 
+      enabled: false, 
+      message: 'Database caching not configured',
+      rateLimits: stockCache.getRateLimitStatus()
+    });
+  }
+  
+  try {
+    const stats = await stockCache.getCacheStats();
+    res.json({ enabled: true, ...stats });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get cache stats' });
+  }
+});
+
+/**
+ * Get rate limit status for all providers
+ * GET /api/cache/rate-limits
+ */
+app.get('/api/cache/rate-limits', (req, res) => {
+  res.json(stockCache.getRateLimitStatus());
+});
+
+/**
+ * Invalidate cache for a symbol (admin/debug)
+ * DELETE /api/cache/:symbol
+ */
+app.delete('/api/cache/:symbol', async (req, res) => {
+  if (!process.env.DATABASE_URL) {
+    return res.status(503).json({ error: 'Database not configured' });
+  }
+  
+  const { symbol } = req.params;
+  const count = await stockCache.invalidateSymbol(symbol);
+  res.json({ success: true, invalidatedEntries: count });
 });
 
 // ============================================================================
@@ -268,9 +316,23 @@ const YAHOO_QUOTE_URL = 'https://query2.finance.yahoo.com/v6/finance/quote';
  * Proxy Yahoo Finance quote data (includes market cap, PE, etc.)
  * GET /api/yahoo/quote/:symbols
  * symbols can be comma-separated for batch requests
+ * 
+ * Uses server-side caching to reduce API calls
  */
 app.get('/api/yahoo/quote/:symbols', async (req, res) => {
   const { symbols } = req.params;
+  const cacheKey = `yahoo:quote:${symbols}`;
+  
+  // Check cache first (if database is configured)
+  if (process.env.DATABASE_URL) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      return res.json({
+        ...cached.data,
+        _cache: { fromCache: true, cachedAt: cached.cachedAt, source: cached.source }
+      });
+    }
+  }
   
   try {
     const url = `${YAHOO_QUOTE_URL}?symbols=${encodeURIComponent(symbols)}`;
@@ -293,6 +355,12 @@ app.get('/api/yahoo/quote/:symbols', async (req, res) => {
     }
     
     const data = await response.json();
+    
+    // Cache the response (short TTL for quotes)
+    if (process.env.DATABASE_URL) {
+      await stockCache.setCache(cacheKey, 'quote', symbols.split(',')[0].toUpperCase(), data, 'yahoo', stockCache.CACHE_DURATIONS.quote);
+    }
+    
     res.json(data);
   } catch (error) {
     console.error('Yahoo Finance quote proxy error:', error);
@@ -307,10 +375,24 @@ app.get('/api/yahoo/quote/:symbols', async (req, res) => {
  * Proxy Yahoo Finance chart data
  * GET /api/yahoo/chart/:symbol
  * Query params: interval, range
+ * 
+ * Uses server-side caching to reduce API calls
  */
 app.get('/api/yahoo/chart/:symbol', async (req, res) => {
   const { symbol } = req.params;
   const { interval = '1d', range = '1y' } = req.query;
+  const cacheKey = `yahoo:chart:${symbol}:${interval}:${range}`;
+  
+  // Check cache first (if database is configured)
+  if (process.env.DATABASE_URL) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      return res.json({
+        ...cached.data,
+        _cache: { fromCache: true, cachedAt: cached.cachedAt, source: cached.source }
+      });
+    }
+  }
   
   try {
     const url = `${YAHOO_CHART_URL}/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`;
@@ -332,6 +414,13 @@ app.get('/api/yahoo/chart/:symbol', async (req, res) => {
     }
     
     const data = await response.json();
+    
+    // Cache the response
+    if (process.env.DATABASE_URL) {
+      const ttl = interval === '1d' ? stockCache.CACHE_DURATIONS.candles_daily : stockCache.CACHE_DURATIONS.candles_intraday;
+      await stockCache.setCache(cacheKey, 'candles', symbol.toUpperCase(), data, 'yahoo', ttl);
+    }
+    
     res.json(data);
   } catch (error) {
     console.error('Yahoo Finance proxy error:', error);
@@ -349,10 +438,24 @@ app.get('/api/yahoo/chart/:symbol', async (req, res) => {
  * 
  * Available modules: assetProfile, summaryProfile, summaryDetail, 
  * financialData, defaultKeyStatistics, price, etc.
+ * 
+ * Uses server-side caching (company info changes rarely)
  */
 app.get('/api/yahoo/quoteSummary/:symbol', async (req, res) => {
   const { symbol } = req.params;
   const { modules = 'summaryDetail,price,defaultKeyStatistics' } = req.query;
+  const cacheKey = `yahoo:summary:${symbol}:${modules}`;
+  
+  // Check cache first (if database is configured)
+  if (process.env.DATABASE_URL) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      return res.json({
+        ...cached.data,
+        _cache: { fromCache: true, cachedAt: cached.cachedAt, source: cached.source }
+      });
+    }
+  }
   
   try {
     const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${modules}`;
@@ -374,6 +477,12 @@ app.get('/api/yahoo/quoteSummary/:symbol', async (req, res) => {
     }
     
     const data = await response.json();
+    
+    // Cache company info longer (it changes rarely)
+    if (process.env.DATABASE_URL) {
+      await stockCache.setCache(cacheKey, 'company_info', symbol.toUpperCase(), data, 'yahoo', stockCache.CACHE_DURATIONS.company_info);
+    }
+    
     res.json(data);
   } catch (error) {
     console.error('Yahoo Finance quoteSummary proxy error:', error);
@@ -1440,12 +1549,18 @@ const startServer = async () => {
     try {
       await db.initializeDatabase();
       await trading.initializeTradingSchema();
+      await stockCache.initializeCacheTable();
       console.log('Database connected and initialized');
       
       // Schedule session cleanup every hour
       setInterval(() => {
         db.cleanupExpiredSessions();
       }, 60 * 60 * 1000);
+      
+      // Schedule cache cleanup every 15 minutes
+      setInterval(() => {
+        stockCache.cleanupExpiredCache();
+      }, 15 * 60 * 1000);
       
       // Schedule overnight fee processing daily at 00:00 UTC
       const scheduleOvernightFees = () => {

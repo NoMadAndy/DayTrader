@@ -12,6 +12,7 @@ export { NewsApiProvider } from './newsApiProvider';
 export { DataService, getDataService, configureDataService } from './dataService';
 export { mlService } from './mlService';
 export type { MLPrediction, MLPredictResponse, MLTrainStatus, MLModelInfo, MLServiceHealth } from './mlService';
+export { getRateLimiter, PROVIDER_RATE_LIMITS, type RateLimitConfig, type RateLimiter } from './rateLimiter';
 
 // Auth Service
 export {

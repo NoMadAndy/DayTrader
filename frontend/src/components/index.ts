@@ -17,3 +17,4 @@ export { Navigation } from './Navigation';
 export { CompanyInfoPanel } from './CompanyInfoPanel';
 export { EquityChart } from './EquityChart';
 export { PendingOrders } from './PendingOrders';
+export { ApiQuotaDisplay, ApiQuotaCompact } from './ApiQuotaDisplay';

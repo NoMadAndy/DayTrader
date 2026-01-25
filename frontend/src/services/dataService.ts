@@ -10,6 +10,12 @@
  * 3. Alpha Vantage (if API key available)
  * 4. Yahoo Finance (no key required, but may have CORS issues)
  * 5. Mock data (fallback)
+ * 
+ * Data Conservation Features:
+ * - Per-provider rate limiting with quota tracking
+ * - Intelligent caching with provider-specific TTLs
+ * - Request deduplication for concurrent calls
+ * - Automatic fallback when limits reached
  */
 
 import type { StockData } from '../types/stock';
@@ -20,6 +26,7 @@ import { TwelveDataProvider } from './twelveDataProvider';
 import { YahooFinanceProvider } from './yahooFinanceProvider';
 import { NewsApiProvider } from './newsApiProvider';
 import { getStockData as getMockData, searchStocks as searchMockStocks } from '../utils/mockData';
+import { getRateLimiter, PROVIDER_RATE_LIMITS, type RateLimiter } from './rateLimiter';
 
 // Stock name mappings for display
 const STOCK_NAMES: Record<string, string> = {
@@ -57,22 +64,20 @@ export interface DataServiceConfig {
   preferredSource?: DataSourceType;
   useCorsProxy?: boolean;
   corsProxyUrl?: string;
-}
-
-interface CacheEntry<T> {
-  data: T;
-  timestamp: number;
+  enableRateLimiting?: boolean;
 }
 
 export class DataService {
   private providers: Map<DataSourceType, DataProvider> = new Map();
   private newsProvider: NewsApiProvider | null = null;
   private preferredSource: DataSourceType;
-  private cache: Map<string, CacheEntry<unknown>> = new Map();
-  private cacheDuration = 60000; // 1 minute cache
+  private rateLimiter: RateLimiter;
+  private enableRateLimiting: boolean;
 
   constructor(config: DataServiceConfig = {}) {
     this.preferredSource = config.preferredSource ?? 'mock';
+    this.rateLimiter = getRateLimiter();
+    this.enableRateLimiting = config.enableRateLimiting ?? true;
 
     // Initialize providers based on available API keys
     if (config.finnhubApiKey) {
@@ -147,21 +152,65 @@ export class DataService {
   }
 
   /**
-   * Get cached data if available and not expired
+   * Get a provider that has available quota
    */
-  private getCached<T>(key: string): T | null {
-    const entry = this.cache.get(key);
-    if (entry && Date.now() - entry.timestamp < this.cacheDuration) {
-      return entry.data as T;
+  private getAvailableProvider(): DataSourceType | null {
+    if (!this.enableRateLimiting) {
+      // Return first configured provider
+      for (const source of this.getProviderOrder()) {
+        const provider = this.providers.get(source);
+        if (provider?.isConfigured()) {
+          return source;
+        }
+      }
+      return null;
     }
-    return null;
+
+    const availableSources = this.getProviderOrder().filter(
+      s => this.providers.get(s)?.isConfigured()
+    );
+    return this.rateLimiter.getBestAvailableProvider(availableSources, this.preferredSource);
   }
 
   /**
-   * Set cache entry
+   * Check rate limit and record request
    */
-  private setCache<T>(key: string, data: T): void {
-    this.cache.set(key, { data, timestamp: Date.now() });
+  private checkAndRecordRequest(source: DataSourceType, endpoint: string): boolean {
+    if (!this.enableRateLimiting || source === 'mock') {
+      return true;
+    }
+
+    if (!this.rateLimiter.canMakeRequest(source)) {
+      console.warn(`Rate limit reached for ${source}, will try fallback`);
+      return false;
+    }
+
+    this.rateLimiter.recordRequest(source, endpoint);
+    return true;
+  }
+
+  /**
+   * Get rate limiter instance for external access
+   */
+  getRateLimiter(): RateLimiter {
+    return this.rateLimiter;
+  }
+
+  /**
+   * Get quota info for all providers
+   */
+  getQuotaInfo(): Record<DataSourceType, { daily: number; perMinute: number; config: typeof PROVIDER_RATE_LIMITS[DataSourceType] }> {
+    const result = {} as Record<DataSourceType, { daily: number; perMinute: number; config: typeof PROVIDER_RATE_LIMITS[DataSourceType] }>;
+    for (const source of this.getProviderOrder()) {
+      if (this.providers.get(source)?.isConfigured()) {
+        const quota = this.rateLimiter.getRemainingQuota(source);
+        result[source] = {
+          ...quota,
+          config: PROVIDER_RATE_LIMITS[source]
+        };
+      }
+    }
+    return result;
   }
 
   /**
@@ -169,8 +218,13 @@ export class DataService {
    */
   async fetchQuote(symbol: string): Promise<QuoteData | null> {
     const cacheKey = `quote:${symbol}`;
-    const cached = this.getCached<QuoteData>(cacheKey);
-    if (cached) return cached;
+    
+    // Check cache first (using rate limiter's intelligent cache)
+    const cached = this.rateLimiter.getCached<QuoteData>(cacheKey);
+    if (cached) {
+      console.log(`Cache hit for quote: ${symbol}`);
+      return cached;
+    }
 
     if (this.preferredSource === 'mock') {
       // Return mock quote
@@ -195,23 +249,31 @@ export class DataService {
       return null;
     }
 
-    // Try providers in order
-    for (const source of this.getProviderOrder()) {
-      const provider = this.providers.get(source);
-      if (provider?.isConfigured()) {
-        try {
-          const quote = await provider.fetchQuote(symbol);
-          if (quote) {
-            this.setCache(cacheKey, quote);
-            return quote;
+    // Use request deduplication
+    return this.rateLimiter.deduplicateRequest(cacheKey, async () => {
+      // Try providers in order, respecting rate limits
+      for (const source of this.getProviderOrder()) {
+        const provider = this.providers.get(source);
+        if (provider?.isConfigured()) {
+          // Check if we can make a request
+          if (!this.checkAndRecordRequest(source, `quote:${symbol}`)) {
+            continue; // Try next provider
           }
-        } catch (error) {
-          console.warn(`${source} quote fetch failed:`, error);
+
+          try {
+            const quote = await provider.fetchQuote(symbol);
+            if (quote) {
+              this.rateLimiter.setCache(cacheKey, quote, source);
+              return quote;
+            }
+          } catch (error) {
+            console.warn(`${source} quote fetch failed:`, error);
+          }
         }
       }
-    }
 
-    return null;
+      return null;
+    });
   }
 
   /**
@@ -219,34 +281,47 @@ export class DataService {
    */
   async fetchStockData(symbol: string, days: number = 365): Promise<StockData | null> {
     const cacheKey = `candles:${symbol}:${days}`;
-    const cached = this.getCached<StockData>(cacheKey);
-    if (cached) return cached;
+    
+    // Historical data can be cached longer
+    const cached = this.rateLimiter.getCached<StockData>(cacheKey);
+    if (cached) {
+      console.log(`Cache hit for candles: ${symbol}`);
+      return cached;
+    }
 
     // Use mock data if preferred or as fallback
     if (this.preferredSource === 'mock') {
       return getMockData(symbol, days);
     }
 
-    // Try providers in order
-    for (const source of this.getProviderOrder()) {
-      const provider = this.providers.get(source);
-      if (provider?.isConfigured()) {
-        try {
-          const candles = await provider.fetchCandles(symbol, days);
-          if (candles && candles.length > 0) {
-            const stockData: StockData = {
-              symbol,
-              name: STOCK_NAMES[symbol] || symbol,
-              data: candles
-            };
-            this.setCache(cacheKey, stockData);
-            return stockData;
+    // Use request deduplication
+    return this.rateLimiter.deduplicateRequest(cacheKey, async () => {
+      // Try providers in order, respecting rate limits
+      for (const source of this.getProviderOrder()) {
+        const provider = this.providers.get(source);
+        if (provider?.isConfigured()) {
+          // Check if we can make a request
+          if (!this.checkAndRecordRequest(source, `candles:${symbol}`)) {
+            continue; // Try next provider
           }
-        } catch (error) {
-          console.warn(`${source} candle fetch failed:`, error);
+
+          try {
+            const candles = await provider.fetchCandles(symbol, days);
+            if (candles && candles.length > 0) {
+              const stockData: StockData = {
+                symbol,
+                name: STOCK_NAMES[symbol] || symbol,
+                data: candles
+              };
+              // Cache historical data longer (10 minutes for most providers)
+              this.rateLimiter.setCacheWithDuration(cacheKey, stockData, source, 600000);
+              return stockData;
+            }
+          } catch (error) {
+            console.warn(`${source} candle fetch failed:`, error);
+          }
         }
       }
-    }
 
     // Fallback to mock data
     console.log('All providers failed, falling back to mock data');
@@ -258,53 +333,65 @@ export class DataService {
    */
   async fetchNews(symbol: string, companyName?: string): Promise<NewsItem[]> {
     const cacheKey = `news:${symbol}`;
-    const cached = this.getCached<NewsItem[]>(cacheKey);
-    if (cached) return cached;
-
-    const allNews: NewsItem[] = [];
-
-    // Try Finnhub news first (FinnhubProvider always has fetchNews method)
-    const finnhub = this.providers.get('finnhub');
-    if (finnhub?.isConfigured() && finnhub instanceof FinnhubProvider) {
-      try {
-        const finnhubNews = await finnhub.fetchNews(symbol);
-        allNews.push(...finnhubNews);
-      } catch (error) {
-        console.warn('Finnhub news fetch failed:', error);
-      }
-    }
-
-    // Try NewsAPI
-    if (this.newsProvider?.isConfigured()) {
-      try {
-        const newsApiNews = await this.newsProvider.fetchStockNews(
-          symbol, 
-          companyName || STOCK_NAMES[symbol]
-        );
-        allNews.push(...newsApiNews);
-      } catch (error) {
-        console.warn('NewsAPI fetch failed:', error);
-      }
-    }
-
-    // Remove duplicates by headline using Set for O(n) complexity
-    const seenHeadlines = new Set<string>();
-    const uniqueNews = allNews.filter((item) => {
-      if (seenHeadlines.has(item.headline)) {
-        return false;
-      }
-      seenHeadlines.add(item.headline);
-      return true;
-    });
-
-    // Sort by date (newest first)
-    uniqueNews.sort((a, b) => b.datetime - a.datetime);
-
-    // Limit to 15 items
-    const result = uniqueNews.slice(0, 15);
-    this.setCache(cacheKey, result);
     
-    return result;
+    // News can be cached longer (5 minutes)
+    const cached = this.rateLimiter.getCached<NewsItem[]>(cacheKey);
+    if (cached) {
+      console.log(`Cache hit for news: ${symbol}`);
+      return cached;
+    }
+
+    return this.rateLimiter.deduplicateRequest(cacheKey, async () => {
+      const allNews: NewsItem[] = [];
+
+      // Try Finnhub news first (FinnhubProvider always has fetchNews method)
+      const finnhub = this.providers.get('finnhub');
+      if (finnhub?.isConfigured() && finnhub instanceof FinnhubProvider) {
+        if (this.checkAndRecordRequest('finnhub', `news:${symbol}`)) {
+          try {
+            const finnhubNews = await finnhub.fetchNews(symbol);
+            allNews.push(...finnhubNews);
+          } catch (error) {
+            console.warn('Finnhub news fetch failed:', error);
+          }
+        }
+      }
+
+      // Try NewsAPI
+      if (this.newsProvider?.isConfigured()) {
+        // NewsAPI doesn't have strict limits, but still track
+        try {
+          const newsApiNews = await this.newsProvider.fetchStockNews(
+            symbol, 
+            companyName || STOCK_NAMES[symbol]
+          );
+          allNews.push(...newsApiNews);
+        } catch (error) {
+          console.warn('NewsAPI fetch failed:', error);
+        }
+      }
+
+      // Remove duplicates by headline using Set for O(n) complexity
+      const seenHeadlines = new Set<string>();
+      const uniqueNews = allNews.filter((item) => {
+        if (seenHeadlines.has(item.headline)) {
+          return false;
+        }
+        seenHeadlines.add(item.headline);
+        return true;
+      });
+
+      // Sort by date (newest first)
+      uniqueNews.sort((a, b) => b.datetime - a.datetime);
+
+      // Limit to 15 items
+      const result = uniqueNews.slice(0, 15);
+      
+      // Cache news for 5 minutes
+      this.rateLimiter.setCacheWithDuration(cacheKey, result, 'finnhub', 300000);
+      
+      return result;
+    });
   }
 
   /**
@@ -349,7 +436,14 @@ export class DataService {
    * Clear cache
    */
   clearCache(): void {
-    this.cache.clear();
+    this.rateLimiter.clearCache();
+  }
+
+  /**
+   * Reset rate limiter stats (for testing)
+   */
+  resetRateLimiterStats(): void {
+    this.rateLimiter.resetStats();
   }
 }
 

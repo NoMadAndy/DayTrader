@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useDataService } from '../hooks';
 import { DataSourceSelector } from '../components/DataSourceSelector';
+import { ApiQuotaDisplay } from '../components/ApiQuotaDisplay';
 import { subscribeToAuth, getAuthState, logout, checkAuthStatus, type AuthState } from '../services/authService';
 import { getUserSettings, updateUserSettings, DEFAULT_ML_SETTINGS, type MLSettings } from '../services/userSettingsService';
 import { LoginForm } from '../components/LoginForm';
@@ -333,11 +334,21 @@ export function SettingsPage() {
 
           {/* Data Source Tab */}
           {activeTab === 'data-source' && (
-            <div>
+            <div className="space-y-6">
               <p className="text-gray-400 mb-4">
                 Wähle deine bevorzugte Datenquelle für Aktienkurse.
               </p>
               <DataSourceSelector />
+              
+              {/* API Quota Display */}
+              <div className="mt-6">
+                <h3 className="text-lg font-medium text-white mb-3">API-Verbrauch</h3>
+                <p className="text-gray-400 text-sm mb-4">
+                  Übersicht über dein verbleibendes API-Kontingent. Daten werden automatisch gecached, 
+                  um API-Aufrufe zu minimieren und Rate-Limits einzuhalten.
+                </p>
+                <ApiQuotaDisplay />
+              </div>
             </div>
           )}
 
