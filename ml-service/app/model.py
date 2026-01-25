@@ -23,9 +23,13 @@ from sklearn.preprocessing import MinMaxScaler
 from typing import Tuple, List, Optional
 import os
 import json
+import logging
 from datetime import datetime
 
 from .config import settings
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 
 class LSTMModel(nn.Module):
