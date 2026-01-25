@@ -438,15 +438,44 @@ export function generateForecast(data: OHLCV[]): ForecastResult {
   const { support, resistance } = findSupportResistance(data);
   const currentPrice = data[data.length - 1].close;
   
-  // Calculate price target based on signal and support/resistance
+  // Calculate volatility for more dynamic price targets
+  const recentData = data.slice(-20);
+  const avgVolatility = recentData.reduce((sum, d) => sum + (d.high - d.low) / d.close, 0) / recentData.length;
+  const volatilityFactor = Math.min(avgVolatility * 5, 0.1); // Cap at 10%
+  
+  // Calculate price target based on signal, support/resistance, and score strength
   let priceTarget: number;
-  if (overallSignal === 'STRONG_BUY' || overallSignal === 'BUY') {
-    priceTarget = currentPrice + (resistance - currentPrice) * 0.7;
-  } else if (overallSignal === 'STRONG_SELL' || overallSignal === 'SELL') {
-    priceTarget = currentPrice - (currentPrice - support) * 0.7;
+  const scoreStrength = Math.abs(averageScore) / 100; // 0 to 1
+  
+  if (overallSignal === 'STRONG_BUY') {
+    // Strong buy: Target 70-90% of way to resistance
+    const targetRatio = 0.7 + scoreStrength * 0.2;
+    priceTarget = currentPrice + (resistance - currentPrice) * targetRatio;
+  } else if (overallSignal === 'BUY') {
+    // Buy: Target 40-60% of way to resistance  
+    const targetRatio = 0.4 + scoreStrength * 0.2;
+    priceTarget = currentPrice + (resistance - currentPrice) * targetRatio;
+  } else if (overallSignal === 'STRONG_SELL') {
+    // Strong sell: Target 70-90% of way to support
+    const targetRatio = 0.7 + scoreStrength * 0.2;
+    priceTarget = currentPrice - (currentPrice - support) * targetRatio;
+  } else if (overallSignal === 'SELL') {
+    // Sell: Target 40-60% of way to support
+    const targetRatio = 0.4 + scoreStrength * 0.2;
+    priceTarget = currentPrice - (currentPrice - support) * targetRatio;
   } else {
-    priceTarget = currentPrice;
+    // Neutral: Use small movement based on slight bias and volatility
+    // averageScore is between -100 and 100, but close to 0 for neutral
+    const biasDirection = averageScore > 0 ? 1 : -1;
+    const biasStrength = Math.abs(averageScore) / 100;
+    // Neutral target: slight movement in direction of bias, scaled by volatility
+    const neutralMove = currentPrice * volatilityFactor * (0.3 + biasStrength * 0.4);
+    priceTarget = currentPrice + (neutralMove * biasDirection);
   }
+  
+  // Ensure price target is reasonable (within ±15% of current price)
+  const maxChange = currentPrice * 0.15;
+  priceTarget = Math.max(currentPrice - maxChange, Math.min(currentPrice + maxChange, priceTarget));
   
   // Generate summary
   const summaryParts: string[] = [];

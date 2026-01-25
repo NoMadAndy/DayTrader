@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Moderate Übereinstimmung: 85% Gewichtung
   - Schwache Übereinstimmung: 60% Gewichtung
   - Widersprüchliche Signale: 40% Gewichtung
+- **Verbessertes Price Target** - Price Target zeigt jetzt immer eine sinnvolle Vorhersage
+  - Bei NEUTRAL: Bewegung basierend auf Bias-Richtung und Volatilität (nicht mehr +0.0%)
+  - Bei BUY/SELL: Differenzierte Ziele (40-60% Richtung Support/Resistance)
+  - Bei STRONG_BUY/SELL: Aggressivere Ziele (70-90% Richtung Support/Resistance)
+  - Sicherheitsbegrenzung: Max ±15% vom aktuellen Preis
 
 ### Fixed
 - **ML Daten-Aktualität-Indikator** - Zeigt jetzt korrekt keinen Timestamp wenn kein Modell für das aktuelle Symbol trainiert ist
