@@ -103,6 +103,13 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
           mlModel: new Date(),
         }));
       }
+    } else {
+      // Clear ML timestamp when no model/predictions available for current symbol
+      lastMLPredictionRef.current = null;
+      setDataTimestamps(prev => ({
+        ...prev,
+        mlModel: null,
+      }));
     }
   }, []);
 

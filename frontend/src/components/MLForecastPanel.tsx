@@ -67,7 +67,18 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
 
   // Check if model exists when symbol changes
   useEffect(() => {
-    if (!isAvailable || !symbol) return;
+    // If service is not available, clear any previous predictions
+    if (isAvailable === false) {
+      setPrediction(null);
+      setHasModel(false);
+      onPredictionsChange?.(null);
+      return;
+    }
+    
+    // Wait for availability check to complete
+    if (isAvailable === null || !symbol) {
+      return;
+    }
     
     const checkModel = async () => {
       const exists = await mlService.hasModel(symbol);

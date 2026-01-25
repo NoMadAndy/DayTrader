@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Bei API-Fehlern wird `null` zurückgegeben statt gefälschte Daten
   - Standard-Aktienliste (AAPL, MSFT, etc.) bleibt für Watchlist erhalten, Preise kommen live von APIs
 
+### Fixed
+- **ML Daten-Aktualität-Indikator** - Zeigt jetzt korrekt keinen Timestamp wenn kein Modell für das aktuelle Symbol trainiert ist
+  - Vorher blieb der Timestamp vom letzten Symbol mit Modell erhalten
+  - Jetzt wird der ML-Timestamp auf `null` gesetzt wenn kein Modell existiert oder der ML-Service nicht verfügbar ist
+
 ### Removed
 - `mockData.ts` - Alle Mock-Datengenerierung entfernt
 - `'mock'` Datenquelle aus dem Typ `DataSourceType`
