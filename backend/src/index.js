@@ -13,6 +13,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import db from './db.js';
 import stockCache from './stockCache.js';
+import backgroundJobs from './backgroundJobs.js';
 import { registerUser, loginUser, logoutUser, authMiddleware, optionalAuthMiddleware } from './auth.js';
 import { getUserSettings, updateUserSettings, getCustomSymbols, addCustomSymbol, removeCustomSymbol, syncCustomSymbols } from './userSettings.js';
 import * as trading from './trading.js';
@@ -114,6 +115,31 @@ app.delete('/api/cache/:symbol', async (req, res) => {
   const { symbol } = req.params;
   const count = await stockCache.invalidateSymbol(symbol);
   res.json({ success: true, invalidatedEntries: count });
+});
+
+// ============================================================================
+// Background Jobs Endpoints
+// ============================================================================
+
+/**
+ * Get background job status
+ * GET /api/jobs/status
+ */
+app.get('/api/jobs/status', (req, res) => {
+  res.json(backgroundJobs.getJobStatus());
+});
+
+/**
+ * Manually trigger a quote update
+ * POST /api/jobs/update-quotes
+ */
+app.post('/api/jobs/update-quotes', async (req, res) => {
+  if (!process.env.DATABASE_URL) {
+    return res.status(503).json({ error: 'Database not configured' });
+  }
+  
+  const status = await backgroundJobs.triggerQuoteUpdate();
+  res.json(status);
 });
 
 // ============================================================================
@@ -1598,6 +1624,9 @@ const startServer = async () => {
         }, msUntilSnapshot);
       };
       scheduleDailySnapshots();
+      
+      // Start background jobs for automatic quote updates
+      backgroundJobs.startBackgroundJobs();
     } catch (e) {
       console.error('Database initialization failed:', e.message);
       console.log('Server will start without database features');

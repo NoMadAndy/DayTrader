@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Automatische Kurs-Aktualisierung** - Intelligentes Auto-Refresh-System
   
+  - **Server-seitige Background Jobs** - Aktualisiert Kurse ohne Browser-Verbindung
+    - Automatische Aktualisierung aller Watchlist-Symbole jede Minute
+    - 10 Standard-Symbole (AAPL, MSFT, GOOGL, etc.) immer aktuell
+    - Batch-Verarbeitung um APIs nicht zu überlasten
+    - Cache-Bereinigung alle 5 Minuten
+    - API-Endpoints: `GET /api/jobs/status`, `POST /api/jobs/update-quotes`
+  
   - **Service Worker für Hintergrund-Updates** - Aktualisiert Kurse auch wenn Seite nicht fokussiert
     - Periodic Background Sync API (wenn vom Browser unterstützt)
     - Fallback auf regulären Background Sync
