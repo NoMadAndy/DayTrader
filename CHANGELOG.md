@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-01-24
+
+### Fixed
+- **CUDA-Einstellung greift jetzt** - User-Setting "Use CUDA" wird nun an den ML-Service übergeben
+  - `useCuda` wird beim Training-Request mitgesendet
+  - ML-Service wählt Device (cuda/cpu) basierend auf User-Einstellung
+  - Fallback auf CPU wenn CUDA nicht verfügbar aber angefordert
+
 ## [1.4.0] - 2026-01-24
 
 ### Added

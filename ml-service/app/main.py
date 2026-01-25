@@ -81,6 +81,7 @@ class TrainRequest(BaseModel):
     learning_rate: Optional[float] = Field(None, description="Learning rate")
     sequence_length: Optional[int] = Field(None, description="Sequence length for LSTM input")
     forecast_days: Optional[int] = Field(None, description="Number of days to forecast")
+    use_cuda: Optional[bool] = Field(None, description="Force CUDA usage (requires GPU container)")
 
 
 class PredictRequest(BaseModel):
@@ -234,7 +235,8 @@ async def train_model_background(
     epochs: int, 
     learning_rate: float,
     sequence_length: int,
-    forecast_days: int
+    forecast_days: int,
+    use_cuda: Optional[bool] = None
 ):
     """Background task for model training"""
     try:
@@ -244,12 +246,13 @@ async def train_model_background(
             "message": "Initializing training..."
         }
         
-        predictor = StockPredictor(symbol)
+        # Create predictor with optional CUDA override
+        predictor = StockPredictor(symbol, use_cuda=use_cuda)
         
         # Convert data
         ohlcv_data = [d for d in data]
         
-        training_status[symbol]["message"] = "Preparing data..."
+        training_status[symbol]["message"] = f"Preparing data (device: {predictor.device})..."
         training_status[symbol]["progress"] = 10
         
         # Train with custom parameters
@@ -318,6 +321,10 @@ async def train_model(request: TrainRequest, background_tasks: BackgroundTasks):
     # Convert to dict format
     data = [d.model_dump() for d in request.data]
     
+    # Determine CUDA usage
+    use_cuda = request.use_cuda
+    device_info = "cuda" if use_cuda else ("cpu" if use_cuda is False else "auto")
+    
     # Start training in background with all parameters
     background_tasks.add_task(
         train_model_background,
@@ -326,13 +333,14 @@ async def train_model(request: TrainRequest, background_tasks: BackgroundTasks):
         request.epochs or settings.epochs,
         request.learning_rate or settings.learning_rate,
         seq_length,
-        fc_days
+        fc_days,
+        use_cuda
     )
     
     training_status[symbol] = {
         "status": "starting",
         "progress": 0,
-        "message": f"Training job queued (epochs={request.epochs or settings.epochs}, seq_len={seq_length}, forecast={fc_days})"
+        "message": f"Training job queued (epochs={request.epochs or settings.epochs}, seq_len={seq_length}, forecast={fc_days}, device={device_info})"
     }
     
     return {

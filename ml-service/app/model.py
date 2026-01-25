@@ -102,9 +102,24 @@ class StockPredictor:
     - Model persistence (save/load)
     """
     
-    def __init__(self, symbol: str):
+    def __init__(self, symbol: str, use_cuda: Optional[bool] = None):
         self.symbol = symbol
-        self.device = settings.device
+        
+        # Determine device based on use_cuda parameter
+        if use_cuda is True:
+            if torch.cuda.is_available():
+                self.device = "cuda"
+            else:
+                logger.warning(f"CUDA requested but not available, falling back to CPU")
+                self.device = "cpu"
+        elif use_cuda is False:
+            self.device = "cpu"
+        else:
+            # None: use default from settings
+            self.device = settings.device
+            
+        logger.info(f"StockPredictor for {symbol} using device: {self.device} (requested: {use_cuda})")
+        
         self.model: Optional[LSTMModel] = None
         self.scaler_X = MinMaxScaler()
         self.scaler_y = MinMaxScaler()

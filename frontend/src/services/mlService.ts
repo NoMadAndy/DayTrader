@@ -142,6 +142,7 @@ class MLServiceClient {
       learningRate?: number;
       sequenceLength?: number;
       forecastDays?: number;
+      useCuda?: boolean;
     }
   ): Promise<{ success: boolean; message: string; statusUrl?: string }> {
     try {
@@ -161,7 +162,8 @@ class MLServiceClient {
           epochs: options?.epochs,
           learning_rate: options?.learningRate,
           sequence_length: options?.sequenceLength,
-          forecast_days: options?.forecastDays
+          forecast_days: options?.forecastDays,
+          use_cuda: options?.useCuda
         })
       });
 

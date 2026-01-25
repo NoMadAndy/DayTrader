@@ -146,6 +146,7 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
       learningRate: mlSettings.learningRate,
       sequenceLength: mlSettings.sequenceLength,
       forecastDays: mlSettings.forecastDays,
+      useCuda: mlSettings.useCuda,
     });
     
     if (!result.success) {
