@@ -22,6 +22,75 @@ export interface NewsItemWithSentiment {
   sentimentResult: SentimentResult & { source?: 'ml' | 'local' };
 }
 
+// Agreement-Typen für News
+type AgreementLevel = 'strong' | 'moderate' | 'weak' | 'conflicting';
+
+// Agreement zwischen einer News und anderen berechnen
+function calculateNewsAgreement(
+  item: NewsItemWithSentiment,
+  allItems: NewsItemWithSentiment[]
+): AgreementLevel {
+  const otherItems = allItems.filter(i => i.id !== item.id);
+  if (otherItems.length === 0) return 'moderate';
+  
+  const myScore = item.sentimentResult.score;
+  const otherScores = otherItems.map(i => i.sentimentResult.score);
+  
+  // Zähle wie viele in gleicher Richtung sind
+  const sameDirection = otherScores.filter(s => 
+    (myScore > 0.1 && s > 0.1) || (myScore < -0.1 && s < -0.1) || (Math.abs(myScore) <= 0.1 && Math.abs(s) <= 0.1)
+  ).length;
+  
+  const agreementRatio = sameDirection / otherScores.length;
+  
+  // Prüfe auch Stärke der Übereinstimmung
+  const avgOtherScore = otherScores.reduce((a, b) => a + b, 0) / otherScores.length;
+  const strengthMatch = Math.abs(myScore - avgOtherScore) < 0.3;
+  
+  if (agreementRatio >= 0.7 && strengthMatch) return 'strong';
+  if (agreementRatio >= 0.4) return 'moderate';
+  if (agreementRatio > 0.15) return 'weak';
+  return 'conflicting';
+}
+
+// Agreement-Styling für News
+function getNewsAgreementStyle(agreement: AgreementLevel) {
+  switch (agreement) {
+    case 'strong':
+      return {
+        border: 'border-green-500/40',
+        indicator: '●',
+        indicatorColor: 'text-green-400',
+        label: 'Starke Übereinstimmung mit anderen News',
+        bgTint: 'ring-1 ring-green-500/20'
+      };
+    case 'moderate':
+      return {
+        border: 'border-slate-700/50',
+        indicator: '◐',
+        indicatorColor: 'text-blue-400',
+        label: 'Moderate Übereinstimmung',
+        bgTint: ''
+      };
+    case 'weak':
+      return {
+        border: 'border-yellow-500/30 border-dashed',
+        indicator: '○',
+        indicatorColor: 'text-yellow-400',
+        label: 'Schwache Übereinstimmung',
+        bgTint: ''
+      };
+    case 'conflicting':
+      return {
+        border: 'border-red-500/30 border-dashed',
+        indicator: '⚠',
+        indicatorColor: 'text-red-400',
+        label: 'Widerspricht dem allgemeinen Sentiment',
+        bgTint: 'bg-red-500/5'
+      };
+  }
+}
+
 interface NewsPanelProps {
   symbol: string;
   className?: string;
@@ -225,6 +294,13 @@ export function NewsPanel({
           )}
         </div>
         <div className="flex items-center gap-2">
+          {/* Agreement Legend (compact) */}
+          <div className="hidden sm:flex items-center gap-1 text-[10px] text-gray-500 mr-1" title="Agreement: Übereinstimmung mit anderen News">
+            <span className="text-green-400">●</span>
+            <span className="text-blue-400">◐</span>
+            <span className="text-yellow-400">○</span>
+            <span className="text-red-400">⚠</span>
+          </div>
           {/* ML/Local Toggle */}
           <button
             onClick={toggleMLSentiment}
@@ -263,13 +339,16 @@ export function NewsPanel({
       <div className="space-y-3 flex-1 overflow-y-auto">
         {newsWithSentiment.map((item) => {
           const sentimentInfo = getSentimentLabel(item.sentimentResult.sentiment);
+          const agreement = calculateNewsAgreement(item, newsWithSentiment);
+          const agreementStyle = getNewsAgreementStyle(agreement);
+          
           return (
             <a
               key={item.id}
               href={item.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="block p-3 rounded-lg bg-slate-900/50 hover:bg-slate-700/50 transition-colors border border-slate-700/50"
+              className={`block p-3 rounded-lg bg-slate-900/50 hover:bg-slate-700/50 transition-colors border ${agreementStyle.border} ${agreementStyle.bgTint}`}
             >
               <div className="flex gap-3">
                 {item.image && (
@@ -283,18 +362,21 @@ export function NewsPanel({
                     <h4 className="font-medium text-white text-sm line-clamp-2 flex-1">
                       {item.headline}
                     </h4>
-                    {/* Sentiment Tag */}
+                    {/* Sentiment Tag with Agreement */}
                     <span 
-                      className={`flex-shrink-0 px-2 py-0.5 rounded text-xs font-medium ${
+                      className={`flex-shrink-0 px-2 py-0.5 rounded text-xs font-medium flex items-center gap-1 ${
                         item.sentimentResult.sentiment === 'positive' 
                           ? 'bg-green-500/20 text-green-400' 
                           : item.sentimentResult.sentiment === 'negative'
                           ? 'bg-red-500/20 text-red-400'
                           : 'bg-gray-500/20 text-gray-400'
                       }`}
-                      title={`Score: ${item.sentimentResult.score.toFixed(2)}, Confidence: ${(item.sentimentResult.confidence * 100).toFixed(0)}%${item.sentimentResult.source ? ` (${item.sentimentResult.source === 'ml' ? 'FinBERT' : 'Keywords'})` : ''}`}
+                      title={`Score: ${item.sentimentResult.score.toFixed(2)}, Confidence: ${(item.sentimentResult.confidence * 100).toFixed(0)}%${item.sentimentResult.source ? ` (${item.sentimentResult.source === 'ml' ? 'FinBERT' : 'Keywords'})` : ''}\n${agreementStyle.label}`}
                     >
                       {sentimentInfo.emoji} {sentimentInfo.label}
+                      <span className={`${agreementStyle.indicatorColor} text-[10px]`}>
+                        {agreementStyle.indicator}
+                      </span>
                     </span>
                   </div>
                   {item.summary && (
@@ -306,6 +388,12 @@ export function NewsPanel({
                     <span>{item.source}</span>
                     <span>•</span>
                     <span>{formatTimeAgo(item.datetime)}</span>
+                    {agreement === 'conflicting' && (
+                      <>
+                        <span>•</span>
+                        <span className="text-red-400/70">⚠ widerspr.</span>
+                      </>
+                    )}
                     {item.sentimentResult.keywords.positive.length > 0 || item.sentimentResult.keywords.negative.length > 0 ? (
                       <>
                         <span>•</span>

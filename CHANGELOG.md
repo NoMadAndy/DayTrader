@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Jeder Indikator (RSI, MACD, Bollinger, etc.) zeigt Übereinstimmung mit anderen
   - Widersprüchliche Indikatoren erhalten gestrichelte rote Umrandung und Warnhinweis
   - Legende oben rechts im Indicator-Bereich
+- **News Sentiment Agreement** - Im News Panel zeigt jede Nachricht ihr Agreement mit dem allgemeinen Sentiment
+  - Jede News zeigt Übereinstimmung mit anderen News-Sentiments (●/◐/○/⚠)
+  - Widersprüchliche News erhalten gestrichelte rote Umrandung
+  - Agreement-Indikator im Sentiment-Tag sichtbar
+  - Kompakte Legende im Header
 
 ### Changed
 - **BREAKING: Mock-Daten komplett entfernt** - Die Anwendung zeigt jetzt nur noch echte, aktuelle Marktdaten an
