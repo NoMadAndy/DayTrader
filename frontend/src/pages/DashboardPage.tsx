@@ -5,7 +5,8 @@
  */
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, NewsPanel, TradingSignalPanel, DataFreshnessIndicator, CompanyInfoPanel, type NewsItemWithSentiment, type DataTimestamps } from '../components';
+import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, NewsPanel, TradingSignalPanel, CompanyInfoPanel, type NewsItemWithSentiment } from '../components';
+import { type DataTimestamps } from '../components/StockSelector';
 import { useStockData, useSimpleAutoRefresh } from '../hooks';
 import { generateForecast } from '../utils/forecast';
 
@@ -221,16 +222,22 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
   }
 
   return (
-    <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 flex-1">
-      {/* Stock Selector & Data Freshness Header */}
-      <div className="flex items-center justify-between gap-2 mb-4">
-        <StockSelector selectedSymbol={selectedSymbol} onSelect={onSymbolChange} />
-        <DataFreshnessIndicator 
-          timestamps={dataTimestamps}
-          onRefresh={handleRefreshAll}
-          isRefreshing={isRefreshing}
-        />
+    <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 flex-1 relative">
+      {/* Floating Stock Selector - elegant eingebettet beim Scrollen */}
+      <div className="sticky top-[62px] z-30 py-2 pointer-events-none">
+        <div className="pointer-events-auto inline-block">
+          <StockSelector 
+            selectedSymbol={selectedSymbol} 
+            onSelect={onSymbolChange}
+            timestamps={dataTimestamps}
+            onRefresh={handleRefreshAll}
+            isRefreshing={isRefreshing}
+          />
+        </div>
       </div>
+      
+      {/* Main Content */}
+      <div className="">
 
       {/* Trading Signals - Full Width at Top */}
       <TradingSignalPanel 
@@ -345,6 +352,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
 
       {/* Company Info Panel - Key metrics, identifiers, and instrument details */}
       <CompanyInfoPanel symbol={selectedSymbol} />
+      </div>
     </div>
   );
 }

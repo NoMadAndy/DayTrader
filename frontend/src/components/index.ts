@@ -1,7 +1,7 @@
 export { StockChart } from './StockChart';
 export { ForecastPanel } from './ForecastPanel';
 export { MLForecastPanel } from './MLForecastPanel';
-export { StockSelector } from './StockSelector';
+export { StockSelector, type DataTimestamps } from './StockSelector';
 export { IndicatorControls } from './IndicatorControls';
 export { DataSourceSelector } from './DataSourceSelector';
 export { NewsPanel, type NewsItemWithSentiment } from './NewsPanel';
@@ -11,7 +11,7 @@ export { HamburgerMenu } from './HamburgerMenu';
 export { LoginForm } from './LoginForm';
 export { RegisterForm } from './RegisterForm';
 export { ChangelogPanel } from './ChangelogPanel';
-export { DataFreshnessIndicator, type DataTimestamps } from './DataFreshnessIndicator';
+export { DataFreshnessIndicator } from './DataFreshnessIndicator';
 export { WatchlistPanel } from './WatchlistPanel';
 export { Navigation } from './Navigation';
 export { CompanyInfoPanel } from './CompanyInfoPanel';

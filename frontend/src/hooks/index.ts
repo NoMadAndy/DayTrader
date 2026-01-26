@@ -18,4 +18,8 @@ export {
   formatTimeUntilRefresh,
 } from './useAutoRefresh';
 
+export {
+  useRealTimeQuotes,
+  useBackgroundJobsStatus,
+} from './useRealTimeQuotes';
 export { useSimpleAutoRefresh } from './useSimpleAutoRefresh';

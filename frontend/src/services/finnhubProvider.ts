@@ -1,21 +1,19 @@
 /**
- * Finnhub Data Provider
+ * Finnhub Data Provider (via backend proxy with shared caching)
  * 
- * Provides real-time stock quotes, historical candles, and company news.
+ * All requests go through the backend proxy, which:
+ * - Caches results in PostgreSQL for all users
+ * - Reduces total API calls across the platform
+ * - Avoids CORS issues
  * 
  * API Documentation: https://finnhub.io/docs/api
- * 
- * Endpoints used:
- * - /quote: Real-time quote data
- * - /stock/candle: OHLCV candlestick data
- * - /company-news: Company-specific news
- * - /search: Symbol search
  */
 
 import type { OHLCV } from '../types/stock';
 import type { DataProvider, QuoteData, NewsItem, StockSearchResult } from './types';
 
-const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
+// Use backend proxy (relative URLs work with nginx/vite proxy)
+const API_BASE_URL = '/api/finnhub';
 
 export class FinnhubProvider implements DataProvider {
   name = 'Finnhub';
@@ -29,15 +27,14 @@ export class FinnhubProvider implements DataProvider {
     return !!this.apiKey && this.apiKey.length > 0;
   }
 
-  private async fetch<T>(endpoint: string, params: Record<string, string> = {}): Promise<T | null> {
+  private async fetch<T>(url: string): Promise<T | null> {
     try {
-      const url = new URL(`${FINNHUB_BASE_URL}${endpoint}`);
-      url.searchParams.set('token', this.apiKey);
-      Object.entries(params).forEach(([key, value]) => {
-        url.searchParams.set(key, value);
+      const response = await fetch(url, {
+        headers: {
+          'Accept': 'application/json',
+          'X-Finnhub-Token': this.apiKey,
+        }
       });
-
-      const response = await fetch(url.toString());
       
       if (!response.ok) {
         console.error(`Finnhub API error: ${response.status} ${response.statusText}`);
@@ -61,9 +58,12 @@ export class FinnhubProvider implements DataProvider {
       o: number;  // Open
       pc: number; // Previous close
       t: number;  // Timestamp
+      _cached?: boolean;
+      _cachedAt?: string;
     }
 
-    const data = await this.fetch<FinnhubQuote>('/quote', { symbol });
+    const url = `${API_BASE_URL}/quote/${encodeURIComponent(symbol)}`;
+    const data = await this.fetch<FinnhubQuote>(url);
     
     if (!data || data.c === 0) {
       return null;
@@ -92,17 +92,15 @@ export class FinnhubProvider implements DataProvider {
       t: number[];  // Timestamps
       v: number[];  // Volumes
       s: string;    // Status
+      _cached?: boolean;
+      _cachedAt?: string;
     }
 
     const now = Math.floor(Date.now() / 1000);
     const from = now - (days * 24 * 60 * 60);
 
-    const data = await this.fetch<FinnhubCandles>('/stock/candle', {
-      symbol,
-      resolution: 'D',
-      from: from.toString(),
-      to: now.toString()
-    });
+    const url = `${API_BASE_URL}/candles/${encodeURIComponent(symbol)}?resolution=D&from=${from}&to=${now}`;
+    const data = await this.fetch<FinnhubCandles>(url);
 
     if (!data || data.s !== 'ok' || !data.t || data.t.length === 0) {
       return null;
@@ -139,12 +137,12 @@ export class FinnhubProvider implements DataProvider {
     const now = new Date();
     const from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     
-    const data = await this.fetch<FinnhubNews[]>('/company-news', {
-      symbol,
-      from: from.toISOString().split('T')[0],
-      to: now.toISOString().split('T')[0]
-    });
+    const url = `${API_BASE_URL}/news/${encodeURIComponent(symbol)}?from=${from.toISOString().split('T')[0]}&to=${now.toISOString().split('T')[0]}`;
+    const response = await this.fetch<FinnhubNews[] | { data: FinnhubNews[], _cached?: boolean }>(url);
 
+    // Handle both direct array and wrapped response from cache
+    const data = Array.isArray(response) ? response : response?.data;
+    
     if (!data || !Array.isArray(data)) {
       return [];
     }
@@ -170,9 +168,12 @@ export class FinnhubProvider implements DataProvider {
         symbol: string;
         type: string;
       }>;
+      _cached?: boolean;
+      _cachedAt?: string;
     }
 
-    const data = await this.fetch<FinnhubSearchResult>('/search', { q: query });
+    const url = `${API_BASE_URL}/search?q=${encodeURIComponent(query)}`;
+    const data = await this.fetch<FinnhubSearchResult>(url);
 
     if (!data || !data.result) {
       return [];

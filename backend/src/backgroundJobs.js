@@ -117,6 +117,19 @@ async function fetchYahooQuotes(symbols) {
   return results.length > 0 ? { quoteResponse: { result: results } } : null;
 }
 
+// Callback for broadcasting updates to SSE clients
+let broadcastCallback = null;
+
+/**
+ * Set the broadcast callback function
+ * Called from index.js to register the SSE broadcast function
+ * @param {Function} callback - Function to broadcast updates
+ */
+export function setBroadcastCallback(callback) {
+  broadcastCallback = callback;
+  console.log('[BackgroundJobs] SSE broadcast callback registered');
+}
+
 /**
  * Update quotes for a batch of symbols
  * @param {string[]} symbols - Symbols to update
@@ -131,17 +144,25 @@ async function updateQuoteBatch(symbols) {
     return;
   }
   
-  // Cache each quote individually
+  // Cache each quote individually and broadcast to SSE clients
   for (const quote of data.quoteResponse.result) {
     const cacheKey = `yahoo:quote:${quote.symbol}`;
+    const quoteData = { quoteResponse: { result: [quote] } };
+    
     await stockCache.setCache(
       cacheKey,
       'quote',
       quote.symbol,
-      { quoteResponse: { result: [quote] } },
+      quoteData,
       'yahoo-background',
       stockCache.CACHE_DURATIONS.quote
     );
+    
+    // Broadcast to SSE clients
+    if (broadcastCallback) {
+      broadcastCallback(quote.symbol, quoteData);
+    }
+    
     updateStats.successfulUpdates++;
   }
   
@@ -323,4 +344,5 @@ export default {
   getJobStatus,
   triggerQuoteUpdate,
   updateConfig,
+  setBroadcastCallback,
 };

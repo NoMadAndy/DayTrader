@@ -13,7 +13,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { DataServiceProvider, useServiceWorker } from './hooks';
 import { Navigation } from './components/Navigation';
-import { DashboardPage, WatchlistPage, SettingsPage, ChangelogPage, InfoPage, TradingPage, PortfolioPage, LeaderboardPage } from './pages';
+import { DashboardPage, WatchlistPage, SettingsPage, ChangelogPage, InfoPage, TradingPortfolioPage, LeaderboardPage } from './pages';
 import BacktestPage from './pages/BacktestPage';
 import { initializeAuth, subscribeToAuth } from './services/authService';
 import { getBestSymbolFromWatchlist, clearBestSymbolCache } from './services/bestSymbolService';
@@ -104,8 +104,8 @@ function AppContent() {
                 )
               } 
             />
-            <Route path="/trading" element={<TradingPage />} />
-            <Route path="/portfolio" element={<PortfolioPage />} />
+            <Route path="/trading" element={<TradingPortfolioPage />} />
+            <Route path="/portfolio" element={<TradingPortfolioPage />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />
             <Route path="/backtest" element={<BacktestPage />} />
             <Route path="/watchlist" element={<WatchlistPage />} />

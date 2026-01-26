@@ -1,20 +1,19 @@
 /**
- * Twelve Data Provider
+ * Twelve Data Provider (via backend proxy with shared caching)
  * 
- * A reliable free-tier stock data API with good coverage.
+ * All requests go through the backend proxy, which:
+ * - Caches results in PostgreSQL for all users
+ * - Reduces total API calls across the platform
+ * - Handles rate limiting gracefully
  * 
  * API Documentation: https://twelvedata.com/docs
- * 
- * Endpoints used:
- * - /quote: Real-time quote
- * - /time_series: OHLCV data
- * - /symbol_search: Symbol search
  */
 
 import type { OHLCV } from '../types/stock';
 import type { DataProvider, QuoteData, StockSearchResult } from './types';
 
-const TWELVE_DATA_BASE_URL = 'https://api.twelvedata.com';
+// Use backend proxy (relative URLs work with nginx/vite proxy)
+const API_BASE_URL = '/api/twelvedata';
 
 export class TwelveDataProvider implements DataProvider {
   name = 'Twelve Data';
@@ -28,15 +27,14 @@ export class TwelveDataProvider implements DataProvider {
     return !!this.apiKey && this.apiKey.length > 0;
   }
 
-  private async fetch<T>(endpoint: string, params: Record<string, string> = {}): Promise<T | null> {
+  private async fetch<T>(url: string): Promise<T | null> {
     try {
-      const url = new URL(`${TWELVE_DATA_BASE_URL}${endpoint}`);
-      url.searchParams.set('apikey', this.apiKey);
-      Object.entries(params).forEach(([key, value]) => {
-        url.searchParams.set(key, value);
+      const response = await fetch(url, {
+        headers: {
+          'Accept': 'application/json',
+          'X-TwelveData-Key': this.apiKey,
+        }
       });
-
-      const response = await fetch(url.toString());
       
       if (!response.ok) {
         console.error(`Twelve Data API error: ${response.status} ${response.statusText}`);
@@ -73,9 +71,12 @@ export class TwelveDataProvider implements DataProvider {
       previous_close: string;
       change: string;
       percent_change: string;
+      _cached?: boolean;
+      _cachedAt?: string;
     }
 
-    const data = await this.fetch<TwelveDataQuote>('/quote', { symbol });
+    const url = `${API_BASE_URL}/quote/${encodeURIComponent(symbol)}`;
+    const data = await this.fetch<TwelveDataQuote>(url);
 
     if (!data || !data.close) {
       return null;
@@ -109,13 +110,12 @@ export class TwelveDataProvider implements DataProvider {
         close: string;
         volume: string;
       }>;
+      _cached?: boolean;
+      _cachedAt?: string;
     }
 
-    const data = await this.fetch<TwelveDataTimeSeries>('/time_series', {
-      symbol,
-      interval: '1day',
-      outputsize: days.toString()
-    });
+    const url = `${API_BASE_URL}/timeseries/${encodeURIComponent(symbol)}?interval=1day&outputsize=${days}`;
+    const data = await this.fetch<TwelveDataTimeSeries>(url);
 
     if (!data || !data.values || data.values.length === 0) {
       return null;
@@ -146,11 +146,12 @@ export class TwelveDataProvider implements DataProvider {
         instrument_type: string;
         country: string;
       }>;
+      _cached?: boolean;
+      _cachedAt?: string;
     }
 
-    const data = await this.fetch<TwelveDataSearch>('/symbol_search', {
-      symbol: query
-    });
+    const url = `${API_BASE_URL}/search?symbol=${encodeURIComponent(query)}`;
+    const data = await this.fetch<TwelveDataSearch>(url);
 
     if (!data || !data.data) {
       return [];

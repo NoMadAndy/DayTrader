@@ -5,15 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.8.0] - 2026-01-26
+
+### Changed
+- **Paper Trading & Portfolio zu einer Seite zusammengeführt**
+  - Neue kombinierte "Trading"-Seite mit Tab-Navigation
+  - Tabs: Handeln, Positionen, Übersicht, Historie, Einstellungen
+  - Übersichtlicheres Layout mit Portfolio-Summary im Header
+  - Offene Positionen direkt neben Order-Panel sichtbar
+  - Alte separate Seiten entfernt (TradingPage, PortfolioPage)
+  - Navigation vereinfacht: Ein "Trading"-Menüpunkt statt zwei
+- **Konsistente Seitenbreiten** - Leaderboard jetzt mit gleicher Breite wie andere Seiten
+- **StockSelector im Dashboard um 20px nach oben verschoben** für bessere Platzierung
+
+### Fixed
+- **Symbol-Wechsel beim Trading repariert** - Wenn man über die Watchlist zum Trading kommt, kann man jetzt wieder andere Aktien auswählen
 
 ### Added
+- **Erweiterter StockSelector mit Live-Kursen und Indikatoren**
+  - Button zeigt jetzt aktuellen Kurs und Tagesänderung direkt an
+  - Dropdown-Liste zeigt für jedes Symbol: Kurs, Änderung %, Market Cap, P/E Ratio, Volumen
+  - Visuelle 52-Wochen-Range-Anzeige mit aktuellem Kurs als Marker
+  - Automatische Kurs-Aktualisierung alle 30 Sekunden wenn Dropdown geöffnet
+- **Integrierte Daten-Aktualitätsanzeige im StockSelector**
+  - Freshness-Icons (📊 Kurse, 📰 News, 🤖 ML) direkt sichtbar mit Farbcodierung
+  - Grün = aktuell, Gelb = etwas veraltet, Rot = alt
+  - Refresh-Button zum Aktualisieren aller Daten mit einem Klick
+  - Zeigt Alter der ältesten Datenquelle an (z.B. "2m", "15m")
+- **Sticky-Header unter Navigation**
+  - StockSelector bleibt beim Scrollen sichtbar (unter der Navigation)
+  - Halbtransparenter Hintergrund mit Blur-Effekt
+- **Gemeinsames Caching für alle API-Provider** - User-API-Keys teilen Cache mit allen Nutzern
+  - Neue Backend-Proxy-Endpoints für Finnhub, Alpha Vantage und Twelve Data
+  - Alle API-Antworten werden in PostgreSQL gecached
+  - Wenn User A Daten mit seinem API-Key holt, profitiert User B davon (kein erneuter API-Call nötig)
+  - Reduziert API-Verbrauch plattformweit erheblich
+  - API-Keys werden sicher als HTTP-Header übertragen (nicht in URL)
+  - Cache-Hit-Logging zeigt welche Daten bereits im Cache waren
+- **Server-Sent Events (SSE) für Echtzeit-Kursaktualisierungen** - GUI zeigt Kursänderungen sofort an
+  - Neuer SSE-Endpoint `/api/stream/quotes` für Echtzeit-Streaming
+  - Neue React-Hooks: `useRealTimeQuotes` und `useBackgroundJobsStatus`
+  - Automatische Reconnection mit Exponential Backoff bei Verbindungsabbruch
+  - Hintergrund-Jobs broadcasten Updates an alle verbundenen Clients
 - **Company Info Panel restauriert & erweitert** - Dashboard zeigt jetzt wieder Unternehmensinfos am unteren Bildschirmrand
   - Instrumententyp-Erkennung: Aktie, ETF, Optionsschein/Turbo, Zertifikat, Future, CFD, Option, Anleihe
   - Farbcodierte Badge mit Icon für jeden Instrumententyp
   - Wertpapier-Kennungen: ISIN, WKN (automatisch aus deutscher ISIN abgeleitet), CUSIP
   - Derivat-spezifische Warnung mit Details: Hebel, Knock-Out-Level, Strike, Verfall, Basiswert, Overnight-Gebühren, Spread
   - Bestehendes: Marktkapitalisierung, KGV, Dividendenrendite, 52-Wochen-Bereich, Volumen, Beta
+
+### Changed
+- **Provider-Calls über Backend geroutet** - Alle externen API-Calls gehen jetzt über das Backend
+  - Finnhub: `/api/finnhub/*` (quote, candles, profile, metrics, news, search)
+  - Alpha Vantage: `/api/alphavantage/*` (quote, daily, intraday, overview, search)
+  - Twelve Data: `/api/twelvedata/*` (quote, timeseries, search)
+  - Vermeidet CORS-Probleme
+  - Ermöglicht serverseitiges Caching für alle User
 
 ## [1.7.0] - 2026-01-25
 

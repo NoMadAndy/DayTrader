@@ -1,20 +1,19 @@
 /**
- * Alpha Vantage Data Provider
+ * Alpha Vantage Data Provider (via backend proxy with shared caching)
  * 
- * A popular free stock data API with generous rate limits.
+ * All requests go through the backend proxy, which:
+ * - Caches results in PostgreSQL for all users
+ * - Reduces total API calls across the platform
+ * - Handles rate limiting gracefully
  * 
  * API Documentation: https://www.alphavantage.co/documentation/
- * 
- * Endpoints used:
- * - GLOBAL_QUOTE: Real-time quote
- * - TIME_SERIES_DAILY: Daily OHLCV data
- * - SYMBOL_SEARCH: Search for symbols
  */
 
 import type { OHLCV } from '../types/stock';
 import type { DataProvider, QuoteData, StockSearchResult } from './types';
 
-const ALPHA_VANTAGE_BASE_URL = 'https://www.alphavantage.co/query';
+// Use backend proxy (relative URLs work with nginx/vite proxy)
+const API_BASE_URL = '/api/alphavantage';
 
 export class AlphaVantageProvider implements DataProvider {
   name = 'Alpha Vantage';
@@ -28,17 +27,19 @@ export class AlphaVantageProvider implements DataProvider {
     return !!this.apiKey && this.apiKey.length > 0;
   }
 
-  private async fetch<T>(params: Record<string, string>): Promise<T | null> {
+  private async fetch<T>(url: string): Promise<T | null> {
     try {
-      const url = new URL(ALPHA_VANTAGE_BASE_URL);
-      url.searchParams.set('apikey', this.apiKey);
-      Object.entries(params).forEach(([key, value]) => {
-        url.searchParams.set(key, value);
+      const response = await fetch(url, {
+        headers: {
+          'Accept': 'application/json',
+          'X-AlphaVantage-Key': this.apiKey,
+        }
       });
-
-      const response = await fetch(url.toString());
       
       if (!response.ok) {
+        if (response.status === 429) {
+          console.warn('Alpha Vantage rate limit exceeded (cached data may be available)');
+        }
         console.error(`Alpha Vantage API error: ${response.status} ${response.statusText}`);
         return null;
       }
@@ -72,12 +73,12 @@ export class AlphaVantageProvider implements DataProvider {
         '09. change': string;
         '10. change percent': string;
       };
+      _cached?: boolean;
+      _cachedAt?: string;
     }
 
-    const data = await this.fetch<AlphaVantageQuote>({
-      function: 'GLOBAL_QUOTE',
-      symbol
-    });
+    const url = `${API_BASE_URL}/quote/${encodeURIComponent(symbol)}`;
+    const data = await this.fetch<AlphaVantageQuote>(url);
 
     if (!data || !data['Global Quote'] || !data['Global Quote']['05. price']) {
       return null;
@@ -114,16 +115,15 @@ export class AlphaVantageProvider implements DataProvider {
           '5. volume': string;
         };
       };
+      _cached?: boolean;
+      _cachedAt?: string;
     }
 
     // Alpha Vantage provides compact (100 days) or full (20+ years)
     const outputsize = days > 100 ? 'full' : 'compact';
 
-    const data = await this.fetch<AlphaVantageDaily>({
-      function: 'TIME_SERIES_DAILY',
-      symbol,
-      outputsize
-    });
+    const url = `${API_BASE_URL}/daily/${encodeURIComponent(symbol)}?outputsize=${outputsize}`;
+    const data = await this.fetch<AlphaVantageDaily>(url);
 
     if (!data || !data['Time Series (Daily)']) {
       return null;
@@ -161,12 +161,12 @@ export class AlphaVantageProvider implements DataProvider {
         '4. region': string;
         '8. currency': string;
       }>;
+      _cached?: boolean;
+      _cachedAt?: string;
     }
 
-    const data = await this.fetch<AlphaVantageSearch>({
-      function: 'SYMBOL_SEARCH',
-      keywords: query
-    });
+    const url = `${API_BASE_URL}/search?keywords=${encodeURIComponent(query)}`;
+    const data = await this.fetch<AlphaVantageSearch>(url);
 
     if (!data || !data.bestMatches) {
       return [];

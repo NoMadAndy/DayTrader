@@ -185,11 +185,13 @@ async function fetchYahooQuoteData(symbol: string): Promise<Partial<CompanyInfo>
 }
 
 /**
- * Fetch company profile from Finnhub
+ * Fetch company profile from Finnhub (via backend proxy with shared caching)
  */
 async function fetchFinnhubProfile(symbol: string, apiKey: string): Promise<Partial<CompanyInfo> | null> {
   try {
-    const response = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${apiKey}`);
+    const response = await fetch(`/api/finnhub/profile/${encodeURIComponent(symbol)}`, {
+      headers: { 'X-Finnhub-Token': apiKey }
+    });
     if (!response.ok) return null;
     
     const data = await response.json();
@@ -211,11 +213,13 @@ async function fetchFinnhubProfile(symbol: string, apiKey: string): Promise<Part
 }
 
 /**
- * Fetch basic metrics from Finnhub
+ * Fetch basic metrics from Finnhub (via backend proxy with shared caching)
  */
 async function fetchFinnhubMetrics(symbol: string, apiKey: string): Promise<Partial<CompanyInfo> | null> {
   try {
-    const response = await fetch(`https://finnhub.io/api/v1/stock/metric?symbol=${symbol}&metric=all&token=${apiKey}`);
+    const response = await fetch(`/api/finnhub/metrics/${encodeURIComponent(symbol)}`, {
+      headers: { 'X-Finnhub-Token': apiKey }
+    });
     if (!response.ok) return null;
     
     const data = await response.json();
@@ -237,11 +241,13 @@ async function fetchFinnhubMetrics(symbol: string, apiKey: string): Promise<Part
 }
 
 /**
- * Fetch quote from Finnhub
+ * Fetch quote from Finnhub (via backend proxy with shared caching)
  */
 async function fetchFinnhubQuote(symbol: string, apiKey: string): Promise<Partial<CompanyInfo> | null> {
   try {
-    const response = await fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${apiKey}`);
+    const response = await fetch(`/api/finnhub/quote/${encodeURIComponent(symbol)}`, {
+      headers: { 'X-Finnhub-Token': apiKey }
+    });
     if (!response.ok) return null;
     
     const data = await response.json();
@@ -259,11 +265,13 @@ async function fetchFinnhubQuote(symbol: string, apiKey: string): Promise<Partia
 }
 
 /**
- * Fetch from Alpha Vantage Overview
+ * Fetch from Alpha Vantage Overview (via backend proxy with shared caching)
  */
 async function fetchAlphaVantageOverview(symbol: string, apiKey: string): Promise<Partial<CompanyInfo> | null> {
   try {
-    const response = await fetch(`https://www.alphavantage.co/query?function=OVERVIEW&symbol=${symbol}&apikey=${apiKey}`);
+    const response = await fetch(`/api/alphavantage/overview/${encodeURIComponent(symbol)}`, {
+      headers: { 'X-AlphaVantage-Key': apiKey }
+    });
     if (!response.ok) return null;
     
     const data = await response.json();
@@ -292,11 +300,13 @@ async function fetchAlphaVantageOverview(symbol: string, apiKey: string): Promis
 }
 
 /**
- * Fetch from Twelve Data quote
+ * Fetch from Twelve Data quote (via backend proxy with shared caching)
  */
 async function fetchTwelveDataQuote(symbol: string, apiKey: string): Promise<Partial<CompanyInfo> | null> {
   try {
-    const response = await fetch(`https://api.twelvedata.com/quote?symbol=${symbol}&apikey=${apiKey}`);
+    const response = await fetch(`/api/twelvedata/quote/${encodeURIComponent(symbol)}`, {
+      headers: { 'X-TwelveData-Key': apiKey }
+    });
     if (!response.ok) return null;
     
     const data = await response.json();

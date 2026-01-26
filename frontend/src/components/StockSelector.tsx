@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { DEFAULT_STOCKS } from '../utils/defaultStocks';
 import { 
   getAuthState, 
@@ -10,20 +10,114 @@ import {
   addCustomSymbolToServer, 
   removeCustomSymbolFromServer 
 } from '../services/userSettingsService';
-import { fetchCompanyInfo } from '../services/companyInfoService';
+import { fetchCompanyInfo, type CompanyInfo } from '../services/companyInfoService';
+
+// Re-export DataTimestamps type for external use
+export interface DataTimestamps {
+  financial?: Date | null;
+  news?: Date | null;
+  mlModel?: Date | null;
+}
 
 interface Stock {
   symbol: string;
   name: string;
-  fullName?: string; // Loaded from CompanyInfo
+  fullName?: string;
+  // Extended info from API
+  price?: number;
+  change?: number;
+  changePercent?: number;
+  volume?: number;
+  marketCap?: number;
+  peRatio?: number;
+  fiftyTwoWeekHigh?: number;
+  fiftyTwoWeekLow?: number;
 }
 
 interface StockSelectorProps {
   selectedSymbol: string;
   onSelect: (symbol: string) => void;
+  // Optional freshness integration
+  timestamps?: DataTimestamps;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
-export function StockSelector({ selectedSymbol, onSelect }: StockSelectorProps) {
+// Freshness helpers
+type FreshnessLevel = 'fresh' | 'stale' | 'old' | 'unknown';
+
+function getAgeInMs(timestamp: Date | null | undefined): number | null {
+  if (!timestamp) return null;
+  return Date.now() - timestamp.getTime();
+}
+
+function getFreshnessLevel(ageMs: number | null, thresholds: { fresh: number; stale: number }): FreshnessLevel {
+  if (ageMs === null) return 'unknown';
+  if (ageMs < thresholds.fresh) return 'fresh';
+  if (ageMs < thresholds.stale) return 'stale';
+  return 'old';
+}
+
+function formatAge(ageMs: number | null): string {
+  if (ageMs === null) return '—';
+  const seconds = Math.floor(ageMs / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  if (hours > 0) return `${hours}h`;
+  if (minutes > 0) return `${minutes}m`;
+  return `${seconds}s`;
+}
+
+const THRESHOLDS = {
+  financial: { fresh: 5 * 60 * 1000, stale: 30 * 60 * 1000 },
+  news: { fresh: 15 * 60 * 1000, stale: 60 * 60 * 1000 },
+  mlModel: { fresh: 24 * 60 * 60 * 1000, stale: 7 * 24 * 60 * 60 * 1000 },
+};
+
+const FRESHNESS_COLORS: Record<FreshnessLevel, string> = {
+  fresh: 'text-green-400',
+  stale: 'text-yellow-400',
+  old: 'text-red-400',
+  unknown: 'text-gray-500',
+};
+
+// Format large numbers (1.5M, 2.3B, etc.)
+function formatCompactNumber(num: number | undefined): string {
+  if (!num) return '-';
+  if (num >= 1e12) return (num / 1e12).toFixed(1) + 'T';
+  if (num >= 1e9) return (num / 1e9).toFixed(1) + 'B';
+  if (num >= 1e6) return (num / 1e6).toFixed(1) + 'M';
+  if (num >= 1e3) return (num / 1e3).toFixed(1) + 'K';
+  return num.toFixed(0);
+}
+
+// Format price with appropriate decimals
+function formatPrice(price: number | undefined): string {
+  if (!price) return '-';
+  if (price >= 1000) return price.toFixed(0);
+  if (price >= 100) return price.toFixed(1);
+  return price.toFixed(2);
+}
+
+// Get color class for change
+function getChangeColor(change: number | undefined): string {
+  if (!change || change === 0) return 'text-gray-400';
+  return change > 0 ? 'text-green-400' : 'text-red-400';
+}
+
+// Get 52-week position as percentage
+function get52WeekPosition(price: number | undefined, low: number | undefined, high: number | undefined): number | null {
+  if (!price || !low || !high || high === low) return null;
+  return Math.max(0, Math.min(100, ((price - low) / (high - low)) * 100));
+}
+
+export function StockSelector({ 
+  selectedSymbol, 
+  onSelect,
+  timestamps,
+  onRefresh,
+  isRefreshing = false
+}: StockSelectorProps) {
   const [authState, setAuthState] = useState<AuthState>(getAuthState());
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -33,6 +127,15 @@ export function StockSelector({ selectedSymbol, onSelect }: StockSelectorProps) 
   const [addError, setAddError] = useState('');
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Freshness tick for live updates
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (timestamps) {
+      const interval = setInterval(() => setTick(t => t + 1), 1000);
+      return () => clearInterval(interval);
+    }
+  }, [timestamps]);
   
   // Subscribe to auth state
   useEffect(() => {
@@ -59,14 +162,25 @@ export function StockSelector({ selectedSymbol, onSelect }: StockSelectorProps) 
       setStocks(loadedStocks);
       setIsLoading(false);
       
-      // Load full company names in background
+      // Load full company info including prices in background
       loadedStocks.forEach(async (stock) => {
         try {
           const info = await fetchCompanyInfo(stock.symbol);
-          if (info?.name && info.name !== stock.symbol) {
+          if (info) {
             setStocks(prev => prev.map(s => 
               s.symbol === stock.symbol 
-                ? { ...s, fullName: info.name }
+                ? { 
+                    ...s, 
+                    fullName: info.name || s.fullName,
+                    price: info.priceUSD,
+                    change: info.changeAbsolute,
+                    changePercent: info.changePercent,
+                    volume: info.volume,
+                    marketCap: info.marketCapUSD,
+                    peRatio: info.peRatio,
+                    fiftyTwoWeekHigh: info.fiftyTwoWeekHigh,
+                    fiftyTwoWeekLow: info.fiftyTwoWeekLow,
+                  }
                 : s
             ));
           }
@@ -78,6 +192,40 @@ export function StockSelector({ selectedSymbol, onSelect }: StockSelectorProps) 
     
     loadStocks();
   }, [authState.isAuthenticated]);
+
+  // Refresh prices periodically when dropdown is open
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const refreshPrices = async () => {
+      for (const stock of stocks) {
+        try {
+          const info = await fetchCompanyInfo(stock.symbol);
+          if (info) {
+            setStocks(prev => prev.map(s => 
+              s.symbol === stock.symbol 
+                ? { 
+                    ...s, 
+                    price: info.priceUSD ?? s.price,
+                    change: info.changeAbsolute ?? s.change,
+                    changePercent: info.changePercent ?? s.changePercent,
+                  }
+                : s
+            ));
+          }
+        } catch {
+          // Ignore
+        }
+      }
+    };
+
+    // Refresh immediately when opened
+    refreshPrices();
+    
+    // Then refresh every 30 seconds while open
+    const interval = setInterval(refreshPrices, 30000);
+    return () => clearInterval(interval);
+  }, [isOpen, stocks.length]);
 
   // Filter stocks based on search
   const filteredStocks = search 
@@ -145,92 +293,246 @@ export function StockSelector({ selectedSymbol, onSelect }: StockSelectorProps) 
     }
   }, [selectedSymbol, onSelect, authState.isAuthenticated, stocks]);
 
+  // Calculate freshness data
+  const freshnessData = useMemo(() => {
+    if (!timestamps) return null;
+    void tick; // Force recalculation on tick
+    
+    const financialAge = getAgeInMs(timestamps.financial);
+    const newsAge = getAgeInMs(timestamps.news);
+    const mlAge = getAgeInMs(timestamps.mlModel);
+    
+    const items = [
+      { key: 'financial', icon: '📊', age: financialAge, level: getFreshnessLevel(financialAge, THRESHOLDS.financial) },
+      { key: 'news', icon: '📰', age: newsAge, level: getFreshnessLevel(newsAge, THRESHOLDS.news) },
+      { key: 'ml', icon: '🤖', age: mlAge, level: getFreshnessLevel(mlAge, THRESHOLDS.mlModel) },
+    ];
+    
+    const levels = items.map(i => i.level);
+    const overall: FreshnessLevel = levels.includes('old') ? 'old' : 
+                                    levels.includes('stale') ? 'stale' : 
+                                    levels.includes('unknown') ? 'unknown' : 'fresh';
+    
+    const ages = items.map(i => i.age).filter((a): a is number => a !== null);
+    const oldestAge = ages.length > 0 ? Math.max(...ages) : null;
+    
+    return { items, overall, oldestAge };
+  }, [timestamps, tick]);
+
   return (
-    <div className="relative">
+    <div className="relative inline-block">
+      {/* Combined Stock Selector Button with integrated Freshness */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-3 bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-3 hover:bg-slate-700/50 transition-colors min-w-[200px]"
+        className="flex items-center gap-2 bg-slate-800/70 border border-slate-600/50 rounded-xl px-3 py-2 hover:bg-slate-700/60 hover:border-slate-500/50 hover:shadow-blue-500/10 transition-all duration-300 shadow-xl shadow-black/20 backdrop-blur-md ring-1 ring-white/5"
       >
-        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
+        {/* Symbol Icon */}
+        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
           {selectedSymbol.charAt(0)}
         </div>
-        <div className="text-left">
-          <div className="text-white font-semibold">{selectedSymbol}</div>
-          <div className="text-gray-400 text-sm truncate max-w-[120px]" title={selectedStock?.fullName || selectedStock?.name || selectedSymbol}>
-            {selectedStock?.fullName || selectedStock?.name || selectedSymbol}
+        
+        {/* Symbol & Price Info */}
+        <div className="text-left min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="text-white font-semibold text-sm">{selectedSymbol}</span>
+            {selectedStock?.price !== undefined && (
+              <span className="text-white font-bold text-sm">
+                {formatPrice(selectedStock.price)}
+              </span>
+            )}
+            {selectedStock?.changePercent !== undefined && (
+              <span className={`text-xs font-medium px-1 py-0.5 rounded ${selectedStock.changePercent >= 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                {selectedStock.changePercent >= 0 ? '+' : ''}{selectedStock.changePercent.toFixed(1)}%
+              </span>
+            )}
           </div>
         </div>
-        <svg className={`w-5 h-5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+
+        {/* Freshness Indicator - compact */}
+        {freshnessData && (
+          <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-xs ${freshnessData.overall === 'fresh' ? 'bg-green-500/10' : freshnessData.overall === 'stale' ? 'bg-yellow-500/10' : freshnessData.overall === 'old' ? 'bg-red-500/10' : 'bg-slate-700/50'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${freshnessData.overall === 'fresh' ? 'bg-green-400' : freshnessData.overall === 'stale' ? 'bg-yellow-400' : freshnessData.overall === 'old' ? 'bg-red-400' : 'bg-gray-400'}`} />
+            <span className={`font-medium ${FRESHNESS_COLORS[freshnessData.overall]}`}>
+              {formatAge(freshnessData.oldestAge)}
+            </span>
+          </div>
+        )}
+        
+        {/* Dropdown Arrow */}
+        <svg className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
 
+      {/* Dropdown */}
       {isOpen && (
         <>
-          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
-          <div className="absolute top-full left-0 mt-2 w-72 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-20 overflow-hidden">
+          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+          <div className="absolute top-full left-0 mt-2 w-[400px] bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden">
+            
+            {/* Freshness Details Section */}
+            {freshnessData && onRefresh && (
+              <div className="p-3 border-b border-slate-700 bg-slate-900/50">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-gray-400">Daten-Aktualität</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onRefresh(); }}
+                    disabled={isRefreshing}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 text-xs font-medium transition-colors disabled:opacity-50"
+                  >
+                    {isRefreshing ? (
+                      <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    )}
+                    Aktualisieren
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  {freshnessData.items.map((item) => (
+                    <div key={item.key} className={`flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded-lg ${FRESHNESS_COLORS[item.level] === 'text-green-400' ? 'bg-green-500/10' : FRESHNESS_COLORS[item.level] === 'text-yellow-400' ? 'bg-yellow-500/10' : FRESHNESS_COLORS[item.level] === 'text-red-400' ? 'bg-red-500/10' : 'bg-slate-700/50'}`}>
+                      <span className="text-sm">{item.icon}</span>
+                      <div className="flex flex-col">
+                        <span className="text-[10px] text-gray-500">{item.key === 'financial' ? 'Kurse' : item.key === 'news' ? 'News' : 'ML'}</span>
+                        <span className={`text-xs font-medium ${FRESHNESS_COLORS[item.level]}`}>{formatAge(item.age)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Search */}
             <div className="p-3 border-b border-slate-700">
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Suchen..."
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                placeholder="Symbol suchen..."
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-400 focus:outline-none focus:border-blue-500"
                 autoFocus
               />
             </div>
-            <div className="max-h-64 overflow-y-auto">
-              {isLoading ? (
-                <div className="p-4 text-center text-gray-400">Lade...</div>
-              ) : filteredStocks.length === 0 ? (
-                <div className="p-4 text-center text-gray-400">
-                  {search ? 'Keine Treffer' : 'Keine Symbole'}
-                </div>
-              ) : (
-                filteredStocks.map((stock) => (
-                  <button
-                    key={stock.symbol}
-                    onClick={() => {
-                      onSelect(stock.symbol);
-                      setIsOpen(false);
-                      setSearch('');
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-700/50 transition-colors ${
-                      stock.symbol === selectedSymbol ? 'bg-blue-500/20' : ''
-                    }`}
-                  >
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">
-                      {stock.symbol.charAt(0)}
-                    </div>
-                    <div className="text-left flex-1 min-w-0">
-                      <div className="text-white font-medium">{stock.symbol}</div>
-                      <div className="text-gray-400 text-sm truncate" title={stock.fullName || stock.name}>
-                        {stock.fullName || stock.name}
+            
+            {/* Stock List */}
+            <div className="max-h-[350px] overflow-y-auto">
+                {isLoading ? (
+                  <div className="p-4 text-center text-gray-400">Lade...</div>
+                ) : filteredStocks.length === 0 ? (
+                  <div className="p-4 text-center text-gray-400">
+                    {search ? 'Keine Treffer' : 'Keine Symbole'}
+                  </div>
+                ) : (
+                  filteredStocks.map((stock) => (
+                    <button
+                      key={stock.symbol}
+                      onClick={() => {
+                        onSelect(stock.symbol);
+                        setIsOpen(false);
+                        setSearch('');
+                      }}
+                      className={`w-full px-4 py-3 hover:bg-slate-700/50 transition-colors ${
+                        stock.symbol === selectedSymbol ? 'bg-blue-500/20' : ''
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                          {stock.symbol.charAt(0)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {/* Row 1: Symbol, Name, Price, Change */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-white font-semibold">{stock.symbol}</span>
+                              <span className="text-gray-400 text-sm truncate" title={stock.fullName || stock.name}>
+                                {stock.fullName || stock.name}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {stock.price !== undefined && (
+                                <span className="text-white font-medium">{formatPrice(stock.price)}</span>
+                              )}
+                              {stock.changePercent !== undefined && (
+                                <span className={`text-sm font-medium px-1.5 py-0.5 rounded ${
+                                  stock.changePercent >= 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                                }`}>
+                                  {stock.changePercent >= 0 ? '+' : ''}{stock.changePercent.toFixed(2)}%
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {/* Row 2: Market Cap, P/E, Volume */}
+                          <div className="flex items-center gap-3 mt-1 text-xs">
+                            {stock.marketCap !== undefined && stock.marketCap > 0 && (
+                              <span className="text-gray-500">
+                                <span className="text-gray-600">MCap:</span> {formatCompactNumber(stock.marketCap)}
+                              </span>
+                            )}
+                            {stock.peRatio !== undefined && stock.peRatio > 0 && (
+                              <span className="text-gray-500">
+                                <span className="text-gray-600">P/E:</span> {stock.peRatio.toFixed(1)}
+                              </span>
+                            )}
+                            {stock.volume !== undefined && stock.volume > 0 && (
+                              <span className="text-gray-500">
+                                <span className="text-gray-600">Vol:</span> {formatCompactNumber(stock.volume)}
+                              </span>
+                            )}
+                          </div>
+                          
+                          {/* Row 3: 52-Week Range Bar */}
+                          {stock.fiftyTwoWeekLow !== undefined && stock.fiftyTwoWeekHigh !== undefined && stock.price !== undefined && (
+                            <div className="mt-2">
+                              <div className="flex items-center gap-2 text-xs">
+                                <span className="text-gray-600 w-14 text-right">{formatPrice(stock.fiftyTwoWeekLow)}</span>
+                                <div className="flex-1 h-1.5 bg-slate-700 rounded-full relative">
+                                  <div 
+                                    className="absolute h-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 rounded-full opacity-30"
+                                    style={{ width: '100%' }}
+                                  />
+                                  <div 
+                                    className="absolute w-2 h-2 bg-white rounded-full -top-0.5 shadow-lg border border-slate-600"
+                                    style={{ left: `calc(${get52WeekPosition(stock.price, stock.fiftyTwoWeekLow, stock.fiftyTwoWeekHigh)}% - 4px)` }}
+                                  />
+                                </div>
+                                <span className="text-gray-600 w-14">{formatPrice(stock.fiftyTwoWeekHigh)}</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {authState.isAuthenticated && (
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => handleRemoveStock(stock.symbol, e)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleRemoveStock(stock.symbol, e as unknown as React.MouseEvent)}
+                              className="p-1 hover:bg-red-500/20 rounded text-gray-400 hover:text-red-400 transition-colors cursor-pointer"
+                              title="Entfernen"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </span>
+                          )}
+                          {stock.symbol === selectedSymbol && (
+                            <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    {authState.isAuthenticated && (
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => handleRemoveStock(stock.symbol, e)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleRemoveStock(stock.symbol, e as unknown as React.MouseEvent)}
-                        className="p-1 hover:bg-red-500/20 rounded text-gray-400 hover:text-red-400 transition-colors cursor-pointer"
-                        title="Entfernen"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </span>
-                    )}
-                    {stock.symbol === selectedSymbol && (
-                      <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    )}
-                  </button>
-                ))
-              )}
-            </div>
+                    </button>
+                  ))
+                )}
+              </div>
             
             {/* Add Stock Section - only for authenticated users */}
             {authState.isAuthenticated && (

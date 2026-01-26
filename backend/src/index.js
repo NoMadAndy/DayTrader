@@ -143,6 +143,117 @@ app.post('/api/jobs/update-quotes', async (req, res) => {
 });
 
 // ============================================================================
+// Server-Sent Events (SSE) for Real-Time Updates
+// ============================================================================
+
+// Store active SSE connections
+const sseClients = new Map();
+
+/**
+ * SSE endpoint for real-time quote updates
+ * GET /api/stream/quotes
+ * Query params: symbols (comma-separated)
+ * 
+ * Clients subscribe to specific symbols and receive updates
+ * when the background job refreshes quotes
+ */
+app.get('/api/stream/quotes', (req, res) => {
+  const symbols = (req.query.symbols || '').split(',').filter(Boolean).map(s => s.toUpperCase());
+  
+  if (symbols.length === 0) {
+    return res.status(400).json({ error: 'symbols query parameter required' });
+  }
+  
+  // Set up SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+  res.flushHeaders();
+  
+  // Generate unique client ID
+  const clientId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  // Store client connection
+  sseClients.set(clientId, { res, symbols, connectedAt: new Date() });
+  
+  console.log(`[SSE] Client ${clientId} connected for symbols: ${symbols.join(', ')}`);
+  
+  // Send initial connection success
+  res.write(`event: connected\ndata: ${JSON.stringify({ clientId, symbols })}\n\n`);
+  
+  // Send current cached quotes immediately
+  (async () => {
+    for (const symbol of symbols) {
+      const cacheKey = `yahoo:quote:${symbol}`;
+      const cached = await stockCache.getCached(cacheKey);
+      if (cached) {
+        res.write(`event: quote\ndata: ${JSON.stringify({ symbol, data: cached.data, cachedAt: cached.cachedAt })}\n\n`);
+      }
+    }
+  })();
+  
+  // Keep-alive ping every 30 seconds
+  const pingInterval = setInterval(() => {
+    res.write(`event: ping\ndata: ${JSON.stringify({ time: new Date().toISOString() })}\n\n`);
+  }, 30000);
+  
+  // Clean up on disconnect
+  req.on('close', () => {
+    clearInterval(pingInterval);
+    sseClients.delete(clientId);
+    console.log(`[SSE] Client ${clientId} disconnected`);
+  });
+});
+
+/**
+ * Broadcast quote update to all subscribed SSE clients
+ * Called by background jobs when quotes are updated
+ */
+function broadcastQuoteUpdate(symbol, data) {
+  const upperSymbol = symbol.toUpperCase();
+  let notified = 0;
+  
+  for (const [clientId, client] of sseClients.entries()) {
+    if (client.symbols.includes(upperSymbol)) {
+      try {
+        client.res.write(`event: quote\ndata: ${JSON.stringify({ symbol: upperSymbol, data, updatedAt: new Date().toISOString() })}\n\n`);
+        notified++;
+      } catch (e) {
+        console.error(`[SSE] Error sending to client ${clientId}:`, e);
+        sseClients.delete(clientId);
+      }
+    }
+  }
+  
+  if (notified > 0) {
+    console.log(`[SSE] Broadcast ${upperSymbol} update to ${notified} clients`);
+  }
+}
+
+// Export for use by background jobs
+export { broadcastQuoteUpdate };
+
+/**
+ * Get SSE connection stats
+ * GET /api/stream/stats
+ */
+app.get('/api/stream/stats', (req, res) => {
+  const clients = [];
+  for (const [clientId, client] of sseClients.entries()) {
+    clients.push({
+      clientId,
+      symbols: client.symbols,
+      connectedAt: client.connectedAt,
+    });
+  }
+  res.json({ 
+    activeConnections: sseClients.size,
+    clients,
+  });
+});
+
+// ============================================================================
 // Authentication Endpoints
 // ============================================================================
 
@@ -594,6 +705,734 @@ app.get('/api/yahoo/search', async (req, res) => {
       error: 'Failed to search Yahoo Finance',
       message: error.message 
     });
+  }
+});
+
+// ============================================================================
+// Finnhub Proxy Endpoints (with shared caching)
+// ============================================================================
+const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
+
+/**
+ * Proxy Finnhub quote
+ * GET /api/finnhub/quote/:symbol
+ * Header: X-Finnhub-Token (API key from user)
+ * 
+ * Results are cached in PostgreSQL for all users
+ */
+app.get('/api/finnhub/quote/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  const apiKey = req.headers['x-finnhub-token'];
+  const cacheKey = `finnhub:quote:${symbol.toUpperCase()}`;
+  
+  // Check cache first (shared across all users)
+  if (process.env.DATABASE_URL) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      console.log(`[Finnhub] Cache hit for quote ${symbol}`);
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+  }
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
+  }
+  
+  try {
+    const url = `${FINNHUB_BASE_URL}/quote?symbol=${encodeURIComponent(symbol)}&token=${apiKey}`;
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Finnhub error: ${response.statusText}` });
+    }
+    
+    const data = await response.json();
+    
+    // Cache the result for all users
+    if (process.env.DATABASE_URL && data && data.c !== 0) {
+      await stockCache.setCache(cacheKey, 'quote', symbol.toUpperCase(), data, 'finnhub', stockCache.CACHE_DURATIONS.quote);
+      console.log(`[Finnhub] Cached quote for ${symbol}`);
+    }
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Finnhub quote proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch from Finnhub', message: error.message });
+  }
+});
+
+/**
+ * Proxy Finnhub candles (historical data)
+ * GET /api/finnhub/candles/:symbol
+ * Query: resolution, from, to
+ * Header: X-Finnhub-Token
+ */
+app.get('/api/finnhub/candles/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  const { resolution = 'D', from, to } = req.query;
+  const apiKey = req.headers['x-finnhub-token'];
+  const cacheKey = `finnhub:candles:${symbol.toUpperCase()}:${resolution}:${from}:${to}`;
+  
+  // Check cache first
+  if (process.env.DATABASE_URL) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      console.log(`[Finnhub] Cache hit for candles ${symbol}`);
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+  }
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
+  }
+  
+  try {
+    const url = `${FINNHUB_BASE_URL}/stock/candle?symbol=${encodeURIComponent(symbol)}&resolution=${resolution}&from=${from}&to=${to}&token=${apiKey}`;
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Finnhub error: ${response.statusText}` });
+    }
+    
+    const data = await response.json();
+    
+    // Cache candles (longer TTL)
+    if (process.env.DATABASE_URL && data && data.s === 'ok') {
+      const ttl = resolution === 'D' ? stockCache.CACHE_DURATIONS.candles_daily : stockCache.CACHE_DURATIONS.candles_intraday;
+      await stockCache.setCache(cacheKey, 'candles', symbol.toUpperCase(), data, 'finnhub', ttl);
+      console.log(`[Finnhub] Cached candles for ${symbol}`);
+    }
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Finnhub candles proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch candles from Finnhub', message: error.message });
+  }
+});
+
+/**
+ * Proxy Finnhub company profile
+ * GET /api/finnhub/profile/:symbol
+ * Header: X-Finnhub-Token
+ */
+app.get('/api/finnhub/profile/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  const apiKey = req.headers['x-finnhub-token'];
+  const cacheKey = `finnhub:profile:${symbol.toUpperCase()}`;
+  
+  // Check cache first (company info cached for 24h)
+  if (process.env.DATABASE_URL) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      console.log(`[Finnhub] Cache hit for profile ${symbol}`);
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+  }
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
+  }
+  
+  try {
+    const url = `${FINNHUB_BASE_URL}/stock/profile2?symbol=${encodeURIComponent(symbol)}&token=${apiKey}`;
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Finnhub error: ${response.statusText}` });
+    }
+    
+    const data = await response.json();
+    
+    // Cache company info for 24 hours
+    if (process.env.DATABASE_URL && data && data.name) {
+      await stockCache.setCache(cacheKey, 'company_info', symbol.toUpperCase(), data, 'finnhub', stockCache.CACHE_DURATIONS.company_info);
+      console.log(`[Finnhub] Cached profile for ${symbol}`);
+    }
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Finnhub profile proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch profile from Finnhub', message: error.message });
+  }
+});
+
+/**
+ * Proxy Finnhub metrics (financials)
+ * GET /api/finnhub/metrics/:symbol
+ * Header: X-Finnhub-Token
+ */
+app.get('/api/finnhub/metrics/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  const apiKey = req.headers['x-finnhub-token'];
+  const cacheKey = `finnhub:metrics:${symbol.toUpperCase()}`;
+  
+  if (process.env.DATABASE_URL) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      console.log(`[Finnhub] Cache hit for metrics ${symbol}`);
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+  }
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
+  }
+  
+  try {
+    const url = `${FINNHUB_BASE_URL}/stock/metric?symbol=${encodeURIComponent(symbol)}&metric=all&token=${apiKey}`;
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Finnhub error: ${response.statusText}` });
+    }
+    
+    const data = await response.json();
+    
+    if (process.env.DATABASE_URL && data && data.metric) {
+      await stockCache.setCache(cacheKey, 'company_info', symbol.toUpperCase(), data, 'finnhub', stockCache.CACHE_DURATIONS.company_info);
+      console.log(`[Finnhub] Cached metrics for ${symbol}`);
+    }
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Finnhub metrics proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch metrics from Finnhub', message: error.message });
+  }
+});
+
+/**
+ * Proxy Finnhub company news
+ * GET /api/finnhub/news/:symbol
+ * Query: from, to (dates YYYY-MM-DD)
+ * Header: X-Finnhub-Token
+ */
+app.get('/api/finnhub/news/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  const { from, to } = req.query;
+  const apiKey = req.headers['x-finnhub-token'];
+  const cacheKey = `finnhub:news:${symbol.toUpperCase()}:${from}:${to}`;
+  
+  if (process.env.DATABASE_URL) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      console.log(`[Finnhub] Cache hit for news ${symbol}`);
+      return res.json({ data: cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+  }
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
+  }
+  
+  try {
+    const url = `${FINNHUB_BASE_URL}/company-news?symbol=${encodeURIComponent(symbol)}&from=${from}&to=${to}&token=${apiKey}`;
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Finnhub error: ${response.statusText}` });
+    }
+    
+    const data = await response.json();
+    
+    // Cache news for 5 minutes
+    if (process.env.DATABASE_URL && Array.isArray(data)) {
+      await stockCache.setCache(cacheKey, 'news', symbol.toUpperCase(), data, 'finnhub', 300);
+      console.log(`[Finnhub] Cached news for ${symbol}`);
+    }
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Finnhub news proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch news from Finnhub', message: error.message });
+  }
+});
+
+/**
+ * Proxy Finnhub symbol search
+ * GET /api/finnhub/search
+ * Query: q
+ * Header: X-Finnhub-Token
+ */
+app.get('/api/finnhub/search', async (req, res) => {
+  const { q } = req.query;
+  const apiKey = req.headers['x-finnhub-token'];
+  const cacheKey = `finnhub:search:${q?.toLowerCase()}`;
+  
+  if (process.env.DATABASE_URL && q) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      console.log(`[Finnhub] Cache hit for search ${q}`);
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+  }
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
+  }
+  
+  if (!q) {
+    return res.status(400).json({ error: 'Search query (q) is required' });
+  }
+  
+  try {
+    const url = `${FINNHUB_BASE_URL}/search?q=${encodeURIComponent(q)}&token=${apiKey}`;
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Finnhub error: ${response.statusText}` });
+    }
+    
+    const data = await response.json();
+    
+    // Cache search results for 24 hours
+    if (process.env.DATABASE_URL && data && data.result) {
+      await stockCache.setCache(cacheKey, 'search', q.toUpperCase(), data, 'finnhub', stockCache.CACHE_DURATIONS.search);
+      console.log(`[Finnhub] Cached search for ${q}`);
+    }
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Finnhub search proxy error:', error);
+    res.status(500).json({ error: 'Failed to search Finnhub', message: error.message });
+  }
+});
+
+// ============================================================================
+// Alpha Vantage Proxy Endpoints (with shared caching)
+// ============================================================================
+const ALPHA_VANTAGE_BASE_URL = 'https://www.alphavantage.co/query';
+
+/**
+ * Proxy Alpha Vantage quote (Global Quote)
+ * GET /api/alphavantage/quote/:symbol
+ * Header: X-AlphaVantage-Key
+ */
+app.get('/api/alphavantage/quote/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  const apiKey = req.headers['x-alphavantage-key'];
+  const cacheKey = `alphavantage:quote:${symbol.toUpperCase()}`;
+  
+  if (process.env.DATABASE_URL) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      console.log(`[AlphaVantage] Cache hit for quote ${symbol}`);
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+  }
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'Alpha Vantage API key required (X-AlphaVantage-Key header)' });
+  }
+  
+  try {
+    const url = `${ALPHA_VANTAGE_BASE_URL}?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Alpha Vantage error: ${response.statusText}` });
+    }
+    
+    const data = await response.json();
+    
+    // Check for rate limit message
+    if (data.Note || data.Information) {
+      return res.status(429).json({ error: 'Alpha Vantage rate limit exceeded', message: data.Note || data.Information });
+    }
+    
+    if (process.env.DATABASE_URL && data['Global Quote'] && data['Global Quote']['05. price']) {
+      await stockCache.setCache(cacheKey, 'quote', symbol.toUpperCase(), data, 'alphavantage', stockCache.CACHE_DURATIONS.quote);
+      console.log(`[AlphaVantage] Cached quote for ${symbol}`);
+    }
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Alpha Vantage quote proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch from Alpha Vantage', message: error.message });
+  }
+});
+
+/**
+ * Proxy Alpha Vantage daily candles
+ * GET /api/alphavantage/daily/:symbol
+ * Query: outputsize (compact|full)
+ * Header: X-AlphaVantage-Key
+ */
+app.get('/api/alphavantage/daily/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  const { outputsize = 'compact' } = req.query;
+  const apiKey = req.headers['x-alphavantage-key'];
+  const cacheKey = `alphavantage:daily:${symbol.toUpperCase()}:${outputsize}`;
+  
+  if (process.env.DATABASE_URL) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      console.log(`[AlphaVantage] Cache hit for daily ${symbol}`);
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+  }
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'Alpha Vantage API key required (X-AlphaVantage-Key header)' });
+  }
+  
+  try {
+    const url = `${ALPHA_VANTAGE_BASE_URL}?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(symbol)}&outputsize=${outputsize}&apikey=${apiKey}`;
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Alpha Vantage error: ${response.statusText}` });
+    }
+    
+    const data = await response.json();
+    
+    if (data.Note || data.Information) {
+      return res.status(429).json({ error: 'Alpha Vantage rate limit exceeded', message: data.Note || data.Information });
+    }
+    
+    if (process.env.DATABASE_URL && data['Time Series (Daily)']) {
+      await stockCache.setCache(cacheKey, 'candles', symbol.toUpperCase(), data, 'alphavantage', stockCache.CACHE_DURATIONS.candles_daily);
+      console.log(`[AlphaVantage] Cached daily for ${symbol}`);
+    }
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Alpha Vantage daily proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch daily from Alpha Vantage', message: error.message });
+  }
+});
+
+/**
+ * Proxy Alpha Vantage intraday candles
+ * GET /api/alphavantage/intraday/:symbol
+ * Query: interval (1min, 5min, 15min, 30min, 60min), outputsize
+ * Header: X-AlphaVantage-Key
+ */
+app.get('/api/alphavantage/intraday/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  const { interval = '5min', outputsize = 'compact' } = req.query;
+  const apiKey = req.headers['x-alphavantage-key'];
+  const cacheKey = `alphavantage:intraday:${symbol.toUpperCase()}:${interval}:${outputsize}`;
+  
+  if (process.env.DATABASE_URL) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      console.log(`[AlphaVantage] Cache hit for intraday ${symbol}`);
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+  }
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'Alpha Vantage API key required (X-AlphaVantage-Key header)' });
+  }
+  
+  try {
+    const url = `${ALPHA_VANTAGE_BASE_URL}?function=TIME_SERIES_INTRADAY&symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=${outputsize}&apikey=${apiKey}`;
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Alpha Vantage error: ${response.statusText}` });
+    }
+    
+    const data = await response.json();
+    
+    if (data.Note || data.Information) {
+      return res.status(429).json({ error: 'Alpha Vantage rate limit exceeded', message: data.Note || data.Information });
+    }
+    
+    if (process.env.DATABASE_URL && data[`Time Series (${interval})`]) {
+      await stockCache.setCache(cacheKey, 'candles', symbol.toUpperCase(), data, 'alphavantage', stockCache.CACHE_DURATIONS.candles_intraday);
+      console.log(`[AlphaVantage] Cached intraday for ${symbol}`);
+    }
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Alpha Vantage intraday proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch intraday from Alpha Vantage', message: error.message });
+  }
+});
+
+/**
+ * Proxy Alpha Vantage company overview
+ * GET /api/alphavantage/overview/:symbol
+ * Header: X-AlphaVantage-Key
+ */
+app.get('/api/alphavantage/overview/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  const apiKey = req.headers['x-alphavantage-key'];
+  const cacheKey = `alphavantage:overview:${symbol.toUpperCase()}`;
+  
+  if (process.env.DATABASE_URL) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      console.log(`[AlphaVantage] Cache hit for overview ${symbol}`);
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+  }
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'Alpha Vantage API key required (X-AlphaVantage-Key header)' });
+  }
+  
+  try {
+    const url = `${ALPHA_VANTAGE_BASE_URL}?function=OVERVIEW&symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Alpha Vantage error: ${response.statusText}` });
+    }
+    
+    const data = await response.json();
+    
+    if (data.Note || data.Information) {
+      return res.status(429).json({ error: 'Alpha Vantage rate limit exceeded', message: data.Note || data.Information });
+    }
+    
+    // Cache company info for 24 hours
+    if (process.env.DATABASE_URL && data && data.Symbol) {
+      await stockCache.setCache(cacheKey, 'company_info', symbol.toUpperCase(), data, 'alphavantage', stockCache.CACHE_DURATIONS.company_info);
+      console.log(`[AlphaVantage] Cached overview for ${symbol}`);
+    }
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Alpha Vantage overview proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch overview from Alpha Vantage', message: error.message });
+  }
+});
+
+/**
+ * Proxy Alpha Vantage symbol search
+ * GET /api/alphavantage/search
+ * Query: keywords
+ * Header: X-AlphaVantage-Key
+ */
+app.get('/api/alphavantage/search', async (req, res) => {
+  const { keywords } = req.query;
+  const apiKey = req.headers['x-alphavantage-key'];
+  const cacheKey = `alphavantage:search:${keywords?.toLowerCase()}`;
+  
+  if (process.env.DATABASE_URL && keywords) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      console.log(`[AlphaVantage] Cache hit for search ${keywords}`);
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+  }
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'Alpha Vantage API key required (X-AlphaVantage-Key header)' });
+  }
+  
+  if (!keywords) {
+    return res.status(400).json({ error: 'Search keywords required' });
+  }
+  
+  try {
+    const url = `${ALPHA_VANTAGE_BASE_URL}?function=SYMBOL_SEARCH&keywords=${encodeURIComponent(keywords)}&apikey=${apiKey}`;
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Alpha Vantage error: ${response.statusText}` });
+    }
+    
+    const data = await response.json();
+    
+    if (data.Note || data.Information) {
+      return res.status(429).json({ error: 'Alpha Vantage rate limit exceeded', message: data.Note || data.Information });
+    }
+    
+    if (process.env.DATABASE_URL && data && data.bestMatches) {
+      await stockCache.setCache(cacheKey, 'search', keywords.toUpperCase(), data, 'alphavantage', stockCache.CACHE_DURATIONS.search);
+      console.log(`[AlphaVantage] Cached search for ${keywords}`);
+    }
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Alpha Vantage search proxy error:', error);
+    res.status(500).json({ error: 'Failed to search Alpha Vantage', message: error.message });
+  }
+});
+
+// ============================================================================
+// Twelve Data Proxy Endpoints (with shared caching)
+// ============================================================================
+const TWELVE_DATA_BASE_URL = 'https://api.twelvedata.com';
+
+/**
+ * Proxy Twelve Data quote
+ * GET /api/twelvedata/quote/:symbol
+ * Header: X-TwelveData-Key
+ */
+app.get('/api/twelvedata/quote/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  const apiKey = req.headers['x-twelvedata-key'];
+  const cacheKey = `twelvedata:quote:${symbol.toUpperCase()}`;
+  
+  if (process.env.DATABASE_URL) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      console.log(`[TwelveData] Cache hit for quote ${symbol}`);
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+  }
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'Twelve Data API key required (X-TwelveData-Key header)' });
+  }
+  
+  try {
+    const url = `${TWELVE_DATA_BASE_URL}/quote?symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Twelve Data error: ${response.statusText}` });
+    }
+    
+    const data = await response.json();
+    
+    if (data.code || data.status === 'error') {
+      return res.status(400).json({ error: data.message || 'Twelve Data error' });
+    }
+    
+    if (process.env.DATABASE_URL && data && data.close) {
+      await stockCache.setCache(cacheKey, 'quote', symbol.toUpperCase(), data, 'twelvedata', stockCache.CACHE_DURATIONS.quote);
+      console.log(`[TwelveData] Cached quote for ${symbol}`);
+    }
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Twelve Data quote proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch from Twelve Data', message: error.message });
+  }
+});
+
+/**
+ * Proxy Twelve Data time series
+ * GET /api/twelvedata/timeseries/:symbol
+ * Query: interval, outputsize
+ * Header: X-TwelveData-Key
+ */
+app.get('/api/twelvedata/timeseries/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  const { interval = '1day', outputsize = '100' } = req.query;
+  const apiKey = req.headers['x-twelvedata-key'];
+  const cacheKey = `twelvedata:timeseries:${symbol.toUpperCase()}:${interval}:${outputsize}`;
+  
+  if (process.env.DATABASE_URL) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      console.log(`[TwelveData] Cache hit for timeseries ${symbol}`);
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+  }
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'Twelve Data API key required (X-TwelveData-Key header)' });
+  }
+  
+  try {
+    const url = `${TWELVE_DATA_BASE_URL}/time_series?symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=${outputsize}&apikey=${apiKey}`;
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Twelve Data error: ${response.statusText}` });
+    }
+    
+    const data = await response.json();
+    
+    if (data.code || data.status === 'error') {
+      return res.status(400).json({ error: data.message || 'Twelve Data error' });
+    }
+    
+    if (process.env.DATABASE_URL && data && data.values) {
+      const ttl = interval.includes('day') || interval.includes('week') || interval.includes('month') 
+        ? stockCache.CACHE_DURATIONS.candles_daily 
+        : stockCache.CACHE_DURATIONS.candles_intraday;
+      await stockCache.setCache(cacheKey, 'candles', symbol.toUpperCase(), data, 'twelvedata', ttl);
+      console.log(`[TwelveData] Cached timeseries for ${symbol}`);
+    }
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Twelve Data timeseries proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch timeseries from Twelve Data', message: error.message });
+  }
+});
+
+/**
+ * Proxy Twelve Data symbol search
+ * GET /api/twelvedata/search
+ * Query: symbol (search query)
+ * Header: X-TwelveData-Key (optional for search)
+ */
+app.get('/api/twelvedata/search', async (req, res) => {
+  const { symbol } = req.query;
+  const apiKey = req.headers['x-twelvedata-key'];
+  const cacheKey = `twelvedata:search:${symbol?.toLowerCase()}`;
+  
+  if (process.env.DATABASE_URL && symbol) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      console.log(`[TwelveData] Cache hit for search ${symbol}`);
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+  }
+  
+  if (!symbol) {
+    return res.status(400).json({ error: 'Search symbol required' });
+  }
+  
+  try {
+    let url = `${TWELVE_DATA_BASE_URL}/symbol_search?symbol=${encodeURIComponent(symbol)}`;
+    if (apiKey) {
+      url += `&apikey=${apiKey}`;
+    }
+    
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Twelve Data error: ${response.statusText}` });
+    }
+    
+    const data = await response.json();
+    
+    if (process.env.DATABASE_URL && data && data.data) {
+      await stockCache.setCache(cacheKey, 'search', symbol.toUpperCase(), data, 'twelvedata', stockCache.CACHE_DURATIONS.search);
+      console.log(`[TwelveData] Cached search for ${symbol}`);
+    }
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Twelve Data search proxy error:', error);
+    res.status(500).json({ error: 'Failed to search Twelve Data', message: error.message });
   }
 });
 
@@ -1756,6 +2595,9 @@ const startServer = async () => {
         }, msUntilSnapshot);
       };
       scheduleDailySnapshots();
+      
+      // Register SSE broadcast callback with background jobs
+      backgroundJobs.setBroadcastCallback(broadcastQuoteUpdate);
       
       // Start background jobs for automatic quote updates
       backgroundJobs.startBackgroundJobs();
