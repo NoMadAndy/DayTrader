@@ -3,10 +3,13 @@
  * 
  * Displays detailed company information aggregated from multiple providers:
  * - Name, Symbol, Exchange
+ * - Instrument Type (Stock, ETF, Warrant, Certificate, etc.)
+ * - Identifiers (ISIN, WKN, CUSIP)
  * - Current price in EUR (and USD)
  * - 52-Week Range
  * - Market Cap, P/E (KGV), Dividend Yield
  * - Industry, Country
+ * - Derivative-specific info (leverage, knockout, etc.)
  * - Data sources indicator
  */
 
@@ -99,14 +102,67 @@ export function CompanyInfoPanel({ symbol }: CompanyInfoPanelProps) {
     return vol.toLocaleString('de-DE');
   };
 
+  // Get instrument type styling
+  const getInstrumentTypeStyle = (type?: CompanyInfo['instrumentType']) => {
+    switch (type) {
+      case 'stock':
+        return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+      case 'etf':
+        return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
+      case 'warrant':
+        return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
+      case 'certificate':
+        return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+      case 'future':
+        return 'bg-red-500/20 text-red-400 border-red-500/30';
+      case 'cfd':
+        return 'bg-pink-500/20 text-pink-400 border-pink-500/30';
+      case 'option':
+        return 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30';
+      case 'bond':
+        return 'bg-green-500/20 text-green-400 border-green-500/30';
+      default:
+        return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+    }
+  };
+
+  // Get instrument type icon
+  const getInstrumentTypeIcon = (type?: CompanyInfo['instrumentType']) => {
+    switch (type) {
+      case 'stock': return '📈';
+      case 'etf': return '📊';
+      case 'warrant': return '⚡';
+      case 'certificate': return '📜';
+      case 'future': return '📅';
+      case 'cfd': return '🔄';
+      case 'option': return '🎯';
+      case 'bond': return '💵';
+      default: return '❓';
+    }
+  };
+
+  // Check if it's a derivative or leveraged instrument
+  const isDerivative = ['warrant', 'certificate', 'future', 'cfd', 'option'].includes(companyInfo.instrumentType || '');
+  const isLeveraged = companyInfo.leverage && companyInfo.leverage > 1;
+  const showDerivativeWarning = isDerivative || isLeveraged;
+
   return (
     <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 space-y-4">
-      {/* Header: Name & Symbol */}
+      {/* Header: Name, Symbol & Instrument Type */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h2 className="text-lg sm:text-xl font-bold text-white truncate" title={companyInfo.name}>
-            {companyInfo.name}
-          </h2>
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <h2 className="text-lg sm:text-xl font-bold text-white truncate" title={companyInfo.name}>
+              {companyInfo.name}
+            </h2>
+            {/* Instrument Type Badge */}
+            {companyInfo.instrumentType && (
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${getInstrumentTypeStyle(companyInfo.instrumentType)}`}>
+                <span>{getInstrumentTypeIcon(companyInfo.instrumentType)}</span>
+                <span>{companyInfo.instrumentTypeLabel}</span>
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2 text-sm text-gray-400 flex-wrap">
             <span className="font-mono">{companyInfo.symbol}</span>
             {companyInfo.exchange && (
@@ -145,6 +201,89 @@ export function CompanyInfoPanel({ symbol }: CompanyInfoPanelProps) {
           </div>
         </div>
       </div>
+
+      {/* Identifiers Row: ISIN, WKN, CUSIP */}
+      {(companyInfo.isin || companyInfo.wkn || companyInfo.cusip) && (
+        <div className="flex flex-wrap gap-3 text-sm">
+          {companyInfo.isin && (
+            <div className="bg-slate-900/50 rounded px-2 py-1">
+              <span className="text-gray-500">ISIN: </span>
+              <span className="font-mono text-gray-300">{companyInfo.isin}</span>
+            </div>
+          )}
+          {companyInfo.wkn && (
+            <div className="bg-slate-900/50 rounded px-2 py-1">
+              <span className="text-gray-500">WKN: </span>
+              <span className="font-mono text-gray-300">{companyInfo.wkn}</span>
+            </div>
+          )}
+          {companyInfo.cusip && (
+            <div className="bg-slate-900/50 rounded px-2 py-1">
+              <span className="text-gray-500">CUSIP: </span>
+              <span className="font-mono text-gray-300">{companyInfo.cusip}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Derivative/Leveraged Product Warning */}
+      {showDerivativeWarning && (
+        <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-3">
+          <div className="flex items-center gap-2 text-orange-400 text-sm font-medium mb-2">
+            <span>⚠️</span>
+            <span>{isDerivative ? 'Derivat / Hebelprodukt' : 'Gehebeltes Produkt (Leveraged)'}</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+            {companyInfo.leverage && (
+              <div>
+                <span className="text-gray-500">Hebel: </span>
+                <span className="text-white font-semibold">{companyInfo.leverage}x</span>
+              </div>
+            )}
+            {companyInfo.knockoutLevel && (
+              <div>
+                <span className="text-gray-500">Knock-Out: </span>
+                <span className="text-red-400 font-semibold">{formatCurrency(companyInfo.knockoutLevel, 'EUR')}</span>
+              </div>
+            )}
+            {companyInfo.strikePrice && (
+              <div>
+                <span className="text-gray-500">Strike: </span>
+                <span className="text-white font-semibold">{formatCurrency(companyInfo.strikePrice, 'EUR')}</span>
+              </div>
+            )}
+            {companyInfo.expirationDate && (
+              <div>
+                <span className="text-gray-500">Verfall: </span>
+                <span className="text-yellow-400 font-semibold">{companyInfo.expirationDate}</span>
+              </div>
+            )}
+            {companyInfo.underlyingSymbol && (
+              <div>
+                <span className="text-gray-500">Basiswert: </span>
+                <span className="text-blue-400 font-semibold">{companyInfo.underlyingSymbol}</span>
+              </div>
+            )}
+            {companyInfo.overnightFee !== undefined && companyInfo.overnightFee > 0 && (
+              <div>
+                <span className="text-gray-500">Overnight: </span>
+                <span className="text-yellow-400 font-semibold">~{(companyInfo.overnightFee * 365).toFixed(1)}% p.a.</span>
+              </div>
+            )}
+            {companyInfo.spreadPercent !== undefined && companyInfo.spreadPercent > 0 && (
+              <div>
+                <span className="text-gray-500">Spread: </span>
+                <span className="text-white font-semibold">~{companyInfo.spreadPercent.toFixed(2)}%</span>
+              </div>
+            )}
+          </div>
+          <div className="text-xs text-orange-400/70 mt-2">
+            {isDerivative 
+              ? '⚡ Hebelprodukte bergen erhöhte Risiken. Totalverlust möglich.'
+              : '⚡ Leveraged ETFs unterliegen dem Pfadabhängigkeits-Effekt. Nicht für langfristiges Halten geeignet.'}
+          </div>
+        </div>
+      )}
 
       {/* Key Financials Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">

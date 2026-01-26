@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Company Info Panel restauriert & erweitert** - Dashboard zeigt jetzt wieder Unternehmensinfos am unteren Bildschirmrand
+  - Instrumententyp-Erkennung: Aktie, ETF, Optionsschein/Turbo, Zertifikat, Future, CFD, Option, Anleihe
+  - Farbcodierte Badge mit Icon für jeden Instrumententyp
+  - Wertpapier-Kennungen: ISIN, WKN (automatisch aus deutscher ISIN abgeleitet), CUSIP
+  - Derivat-spezifische Warnung mit Details: Hebel, Knock-Out-Level, Strike, Verfall, Basiswert, Overnight-Gebühren, Spread
+  - Bestehendes: Marktkapitalisierung, KGV, Dividendenrendite, 52-Wochen-Bereich, Volumen, Beta
+
 ## [1.7.0] - 2026-01-25
 
 ### Added

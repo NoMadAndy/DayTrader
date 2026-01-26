@@ -5,7 +5,7 @@
  */
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, NewsPanel, TradingSignalPanel, DataFreshnessIndicator, type NewsItemWithSentiment, type DataTimestamps } from '../components';
+import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, NewsPanel, TradingSignalPanel, DataFreshnessIndicator, CompanyInfoPanel, type NewsItemWithSentiment, type DataTimestamps } from '../components';
 import { useStockData, useSimpleAutoRefresh } from '../hooks';
 import { generateForecast } from '../utils/forecast';
 
@@ -342,6 +342,9 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
           )}
         </div>
       </div>
+
+      {/* Company Info Panel - Key metrics, identifiers, and instrument details */}
+      <CompanyInfoPanel symbol={selectedSymbol} />
     </div>
   );
 }

@@ -23,6 +23,19 @@ export interface CompanyInfo {
   // Identifiers
   isin?: string;
   cusip?: string;
+  wkn?: string;              // German WKN identifier
+  // Instrument type info
+  instrumentType?: 'stock' | 'etf' | 'warrant' | 'certificate' | 'future' | 'cfd' | 'option' | 'bond' | 'unknown';
+  instrumentTypeLabel?: string;  // Human-readable label
+  // Derivative-specific properties
+  leverage?: number;         // Hebel for warrants/certificates
+  knockoutLevel?: number;    // Knock-out barrier
+  strikePrice?: number;      // Strike price for options/warrants
+  expirationDate?: string;   // Expiration date
+  underlyingSymbol?: string; // Underlying asset symbol
+  // Cost info (for CFDs etc.)
+  overnightFee?: number;     // Overnight financing fee in %
+  spreadPercent?: number;    // Typical spread in %
   // Financials in original currency (usually USD)
   priceUSD: number;
   priceEUR: number;
@@ -463,6 +476,10 @@ export async function fetchCompanyInfo(symbol: string): Promise<CompanyInfo | nu
   const priceEUR = priceUSD * eurRate;
   const marketCapEUR = merged.marketCapUSD ? merged.marketCapUSD * eurRate : undefined;
   
+  // Detect instrument type and extract derivative info
+  const instrumentType = detectInstrumentType(symbol, merged.name, merged.exchange);
+  const derivativeInfo = extractDerivativeInfo(merged.name, symbol);
+  
   const result: CompanyInfo = {
     symbol,
     name: merged.name || symbol,
@@ -473,6 +490,17 @@ export async function fetchCompanyInfo(symbol: string): Promise<CompanyInfo | nu
     industry: merged.industry,
     isin: merged.isin,
     cusip: merged.cusip,
+    wkn: deriveWKN(merged.isin),  // Derive WKN from ISIN if possible
+    instrumentType,
+    instrumentTypeLabel: getInstrumentTypeLabel(instrumentType),
+    // Derivative-specific info from name parsing
+    leverage: derivativeInfo.leverage,
+    knockoutLevel: derivativeInfo.knockoutLevel,
+    strikePrice: derivativeInfo.strikePrice,
+    expirationDate: derivativeInfo.expirationDate,
+    underlyingSymbol: derivativeInfo.underlyingSymbol,
+    overnightFee: derivativeInfo.overnightFee,
+    spreadPercent: derivativeInfo.spreadPercent,
     priceUSD,
     priceEUR,
     marketCapUSD: merged.marketCapUSD,
@@ -541,6 +569,279 @@ export function formatPE(value?: number): string {
   if (value === undefined || value === null) return '—';
   if (value < 0) return 'Negativ';
   return value.toFixed(1);
+}
+
+/**
+ * Detect instrument type based on symbol patterns and name
+ */
+function detectInstrumentType(
+  symbol: string, 
+  name?: string, 
+  exchange?: string
+): CompanyInfo['instrumentType'] {
+  const symbolUpper = symbol.toUpperCase();
+  const nameUpper = (name || '').toUpperCase();
+  const exchangeUpper = (exchange || '').toUpperCase();
+  
+  // ETF detection
+  if (
+    nameUpper.includes('ETF') ||
+    nameUpper.includes('EXCHANGE TRADED') ||
+    nameUpper.includes('ISHARES') ||
+    nameUpper.includes('SPDR') ||
+    nameUpper.includes('VANGUARD') ||
+    nameUpper.includes('INVESCO')
+  ) {
+    return 'etf';
+  }
+  
+  // Warrant/Certificate detection (common in German markets)
+  if (
+    nameUpper.includes('WARRANT') ||
+    nameUpper.includes('OPTIONSSCHEIN') ||
+    nameUpper.includes('KNOCK-OUT') ||
+    nameUpper.includes('KNOCKOUT') ||
+    nameUpper.includes('TURBO') ||
+    nameUpper.includes('MINI FUTURE') ||
+    nameUpper.includes('FAKTOR')
+  ) {
+    return 'warrant';
+  }
+  
+  // Certificate detection
+  if (
+    nameUpper.includes('ZERTIFIKAT') ||
+    nameUpper.includes('CERTIFICATE') ||
+    nameUpper.includes('TRACKER') ||
+    nameUpper.includes('BONUS') ||
+    nameUpper.includes('DISCOUNT')
+  ) {
+    return 'certificate';
+  }
+  
+  // Bond detection
+  if (
+    nameUpper.includes('BOND') ||
+    nameUpper.includes('ANLEIHE') ||
+    nameUpper.includes('NOTE') ||
+    nameUpper.includes('TREASURY')
+  ) {
+    return 'bond';
+  }
+  
+  // Future detection (usually has specific month codes)
+  if (
+    symbolUpper.match(/[A-Z]{2,4}[FGHJKMNQUVXZ]\d{1,2}/) ||
+    nameUpper.includes('FUTURE')
+  ) {
+    return 'future';
+  }
+  
+  // Option detection
+  if (
+    nameUpper.includes('CALL') ||
+    nameUpper.includes('PUT') ||
+    nameUpper.includes('OPTION')
+  ) {
+    return 'option';
+  }
+  
+  // Default to stock
+  return 'stock';
+}
+
+/**
+ * Get human-readable label for instrument type
+ */
+function getInstrumentTypeLabel(type?: CompanyInfo['instrumentType']): string {
+  const labels: Record<NonNullable<CompanyInfo['instrumentType']>, string> = {
+    stock: 'Aktie',
+    etf: 'ETF',
+    warrant: 'Optionsschein / Turbo',
+    certificate: 'Zertifikat',
+    future: 'Future',
+    cfd: 'CFD',
+    option: 'Option',
+    bond: 'Anleihe',
+    unknown: 'Unbekannt',
+  };
+  return type ? labels[type] : 'Unbekannt';
+}
+
+/**
+ * Derive German WKN from ISIN if it's a German security
+ * German ISINs start with DE and the WKN is typically characters 3-8
+ */
+function deriveWKN(isin?: string): string | undefined {
+  if (!isin || !isin.startsWith('DE') || isin.length !== 12) {
+    return undefined;
+  }
+  // WKN is positions 3-8 of German ISIN (0-indexed: 2-7)
+  return isin.substring(2, 8);
+}
+
+/**
+ * Extract derivative-specific information from product name
+ * Many leveraged products encode info in their names like:
+ * - "Leverage Shares 2X Long NVDA Daily ETF"
+ * - "TURBO BULL NVIDIA KO 100.00 OPEN END"
+ * - "MINI FUTURE LONG AUF DAX KO 15000"
+ * - "FAKTOR 5X LONG TESLA"
+ */
+interface DerivativeInfo {
+  leverage?: number;
+  knockoutLevel?: number;
+  strikePrice?: number;
+  isLong?: boolean;
+  isShort?: boolean;
+  underlyingSymbol?: string;
+  expirationDate?: string;
+  overnightFee?: number;
+  spreadPercent?: number;
+  productType?: string;
+}
+
+function extractDerivativeInfo(name?: string, symbol?: string): DerivativeInfo {
+  if (!name) return {};
+  
+  const nameUpper = name.toUpperCase();
+  const result: DerivativeInfo = {};
+  
+  // Extract leverage multiplier
+  // Patterns: "2X", "3X", "5X", "FAKTOR 5", "LEVERAGE 2", etc.
+  const leveragePatterns = [
+    /(\d+)X\s*(LONG|SHORT|BULL|BEAR)?/i,
+    /FAKTOR\s*(\d+)/i,
+    /LEVERAGE\s*(\d+)/i,
+    /(\d+)\s*FACH/i,
+    /HEBEL\s*(\d+)/i,
+  ];
+  
+  for (const pattern of leveragePatterns) {
+    const match = nameUpper.match(pattern);
+    if (match) {
+      result.leverage = parseInt(match[1], 10);
+      break;
+    }
+  }
+  
+  // Determine direction (Long/Short)
+  if (nameUpper.includes('LONG') || nameUpper.includes('BULL') || nameUpper.includes('CALL')) {
+    result.isLong = true;
+    result.isShort = false;
+  } else if (nameUpper.includes('SHORT') || nameUpper.includes('BEAR') || nameUpper.includes('PUT') || nameUpper.includes('INVERSE')) {
+    result.isLong = false;
+    result.isShort = true;
+  }
+  
+  // Extract knockout level
+  // Patterns: "KO 100", "KO 100.00", "KNOCK-OUT 150", "KNOCKOUT 200"
+  const koPatterns = [
+    /K(?:NOCK)?[-\s]?O(?:UT)?\s*[:\s]*(\d+(?:[.,]\d+)?)/i,
+    /BARRIERE\s*[:\s]*(\d+(?:[.,]\d+)?)/i,
+    /BARRIER\s*[:\s]*(\d+(?:[.,]\d+)?)/i,
+  ];
+  
+  for (const pattern of koPatterns) {
+    const match = nameUpper.match(pattern);
+    if (match) {
+      result.knockoutLevel = parseFloat(match[1].replace(',', '.'));
+      break;
+    }
+  }
+  
+  // Extract strike price
+  // Patterns: "STRIKE 100", "BASIS 150", "BASISPREIS 200"
+  const strikePatterns = [
+    /STRIKE\s*[:\s]*(\d+(?:[.,]\d+)?)/i,
+    /BASIS(?:PREIS)?\s*[:\s]*(\d+(?:[.,]\d+)?)/i,
+    /AUSÜBUNGSPREIS\s*[:\s]*(\d+(?:[.,]\d+)?)/i,
+  ];
+  
+  for (const pattern of strikePatterns) {
+    const match = nameUpper.match(pattern);
+    if (match) {
+      result.strikePrice = parseFloat(match[1].replace(',', '.'));
+      break;
+    }
+  }
+  
+  // Extract underlying symbol
+  // Common patterns: "AUF DAX", "ON NVIDIA", "NVDA", etc.
+  const underlyingPatterns = [
+    /AUF\s+([A-Z0-9]+)/i,
+    /ON\s+([A-Z0-9]+)/i,
+    /(?:LONG|SHORT|BULL|BEAR)\s+([A-Z]{2,5})\s/i,
+  ];
+  
+  for (const pattern of underlyingPatterns) {
+    const match = name.match(pattern);
+    if (match) {
+      result.underlyingSymbol = match[1].toUpperCase();
+      break;
+    }
+  }
+  
+  // Extract expiration date
+  // Patterns: "12/2026", "DEC 2026", "OPEN END"
+  const expiryPatterns = [
+    /(\d{1,2})[\/\-](\d{4})/,
+    /(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s*(\d{4})/i,
+    /VERFALL\s*[:\s]*(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/i,
+  ];
+  
+  if (nameUpper.includes('OPEN END') || nameUpper.includes('OPEN-END') || nameUpper.includes('ENDLOS')) {
+    result.expirationDate = 'Open End';
+  } else {
+    for (const pattern of expiryPatterns) {
+      const match = name.match(pattern);
+      if (match) {
+        if (match.length === 3) {
+          result.expirationDate = `${match[1]}/${match[2]}`;
+        } else if (match.length === 4) {
+          result.expirationDate = `${match[1]}.${match[2]}.${match[3]}`;
+        }
+        break;
+      }
+    }
+  }
+  
+  // Detect product type and estimate typical costs
+  if (nameUpper.includes('TURBO') || nameUpper.includes('KNOCK')) {
+    result.productType = 'Turbo/Knock-Out';
+    // Turbos typically have small overnight financing
+    result.overnightFee = 0.01; // ~1% p.a. = 0.01% daily estimate
+  } else if (nameUpper.includes('MINI FUTURE')) {
+    result.productType = 'Mini Future';
+    result.overnightFee = 0.02;
+  } else if (nameUpper.includes('FAKTOR')) {
+    result.productType = 'Faktor-Zertifikat';
+    // Faktor certificates have path dependency costs built in
+    result.overnightFee = 0.005;
+  } else if (nameUpper.includes('OPTIONSSCHEIN') || nameUpper.includes('WARRANT')) {
+    result.productType = 'Optionsschein';
+    // No overnight fee for warrants, but time decay
+  } else if (nameUpper.includes('CFD')) {
+    result.productType = 'CFD';
+    result.overnightFee = 0.02; // CFDs typically ~5-8% p.a.
+  } else if (nameUpper.includes('LEVERAGE') && nameUpper.includes('ETF')) {
+    result.productType = 'Leveraged ETF';
+    // ETFs have expense ratio built in, no direct overnight fee
+    result.spreadPercent = 0.1; // Typical ETF spread
+  }
+  
+  // Estimate spread based on product type
+  if (!result.spreadPercent) {
+    if (result.productType?.includes('Turbo') || result.productType?.includes('Mini')) {
+      result.spreadPercent = 0.05; // Relatively tight spreads
+    } else if (result.productType?.includes('Optionsschein')) {
+      result.spreadPercent = 0.5; // Wider spreads for warrants
+    } else if (result.productType?.includes('Faktor')) {
+      result.spreadPercent = 0.1;
+    }
+  }
+  
+  return result;
 }
 
 export default {
