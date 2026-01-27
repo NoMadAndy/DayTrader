@@ -439,7 +439,12 @@ export function HamburgerMenu() {
                         <input
                           type="number"
                           value={mlSettings.sequenceLength}
-                          onChange={(e) => setMlSettings(prev => ({ ...prev, sequenceLength: parseInt(e.target.value) || 60 }))}
+                          onChange={(e) => setMlSettings(prev => ({ ...prev, sequenceLength: e.target.value === '' ? 0 : parseInt(e.target.value) || prev.sequenceLength }))}
+                          onBlur={(e) => {
+                            const val = parseInt(e.target.value);
+                            if (!val || val < 10) setMlSettings(prev => ({ ...prev, sequenceLength: 10 }));
+                            else if (val > 200) setMlSettings(prev => ({ ...prev, sequenceLength: 200 }));
+                          }}
                           className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
                           min={10}
                           max={200}
@@ -454,7 +459,12 @@ export function HamburgerMenu() {
                         <input
                           type="number"
                           value={mlSettings.forecastDays}
-                          onChange={(e) => setMlSettings(prev => ({ ...prev, forecastDays: parseInt(e.target.value) || 14 }))}
+                          onChange={(e) => setMlSettings(prev => ({ ...prev, forecastDays: e.target.value === '' ? 0 : parseInt(e.target.value) || prev.forecastDays }))}
+                          onBlur={(e) => {
+                            const val = parseInt(e.target.value);
+                            if (!val || val < 1) setMlSettings(prev => ({ ...prev, forecastDays: 1 }));
+                            else if (val > 60) setMlSettings(prev => ({ ...prev, forecastDays: 60 }));
+                          }}
                           className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
                           min={1}
                           max={60}
@@ -469,7 +479,12 @@ export function HamburgerMenu() {
                         <input
                           type="number"
                           value={mlSettings.epochs}
-                          onChange={(e) => setMlSettings(prev => ({ ...prev, epochs: parseInt(e.target.value) || 100 }))}
+                          onChange={(e) => setMlSettings(prev => ({ ...prev, epochs: e.target.value === '' ? 0 : parseInt(e.target.value) || prev.epochs }))}
+                          onBlur={(e) => {
+                            const val = parseInt(e.target.value);
+                            if (!val || val < 10) setMlSettings(prev => ({ ...prev, epochs: 10 }));
+                            else if (val > 500) setMlSettings(prev => ({ ...prev, epochs: 500 }));
+                          }}
                           className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
                           min={10}
                           max={500}
@@ -484,7 +499,12 @@ export function HamburgerMenu() {
                         <input
                           type="number"
                           value={mlSettings.learningRate}
-                          onChange={(e) => setMlSettings(prev => ({ ...prev, learningRate: parseFloat(e.target.value) || 0.001 }))}
+                          onChange={(e) => setMlSettings(prev => ({ ...prev, learningRate: e.target.value === '' ? 0 : parseFloat(e.target.value) || prev.learningRate }))}
+                          onBlur={(e) => {
+                            const val = parseFloat(e.target.value);
+                            if (!val || val < 0.0001) setMlSettings(prev => ({ ...prev, learningRate: 0.0001 }));
+                            else if (val > 0.1) setMlSettings(prev => ({ ...prev, learningRate: 0.1 }));
+                          }}
                           className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
                           min={0.0001}
                           max={0.1}

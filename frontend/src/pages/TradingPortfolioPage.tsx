@@ -55,7 +55,7 @@ import type {
 } from '../types/trading';
 import { StockSelector, PendingOrders, EquityChart } from '../components';
 
-type TabType = 'trading' | 'positions' | 'overview' | 'history' | 'settings';
+type TabType = 'trading' | 'overview' | 'settings';
 
 export function TradingPortfolioPage() {
   const { dataService } = useDataService();
@@ -84,7 +84,7 @@ export function TradingPortfolioPage() {
   const [currentPrice, setCurrentPrice] = useState<number>(0);
   const [productType, setProductType] = useState<ProductType>('stock');
   const [side, setSide] = useState<OrderSide>('buy');
-  const [quantity, setQuantity] = useState<number>(10);
+  const [quantity, setQuantity] = useState<string>('10');
   const [leverage, setLeverage] = useState<number>(1);
   const [stopLoss, setStopLoss] = useState<string>('');
   const [takeProfit, setTakeProfit] = useState<string>('');
@@ -293,7 +293,8 @@ export function TradingPortfolioPage() {
   // Calculate fee preview
   useEffect(() => {
     async function updateFeePreview() {
-      if (!currentPrice || quantity <= 0) {
+      const qty = parseInt(quantity) || 0;
+      if (!currentPrice || qty <= 0) {
         setFeePreview(null);
         return;
       }
@@ -302,7 +303,7 @@ export function TradingPortfolioPage() {
         const fees = await calculateFees({
           productType,
           side,
-          quantity,
+          quantity: qty,
           price: currentPrice,
           leverage,
           brokerProfile: portfolio?.brokerProfile || 'standard',
@@ -343,11 +344,17 @@ export function TradingPortfolioPage() {
           return;
         }
         
+        const qty = parseInt(quantity) || 0;
+        if (qty <= 0) {
+          setError('Bitte gültige Menge eingeben');
+          return;
+        }
+        
         const result = await createPendingOrder({
           portfolioId: portfolio.id,
           symbol: selectedSymbol,
           side,
-          quantity,
+          quantity: qty,
           orderType: orderType as 'limit' | 'stop' | 'stop_limit',
           limitPrice: orderType === 'limit' || orderType === 'stop_limit' ? parsedLimitPrice : undefined,
           stopPrice: orderType === 'stop' || orderType === 'stop_limit' ? parsedStopPrice : undefined,
@@ -358,7 +365,7 @@ export function TradingPortfolioPage() {
         if (result.success) {
           setSuccessMessage(`${getOrderTypeName(orderType)}-Order erstellt für ${selectedSymbol}`);
           await loadPortfolioData();
-          setQuantity(10);
+          setQuantity('10');
           setLimitPrice('');
           setStopOrderPrice('');
           setTimeout(() => setSuccessMessage(null), 5000);
@@ -374,11 +381,17 @@ export function TradingPortfolioPage() {
     }
     
     // Market order
+    const qty = parseInt(quantity) || 0;
+    if (qty <= 0) {
+      setError('Bitte gültige Menge eingeben');
+      return;
+    }
+    
     const request: ExecuteOrderRequest = {
       portfolioId: portfolio.id,
       symbol: selectedSymbol,
       side,
-      quantity,
+      quantity: qty,
       currentPrice,
       productType,
       leverage: productType !== 'stock' ? leverage : 1,
@@ -399,9 +412,9 @@ export function TradingPortfolioPage() {
       const result = await executeMarketOrder(request);
       
       if (result.success) {
-        setSuccessMessage(`Order erfolgreich: ${getSideName(side)} ${quantity}x ${selectedSymbol}`);
+        setSuccessMessage(`Order erfolgreich: ${getSideName(side)} ${qty}x ${selectedSymbol}`);
         await loadPortfolioData();
-        setQuantity(10);
+        setQuantity('10');
         setStopLoss('');
         setTakeProfit('');
         setTimeout(() => setSuccessMessage(null), 5000);
@@ -529,7 +542,7 @@ export function TradingPortfolioPage() {
   // Render login required message
   if (!authState.isAuthenticated) {
     return (
-      <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 py-8">
         <div className="bg-slate-800/50 rounded-xl p-8 text-center">
           <h2 className="text-2xl font-bold mb-4">📊 Paper Trading & Portfolio</h2>
           <p className="text-gray-400 mb-6">
@@ -548,7 +561,7 @@ export function TradingPortfolioPage() {
   
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 py-8">
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
         </div>
@@ -560,40 +573,42 @@ export function TradingPortfolioPage() {
   const canShort = productTypes?.[productType]?.canShort || false;
   
   return (
-    <div className="max-w-7xl mx-auto px-4 py-4 space-y-4">
+    <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4 space-y-4">
       {/* Header with Portfolio Summary */}
-      <div className="bg-slate-800/50 rounded-xl p-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              📊 Paper Trading
-            </h1>
-            <p className="text-gray-400 text-sm mt-1">
-              {portfolio?.name} • {brokerProfiles?.[portfolio?.brokerProfile || 'standard']?.name}
-            </p>
+      <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4">
+        <div className="flex flex-col gap-3 sm:gap-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-lg sm:text-2xl font-bold flex items-center gap-2">
+                📊 <span className="hidden xs:inline">Paper </span>Trading
+              </h1>
+              <p className="text-gray-400 text-xs sm:text-sm mt-0.5 sm:mt-1 truncate max-w-[200px] sm:max-w-none">
+                {portfolio?.name} • {brokerProfiles?.[portfolio?.brokerProfile || 'standard']?.name}
+              </p>
+            </div>
           </div>
           
           {metrics && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-slate-900/50 rounded-lg px-4 py-2">
-                <div className="text-xs text-gray-400">Portfolio-Wert</div>
-                <div className="text-lg font-bold">{formatCurrency(metrics.totalValue)}</div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
+              <div className="bg-slate-900/50 rounded-lg px-2 sm:px-4 py-1.5 sm:py-2">
+                <div className="text-[10px] sm:text-xs text-gray-400">Wert</div>
+                <div className="text-sm sm:text-lg font-bold truncate">{formatCurrency(metrics.totalValue)}</div>
               </div>
-              <div className="bg-slate-900/50 rounded-lg px-4 py-2">
-                <div className="text-xs text-gray-400">P&L</div>
-                <div className={`text-lg font-bold ${metrics.netPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              <div className="bg-slate-900/50 rounded-lg px-2 sm:px-4 py-1.5 sm:py-2">
+                <div className="text-[10px] sm:text-xs text-gray-400">P&L</div>
+                <div className={`text-sm sm:text-lg font-bold truncate ${metrics.netPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {formatCurrency(metrics.netPnl)}
                 </div>
               </div>
-              <div className="bg-slate-900/50 rounded-lg px-4 py-2">
-                <div className="text-xs text-gray-400">Rendite</div>
-                <div className={`text-lg font-bold ${metrics.totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              <div className="bg-slate-900/50 rounded-lg px-2 sm:px-4 py-1.5 sm:py-2">
+                <div className="text-[10px] sm:text-xs text-gray-400">Rendite</div>
+                <div className={`text-sm sm:text-lg font-bold ${metrics.totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {formatPercent(metrics.totalReturn)}
                 </div>
               </div>
-              <div className="bg-slate-900/50 rounded-lg px-4 py-2">
-                <div className="text-xs text-gray-400">Verfügbar</div>
-                <div className="text-lg font-bold text-blue-400">{formatCurrency(metrics.cashBalance)}</div>
+              <div className="bg-slate-900/50 rounded-lg px-2 sm:px-4 py-1.5 sm:py-2">
+                <div className="text-[10px] sm:text-xs text-gray-400">Verfügbar</div>
+                <div className="text-sm sm:text-lg font-bold text-blue-400 truncate">{formatCurrency(metrics.cashBalance)}</div>
               </div>
             </div>
           )}
@@ -620,27 +635,26 @@ export function TradingPortfolioPage() {
         </div>
       )}
       
-      {/* Tabs */}
-      <div className="flex border-b border-slate-700">
+      {/* Tabs - scrollbar horizontal auf Mobile */}
+      <div className="flex border-b border-slate-700 overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
         {[
-          { id: 'trading', label: '📈 Handeln', badge: null },
-          { id: 'positions', label: '📋 Positionen', badge: openPositions.length || null },
-          { id: 'overview', label: '📊 Übersicht', badge: null },
-          { id: 'history', label: '📜 Historie', badge: null },
-          { id: 'settings', label: '⚙️ Einstellungen', badge: null },
+          { id: 'trading', label: '📈 Handeln', shortLabel: '📈', badge: openPositions.length || null },
+          { id: 'overview', label: '📊 Übersicht', shortLabel: '📊', badge: null },
+          { id: 'settings', label: '⚙️ Einstellungen', shortLabel: '⚙️', badge: null },
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as TabType)}
-            className={`flex-1 px-4 py-2.5 font-medium transition-colors whitespace-nowrap flex items-center justify-center gap-2 ${
+            className={`flex-1 min-w-[70px] sm:min-w-0 px-2 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap flex items-center justify-center gap-1 sm:gap-2 ${
               activeTab === tab.id
                 ? 'bg-slate-800 text-white border-b-2 border-blue-500'
                 : 'text-gray-400 hover:text-white hover:bg-slate-800/50'
             }`}
           >
-            {tab.label}
+            <span className="sm:hidden">{tab.shortLabel}</span>
+            <span className="hidden sm:inline">{tab.label}</span>
             {tab.badge && (
-              <span className="px-1.5 py-0.5 text-xs bg-blue-500 rounded-full">{tab.badge}</span>
+              <span className="px-1 sm:px-1.5 py-0.5 text-[10px] sm:text-xs bg-blue-500 rounded-full">{tab.badge}</span>
             )}
           </button>
         ))}
@@ -650,10 +664,12 @@ export function TradingPortfolioPage() {
       <div className="min-h-[500px] w-full">
         {/* TRADING TAB */}
         {activeTab === 'trading' && (
-          <div className="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Order Panel */}
-            <div className="bg-slate-800/50 rounded-xl p-4 space-y-4">
-              <h2 className="text-lg font-semibold">Neue Order</h2>
+          <div className="w-full space-y-3 sm:space-y-4">
+            {/* Top Row: Order Panel + Pending Orders + Quick Stats */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
+              {/* Order Panel */}
+              <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4 space-y-3 sm:space-y-4">
+                <h2 className="text-base sm:text-lg font-semibold">Neue Order</h2>
                 
                 {/* Symbol Selection */}
                 <div>
@@ -668,8 +684,8 @@ export function TradingPortfolioPage() {
                 
                 {/* Product Type */}
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Produkttyp</label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <label className="block text-xs sm:text-sm text-gray-400 mb-1">Produkttyp</label>
+                  <div className="grid grid-cols-4 sm:grid-cols-2 gap-1 sm:gap-2">
                     {['stock', 'cfd', 'knockout', 'factor'].map((type) => (
                       <button
                         key={type}
@@ -680,7 +696,7 @@ export function TradingPortfolioPage() {
                             if (side === 'short') setSide('buy');
                           }
                         }}
-                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        className={`px-1.5 sm:px-3 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-sm font-medium transition-colors ${
                           productType === type
                             ? 'bg-blue-600 text-white'
                             : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
@@ -694,22 +710,22 @@ export function TradingPortfolioPage() {
                 
                 {/* Side */}
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Richtung</label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <label className="block text-xs sm:text-sm text-gray-400 mb-1">Richtung</label>
+                  <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
                     <button
                       onClick={() => setSide('buy')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                      className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-base font-medium transition-colors ${
                         side === 'buy'
                           ? 'bg-green-600 text-white'
                           : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
                       }`}
                     >
-                      📈 Kauf (Long)
+                      📈 <span className="hidden sm:inline">Kauf </span>Long
                     </button>
                     <button
                       onClick={() => setSide('short')}
                       disabled={!canShort}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                      className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-base font-medium transition-colors ${
                         side === 'short'
                           ? 'bg-red-600 text-white'
                           : canShort 
@@ -723,23 +739,23 @@ export function TradingPortfolioPage() {
                 </div>
                 
                 {/* Quantity & Order Type */}
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
                   <div>
-                    <label className="block text-sm text-gray-400 mb-1">Menge</label>
+                    <label className="block text-xs sm:text-sm text-gray-400 mb-1">Menge</label>
                     <input
                       type="number"
                       value={quantity}
-                      onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 0))}
+                      onChange={(e) => setQuantity(e.target.value)}
                       min="1"
-                      className="w-full px-3 py-2 bg-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                      className="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-400 mb-1">Order-Typ</label>
+                    <label className="block text-xs sm:text-sm text-gray-400 mb-1">Order-Typ</label>
                     <select
                       value={orderType}
                       onChange={(e) => setOrderType(e.target.value as OrderType)}
-                      className="w-full px-3 py-2 bg-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                      className="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                     >
                       <option value="market">Market</option>
                       <option value="limit">Limit</option>
@@ -857,7 +873,7 @@ export function TradingPortfolioPage() {
                 <button
                   onClick={handleSubmitOrder}
                   disabled={orderLoading || !feePreview || currentPrice <= 0}
-                  className={`w-full py-3 rounded-lg font-semibold text-white transition-colors ${
+                  className={`w-full py-2.5 sm:py-3 rounded-lg font-semibold text-sm sm:text-base text-white transition-colors ${
                     orderType !== 'market' 
                       ? 'bg-purple-600 hover:bg-purple-700 disabled:bg-purple-900'
                       : side === 'buy'
@@ -868,61 +884,63 @@ export function TradingPortfolioPage() {
                   {orderLoading ? (
                     <span className="flex items-center justify-center gap-2">
                       <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-white"></div>
-                      Wird ausgeführt...
+                      <span className="hidden sm:inline">Wird ausgeführt...</span>
+                      <span className="sm:hidden">...</span>
                     </span>
                   ) : orderType !== 'market' ? (
-                    `📋 ${getOrderTypeName(orderType)}-Order erstellen`
+                    <span><span className="hidden sm:inline">📋 {getOrderTypeName(orderType)}-Order erstellen</span><span className="sm:hidden">{getOrderTypeName(orderType)}</span></span>
                   ) : (
-                    `${side === 'buy' ? '📈 KAUFEN' : '📉 SHORT'} - ${formatCurrency(feePreview?.marginRequired || 0)}`
+                    `${side === 'buy' ? '📈' : '📉'} ${formatCurrency(feePreview?.marginRequired || 0)}`
                   )}
                 </button>
-            </div>
-            
-            {/* Pending Orders */}
-            {portfolio && (
-              <div className="bg-slate-800/50 rounded-xl p-4">
-                <PendingOrders 
-                  portfolioId={portfolio.id}
-                  onOrderCancelled={loadPortfolioData}
-                />
               </div>
-            )}
             
-            {/* Quick Stats */}
-            {metrics && (
-              <div className="bg-slate-800/50 rounded-xl p-4">
-                <h2 className="text-lg font-semibold mb-3">📊 Performance</h2>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Trades gesamt:</span>
-                    <span>{metrics.totalTrades}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Gewinner / Verlierer:</span>
-                    <span>
-                      <span className="text-green-400">{metrics.winningTrades}</span>
-                      {' / '}
-                      <span className="text-red-400">{metrics.losingTrades}</span>
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Win-Rate:</span>
-                    <span className={metrics.winRate >= 50 ? 'text-green-400' : 'text-red-400'}>
-                      {metrics.winRate.toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className="flex justify-between border-t border-slate-700 pt-2 mt-2">
-                    <span className="text-gray-400">Gebühren gesamt:</span>
-                    <span className="text-yellow-400">{formatCurrency(metrics.totalFees)}</span>
+              {/* Pending Orders */}
+              {portfolio && (
+                <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4">
+                  <PendingOrders 
+                    portfolioId={portfolio.id}
+                    onOrderCancelled={loadPortfolioData}
+                  />
+                </div>
+              )}
+            
+              {/* Quick Stats */}
+              {metrics && (
+                <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4">
+                  <h2 className="text-base sm:text-lg font-semibold mb-3">📊 Performance</h2>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Trades gesamt:</span>
+                      <span>{metrics.totalTrades}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Gewinner / Verlierer:</span>
+                      <span>
+                        <span className="text-green-400">{metrics.winningTrades}</span>
+                        {' / '}
+                        <span className="text-red-400">{metrics.losingTrades}</span>
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Win-Rate:</span>
+                      <span className={metrics.winRate >= 50 ? 'text-green-400' : 'text-red-400'}>
+                        {metrics.winRate.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-t border-slate-700 pt-2 mt-2">
+                      <span className="text-gray-400">Gebühren gesamt:</span>
+                      <span className="text-yellow-400">{formatCurrency(metrics.totalFees)}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
             
             {/* Margin Warnings */}
             {metrics?.isMarginWarning && (
-              <div className="bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-4">
-                <div className="flex items-center gap-2 text-yellow-300">
+              <div className="bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-2.5 sm:p-4">
+                <div className="flex items-center gap-2 text-yellow-300 text-xs sm:text-base">
                   <span>⚠️</span>
                   <span className="font-medium">Margin-Warnung: {metrics.marginLevel?.toFixed(1)}%</span>
                 </div>
@@ -930,60 +948,55 @@ export function TradingPortfolioPage() {
             )}
             
             {metrics?.isLiquidationRisk && (
-              <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4">
-                <div className="flex items-center gap-2 text-red-300">
+              <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-2.5 sm:p-4">
+                <div className="flex items-center gap-2 text-red-300 text-xs sm:text-base">
                   <span>🚨</span>
                   <span className="font-medium">Liquidations-Risiko! Margin: {metrics.marginLevel?.toFixed(1)}%</span>
                 </div>
               </div>
             )}
-          </div>
-        )}
-        
-        {/* POSITIONS TAB */}
-        {activeTab === 'positions' && (
-          <div className="w-full space-y-4">
-            {/* Open Positions */}
-            <div className="bg-slate-800/50 rounded-xl p-4">
-              <h3 className="text-lg font-semibold mb-4">📈 Offene Positionen ({openPositions.length})</h3>
+            
+            {/* Open Positions - integrated into Trading Tab */}
+            <div>
+              <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">📈 Offene Positionen ({openPositions.length})</h3>
               {openPositions.length === 0 ? (
-                <div className="text-center py-8 text-gray-400">
-                  <div className="text-4xl mb-2">📭</div>
-                  <p>Keine offenen Positionen</p>
+                <div className="text-center py-6 sm:py-8 text-gray-400 bg-slate-800/50 rounded-xl">
+                  <div className="text-3xl sm:text-4xl mb-2">📭</div>
+                  <p className="text-sm sm:text-base">Keine offenen Positionen</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-4">
                   {openPositions.map((position) => (
-                    <div key={position.id} className="bg-slate-900/50 rounded-lg p-4">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold text-xl">{position.symbol}</span>
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                    <div key={position.id} className="bg-slate-800/50 rounded-xl p-2.5 sm:p-4">
+                      <div className="flex items-start justify-between mb-2 sm:mb-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
+                            <span className="font-semibold text-sm sm:text-xl">{position.symbol}</span>
+                            <span className={`px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-xs font-medium ${
                               position.side === 'long' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
                             }`}>
                               {position.side.toUpperCase()}
                             </span>
-                            <span className="px-2 py-0.5 rounded text-xs bg-slate-700 text-gray-300">
+                            <span className="hidden sm:inline px-2 py-0.5 rounded text-xs bg-slate-700 text-gray-300">
                               {getProductTypeName(position.productType)}
                             </span>
                             {position.leverage > 1 && (
-                              <span className="px-2 py-0.5 rounded text-xs bg-blue-500/20 text-blue-400">
+                              <span className="px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-xs bg-blue-500/20 text-blue-400">
                                 1:{position.leverage}
                               </span>
                             )}
                           </div>
-                          <div className="text-sm text-gray-400 mt-1">
+                          <div className="text-[10px] sm:text-sm text-gray-400 mt-0.5 sm:mt-1">
                             {position.quantity}x @ {formatCurrency(position.entryPrice)}
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className={`text-2xl font-bold ${
+                        <div className="text-right flex-shrink-0 ml-2">
+                          <div className={`text-base sm:text-2xl font-bold ${
                             position.unrealizedPnl >= 0 ? 'text-green-400' : 'text-red-400'
                           }`}>
                             {formatCurrency(position.unrealizedPnl)}
                           </div>
-                          <div className={`text-sm ${
+                          <div className={`text-[10px] sm:text-sm ${
                             position.leveragedPnlPercent >= 0 ? 'text-green-400' : 'text-red-400'
                           }`}>
                             {formatPercent(position.leveragedPnlPercent)}
@@ -991,56 +1004,57 @@ export function TradingPortfolioPage() {
                         </div>
                       </div>
                       
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-3">
-                        <div className="bg-slate-800/50 rounded p-2">
-                          <div className="text-gray-500 text-xs">Aktueller Kurs</div>
-                          <div className="font-medium">{formatCurrency(position.currentPrice || position.entryPrice)}</div>
+                      <div className="grid grid-cols-4 gap-1 sm:gap-3 text-[10px] sm:text-sm mb-2 sm:mb-3">
+                        <div className="bg-slate-900/50 rounded p-1 sm:p-2">
+                          <div className="text-gray-500 text-[9px] sm:text-xs">Kurs</div>
+                          <div className="font-medium truncate text-[10px] sm:text-sm">{formatCurrency(position.currentPrice || position.entryPrice)}</div>
                         </div>
-                        <div className="bg-slate-800/50 rounded p-2">
-                          <div className="text-gray-500 text-xs">Positionswert</div>
-                          <div className="font-medium">{formatCurrency((position.currentPrice || position.entryPrice) * position.quantity)}</div>
+                        <div className="bg-slate-900/50 rounded p-1 sm:p-2">
+                          <div className="text-gray-500 text-[9px] sm:text-xs">Wert</div>
+                          <div className="font-medium truncate text-[10px] sm:text-sm">{formatCurrency((position.currentPrice || position.entryPrice) * position.quantity)}</div>
                         </div>
-                        <div className="bg-slate-800/50 rounded p-2">
-                          <div className="text-gray-500 text-xs">Margin</div>
-                          <div className="font-medium">{formatCurrency(position.marginUsed || 0)}</div>
+                        <div className="bg-slate-900/50 rounded p-1 sm:p-2">
+                          <div className="text-gray-500 text-[9px] sm:text-xs">Margin</div>
+                          <div className="font-medium truncate text-[10px] sm:text-sm">{formatCurrency(position.marginUsed || 0)}</div>
                         </div>
-                        <div className="bg-slate-800/50 rounded p-2">
-                          <div className="text-gray-500 text-xs">Gebühren</div>
-                          <div className="font-medium text-yellow-400">{formatCurrency(position.totalFeesPaid)}</div>
+                        <div className="bg-slate-900/50 rounded p-1 sm:p-2">
+                          <div className="text-gray-500 text-[9px] sm:text-xs">Gebühren</div>
+                          <div className="font-medium text-yellow-400 truncate text-[10px] sm:text-sm">{formatCurrency(position.totalFeesPaid)}</div>
                         </div>
                       </div>
                       
-                      <div className="grid grid-cols-3 gap-3 text-sm mb-3">
-                        <div className="bg-slate-800/50 rounded p-2">
-                          <div className="text-gray-500 text-xs">Geöffnet</div>
-                          <div className="font-medium">{new Date(position.openedAt).toLocaleDateString('de-DE')}</div>
+                      {/* Second row of details - simpler on mobile */}
+                      <div className="grid grid-cols-3 gap-1 sm:gap-3 text-[10px] sm:text-sm mb-2 sm:mb-3">
+                        <div className="bg-slate-900/50 rounded p-1 sm:p-2">
+                          <div className="text-gray-500 text-[9px] sm:text-xs">Datum</div>
+                          <div className="font-medium text-[10px] sm:text-sm">{new Date(position.openedAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</div>
                         </div>
-                        <div className="bg-slate-800/50 rounded p-2">
-                          <div className="text-gray-500 text-xs">Haltetage</div>
-                          <div className="font-medium">{position.daysHeld} Tage</div>
+                        <div className="bg-slate-900/50 rounded p-1 sm:p-2">
+                          <div className="text-gray-500 text-[9px] sm:text-xs">Tage</div>
+                          <div className="font-medium text-[10px] sm:text-sm">{position.daysHeld}</div>
                         </div>
-                        <div className="bg-slate-800/50 rounded p-2">
-                          <div className="text-gray-500 text-xs">Hebel</div>
-                          <div className="font-medium">{position.leverage > 1 ? `1:${position.leverage}` : '—'}</div>
+                        <div className="bg-slate-900/50 rounded p-1 sm:p-2">
+                          <div className="text-gray-500 text-[9px] sm:text-xs">Hebel</div>
+                          <div className="font-medium text-[10px] sm:text-sm">{position.leverage > 1 ? `${position.leverage}x` : '—'}</div>
                         </div>
                       </div>
                       
                       {/* Liquidation Info for leveraged positions */}
                       {position.leverage > 1 && position.liquidationPrice && (
-                        <div className="bg-red-500/10 rounded p-2 mb-3">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-gray-400">Liquidation bei:</span>
+                        <div className="bg-red-500/10 rounded p-1.5 sm:p-2 mb-2 sm:mb-3">
+                          <div className="flex items-center justify-between text-xs sm:text-sm">
+                            <span className="text-gray-400">Liquidation:</span>
                             <span className="text-red-400 font-medium">{formatCurrency(position.liquidationPrice)}</span>
                           </div>
                           {position.distanceToLiquidation !== null && (
-                            <div className="mt-2">
-                              <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                                <span>Abstand zur Liquidation</span>
+                            <div className="mt-1.5 sm:mt-2">
+                              <div className="flex items-center justify-between text-[10px] sm:text-xs text-gray-500 mb-1">
+                                <span>Abstand</span>
                                 <span className={position.distanceToLiquidation > 20 ? 'text-green-400' : 'text-red-400'}>
                                   {position.distanceToLiquidation.toFixed(1)}%
                                 </span>
                               </div>
-                              <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                              <div className="h-1.5 sm:h-2 bg-slate-700 rounded-full overflow-hidden">
                                 <div 
                                   className={`h-full transition-all ${
                                     position.distanceToLiquidation > 50 ? 'bg-green-500' :
@@ -1055,56 +1069,56 @@ export function TradingPortfolioPage() {
                       )}
                       
                       {/* SL/TP Display & Edit */}
-                      <div className="border-t border-slate-700 pt-3">
+                      <div className="border-t border-slate-700 pt-2 sm:pt-3">
                         {editingPosition === position.id ? (
                           <div className="space-y-2">
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
                               <div>
-                                <label className="text-xs text-gray-400">Stop-Loss</label>
+                                <label className="text-[10px] sm:text-xs text-gray-400">Stop-Loss</label>
                                 <input
                                   type="number"
                                   value={editStopLoss}
                                   onChange={(e) => setEditStopLoss(e.target.value)}
                                   placeholder="Kein SL"
                                   step="0.01"
-                                  className="w-full px-2 py-1.5 bg-slate-800 rounded text-sm text-white focus:ring-1 focus:ring-red-500 outline-none"
+                                  className="w-full px-2 py-1 sm:py-1.5 bg-slate-800 rounded text-xs sm:text-sm text-white focus:ring-1 focus:ring-red-500 outline-none"
                                 />
                               </div>
                               <div>
-                                <label className="text-xs text-gray-400">Take-Profit</label>
+                                <label className="text-[10px] sm:text-xs text-gray-400">Take-Profit</label>
                                 <input
                                   type="number"
                                   value={editTakeProfit}
                                   onChange={(e) => setEditTakeProfit(e.target.value)}
                                   placeholder="Kein TP"
                                   step="0.01"
-                                  className="w-full px-2 py-1.5 bg-slate-800 rounded text-sm text-white focus:ring-1 focus:ring-green-500 outline-none"
+                                  className="w-full px-2 py-1 sm:py-1.5 bg-slate-800 rounded text-xs sm:text-sm text-white focus:ring-1 focus:ring-green-500 outline-none"
                                 />
                               </div>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex gap-1.5 sm:gap-2">
                               <button
                                 onClick={() => {
                                   setEditingPosition(null);
                                   setEditStopLoss('');
                                   setEditTakeProfit('');
                                 }}
-                                className="flex-1 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-sm"
+                                className="flex-1 px-2 sm:px-3 py-1 sm:py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-xs sm:text-sm"
                               >
                                 Abbrechen
                               </button>
                               <button
                                 onClick={() => handleUpdatePositionLevels(position.id)}
                                 disabled={orderLoading}
-                                className="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-sm disabled:opacity-50"
+                                className="flex-1 px-2 sm:px-3 py-1 sm:py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-xs sm:text-sm disabled:opacity-50"
                               >
-                                Speichern
+                                OK
                               </button>
                             </div>
                           </div>
                         ) : (
-                          <div className="flex items-center justify-between">
-                            <div className="flex gap-4 text-sm">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2">
+                            <div className="flex gap-2 sm:gap-4 text-[10px] sm:text-sm">
                               <span className="text-gray-500">
                                 SL: <span className={position.stopLoss ? 'text-red-400 font-medium' : 'text-gray-600'}>
                                   {position.stopLoss ? formatCurrency(position.stopLoss) : '—'}
@@ -1116,17 +1130,17 @@ export function TradingPortfolioPage() {
                                 </span>
                               </span>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex gap-1.5 sm:gap-2">
                               <button
                                 onClick={() => startEditingPosition(position)}
-                                className="px-3 py-1.5 text-sm text-gray-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded transition-colors"
+                                className="flex-1 sm:flex-none px-2 py-1 sm:py-1.5 text-[10px] sm:text-sm text-gray-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded transition-colors"
                               >
                                 ✏️ SL/TP
                               </button>
                               <button
                                 onClick={() => handleClosePosition(position)}
                                 disabled={orderLoading}
-                                className="px-4 py-1.5 bg-red-600/20 hover:bg-red-600/40 text-red-400 rounded text-sm font-medium transition-colors disabled:opacity-50"
+                                className="flex-1 sm:flex-none px-2 sm:px-3 py-1 sm:py-1.5 bg-red-600/20 hover:bg-red-600/40 text-red-400 rounded text-[10px] sm:text-sm font-medium transition-colors disabled:opacity-50"
                               >
                                 Schließen
                               </button>
@@ -1140,50 +1154,93 @@ export function TradingPortfolioPage() {
               )}
             </div>
             
-            {/* Closed Positions History */}
-            <div className="bg-slate-800/50 rounded-xl p-4">
-              <h3 className="text-lg font-semibold mb-4">📜 Geschlossene Positionen ({allPositions.filter(p => !p.isOpen).length})</h3>
+            {/* Closed Positions History - integrated into Trading Tab */}
+            <div>
+              <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">📜 Geschlossen ({allPositions.filter(p => !p.isOpen).length})</h3>
               {allPositions.filter(p => !p.isOpen).length === 0 ? (
-                <div className="text-center py-6 text-gray-400">Noch keine geschlossenen Positionen</div>
+                <div className="text-center py-6 text-gray-400 text-sm bg-slate-800/50 rounded-xl">Noch keine geschlossenen Positionen</div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-gray-400 border-b border-slate-700">
-                        <th className="pb-2 pr-4">Symbol</th>
-                        <th className="pb-2 pr-4">Typ</th>
-                        <th className="pb-2 pr-4">Seite</th>
-                        <th className="pb-2 pr-4 text-right">Menge</th>
-                        <th className="pb-2 pr-4 text-right">Einstieg</th>
-                        <th className="pb-2 pr-4 text-right">Ausstieg</th>
-                        <th className="pb-2 pr-4 text-right">P&L</th>
-                        <th className="pb-2 text-right">Geschlossen</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {allPositions.filter(p => !p.isOpen).map((pos) => (
-                        <tr key={pos.id} className="border-b border-slate-800 hover:bg-slate-800/30">
-                          <td className="py-3 pr-4 font-medium">{pos.symbol}</td>
-                          <td className="py-3 pr-4 text-gray-400">{getProductTypeName(pos.productType)}</td>
-                          <td className="py-3 pr-4">
-                            <span className={pos.side === 'long' ? 'text-green-400' : 'text-red-400'}>
+                <>
+                  {/* Mobile: Card Layout */}
+                  <div className="lg:hidden grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {allPositions.filter(p => !p.isOpen).slice(0, 6).map((pos) => (
+                      <div key={pos.id} className="bg-slate-800/50 rounded-xl p-2.5">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-sm">{pos.symbol}</span>
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${pos.side === 'long' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
                               {pos.side.toUpperCase()}
                             </span>
-                          </td>
-                          <td className="py-3 pr-4 text-right">{pos.quantity}</td>
-                          <td className="py-3 pr-4 text-right">{formatCurrency(pos.entryPrice)}</td>
-                          <td className="py-3 pr-4 text-right">{formatCurrency(pos.closePrice || pos.entryPrice)}</td>
-                          <td className={`py-3 pr-4 text-right font-medium ${(pos.realizedPnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          </div>
+                          <div className={`text-sm font-bold ${(pos.realizedPnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                             {formatCurrency(pos.realizedPnl || 0)}
-                          </td>
-                          <td className="py-3 text-right text-gray-400">
-                            {pos.closedAt ? new Date(pos.closedAt).toLocaleDateString('de-DE') : '-'}
-                          </td>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1.5 text-[10px]">
+                          <div className="bg-slate-900/50 rounded p-1.5">
+                            <div className="text-gray-500">Menge</div>
+                            <div className="font-medium">{pos.quantity}x</div>
+                          </div>
+                          <div className="bg-slate-900/50 rounded p-1.5">
+                            <div className="text-gray-500">Einstieg</div>
+                            <div className="font-medium truncate">{formatCurrency(pos.entryPrice)}</div>
+                          </div>
+                          <div className="bg-slate-900/50 rounded p-1.5">
+                            <div className="text-gray-500">Ausstieg</div>
+                            <div className="font-medium truncate">{formatCurrency(pos.closePrice || pos.entryPrice)}</div>
+                          </div>
+                        </div>
+                        <div className="text-[10px] text-gray-500 mt-1.5">
+                          {pos.closedAt ? new Date(pos.closedAt).toLocaleDateString('de-DE') : '-'} • {getProductTypeName(pos.productType)}
+                        </div>
+                      </div>
+                    ))}
+                    {allPositions.filter(p => !p.isOpen).length > 6 && (
+                      <div className="text-center text-xs text-gray-500 py-2 col-span-full">
+                        + {allPositions.filter(p => !p.isOpen).length - 6} weitere
+                      </div>
+                    )}
+                  </div>
+                  {/* Desktop: Table Layout */}
+                  <div className="hidden lg:block overflow-x-auto bg-slate-800/50 rounded-xl p-4">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-gray-400 border-b border-slate-700">
+                          <th className="pb-2 pr-4">Symbol</th>
+                          <th className="pb-2 pr-4">Typ</th>
+                          <th className="pb-2 pr-4">Seite</th>
+                          <th className="pb-2 pr-4 text-right">Menge</th>
+                          <th className="pb-2 pr-4 text-right">Einstieg</th>
+                          <th className="pb-2 pr-4 text-right">Ausstieg</th>
+                          <th className="pb-2 pr-4 text-right">P&L</th>
+                          <th className="pb-2 text-right">Datum</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {allPositions.filter(p => !p.isOpen).map((pos) => (
+                          <tr key={pos.id} className="border-b border-slate-800 hover:bg-slate-800/30">
+                            <td className="py-2.5 pr-4 font-medium">{pos.symbol}</td>
+                            <td className="py-2.5 pr-4 text-gray-400">{getProductTypeName(pos.productType)}</td>
+                            <td className="py-2.5 pr-4">
+                              <span className={pos.side === 'long' ? 'text-green-400' : 'text-red-400'}>
+                                {pos.side.toUpperCase()}
+                              </span>
+                            </td>
+                            <td className="py-2.5 pr-4 text-right">{pos.quantity}</td>
+                            <td className="py-2.5 pr-4 text-right">{formatCurrency(pos.entryPrice)}</td>
+                            <td className="py-2.5 pr-4 text-right">{formatCurrency(pos.closePrice || pos.entryPrice)}</td>
+                            <td className={`py-2.5 pr-4 text-right font-medium ${(pos.realizedPnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {formatCurrency(pos.realizedPnl || 0)}
+                            </td>
+                            <td className="py-2.5 text-right text-gray-400">
+                              {pos.closedAt ? new Date(pos.closedAt).toLocaleDateString('de-DE') : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -1191,36 +1248,36 @@ export function TradingPortfolioPage() {
         
         {/* OVERVIEW TAB */}
         {activeTab === 'overview' && metrics && (
-          <div className="w-full space-y-4">
+          <div className="w-full space-y-3 sm:space-y-4">
             {/* Key Metrics */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-slate-800/50 rounded-lg p-4">
-                <div className="text-sm text-gray-400">Gesamtwert</div>
-                <div className="text-xl font-bold">{formatCurrency(metrics.totalValue)}</div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
+              <div className="bg-slate-800/50 rounded-lg p-2.5 sm:p-4">
+                <div className="text-xs sm:text-sm text-gray-400">Gesamtwert</div>
+                <div className="text-base sm:text-xl font-bold truncate">{formatCurrency(metrics.totalValue)}</div>
               </div>
-              <div className="bg-slate-800/50 rounded-lg p-4">
-                <div className="text-sm text-gray-400">Bargeld</div>
-                <div className="text-xl font-bold text-blue-400">{formatCurrency(metrics.cashBalance)}</div>
+              <div className="bg-slate-800/50 rounded-lg p-2.5 sm:p-4">
+                <div className="text-xs sm:text-sm text-gray-400">Bargeld</div>
+                <div className="text-base sm:text-xl font-bold text-blue-400 truncate">{formatCurrency(metrics.cashBalance)}</div>
               </div>
-              <div className="bg-slate-800/50 rounded-lg p-4">
-                <div className="text-sm text-gray-400">Unrealisiert P&L</div>
-                <div className={`text-xl font-bold ${metrics.unrealizedPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              <div className="bg-slate-800/50 rounded-lg p-2.5 sm:p-4">
+                <div className="text-xs sm:text-sm text-gray-400">Unrealisiert</div>
+                <div className={`text-base sm:text-xl font-bold truncate ${metrics.unrealizedPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {formatCurrency(metrics.unrealizedPnl)}
                 </div>
               </div>
-              <div className="bg-slate-800/50 rounded-lg p-4">
-                <div className="text-sm text-gray-400">Realisiert P&L</div>
-                <div className={`text-xl font-bold ${metrics.realizedPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              <div className="bg-slate-800/50 rounded-lg p-2.5 sm:p-4">
+                <div className="text-xs sm:text-sm text-gray-400">Realisiert</div>
+                <div className={`text-base sm:text-xl font-bold truncate ${metrics.realizedPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {formatCurrency(metrics.realizedPnl)}
                 </div>
               </div>
             </div>
             
             {/* Trading Stats & Fees */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-slate-800/50 rounded-xl p-4">
-                <h3 className="text-lg font-semibold mb-3">📊 Trading-Statistik</h3>
-                <div className="space-y-2 text-sm">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+              <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4">
+                <h3 className="text-base sm:text-lg font-semibold mb-2 sm:mb-3">📊 Trading-Statistik</h3>
+                <div className="space-y-1 sm:space-y-2 text-xs sm:text-sm">
                   <div className="flex justify-between py-2 border-b border-slate-700">
                     <span className="text-gray-400">Trades gesamt</span>
                     <span className="font-medium">{metrics.totalTrades}</span>
@@ -1250,10 +1307,10 @@ export function TradingPortfolioPage() {
                 </div>
               </div>
               
-              <div className="bg-slate-800/50 rounded-xl p-4">
-                <h3 className="text-lg font-semibold mb-3">💰 Gebühren-Übersicht</h3>
+              <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4">
+                <h3 className="text-base sm:text-lg font-semibold mb-2 sm:mb-3">💰 Gebühren</h3>
                 {feeSummary && (
-                  <div className="space-y-2 text-sm">
+                  <div className="space-y-1 sm:space-y-2 text-xs sm:text-sm">
                     <div className="flex justify-between py-2 border-b border-slate-700">
                       <span className="text-gray-400">Kommissionen</span>
                       <span className="text-yellow-400">{formatCurrency(feeSummary.commission)}</span>
@@ -1277,20 +1334,20 @@ export function TradingPortfolioPage() {
             
             {/* Margin Info */}
             {metrics.marginUsed > 0 && (
-              <div className="bg-slate-800/50 rounded-xl p-4">
-                <h3 className="text-lg font-semibold mb-3">📊 Margin-Status</h3>
-                <div className="grid grid-cols-3 gap-4">
+              <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4">
+                <h3 className="text-base sm:text-lg font-semibold mb-2 sm:mb-3">📊 Margin-Status</h3>
+                <div className="grid grid-cols-3 gap-2 sm:gap-4">
                   <div>
-                    <div className="text-sm text-gray-400">Verwendete Margin</div>
-                    <div className="text-lg font-medium">{formatCurrency(metrics.marginUsed)}</div>
+                    <div className="text-xs sm:text-sm text-gray-400">Verwendet</div>
+                    <div className="text-sm sm:text-lg font-medium truncate">{formatCurrency(metrics.marginUsed)}</div>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-400">Freie Margin</div>
-                    <div className="text-lg font-medium text-blue-400">{formatCurrency(metrics.freeMargin)}</div>
+                    <div className="text-xs sm:text-sm text-gray-400">Frei</div>
+                    <div className="text-sm sm:text-lg font-medium text-blue-400 truncate">{formatCurrency(metrics.freeMargin)}</div>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-400">Margin-Level</div>
-                    <div className={`text-lg font-medium ${
+                    <div className="text-xs sm:text-sm text-gray-400">Level</div>
+                    <div className={`text-sm sm:text-lg font-medium ${
                       (metrics.marginLevel || 0) > 150 ? 'text-green-400' :
                       (metrics.marginLevel || 0) > 100 ? 'text-yellow-400' : 'text-red-400'
                     }`}>
@@ -1301,190 +1358,209 @@ export function TradingPortfolioPage() {
               </div>
             )}
             
-            {/* Equity Chart */}
-            <div className="bg-slate-800/50 rounded-xl p-4">
-              <h3 className="text-lg font-semibold mb-3">📈 Portfolio-Entwicklung</h3>
-              <EquityChart portfolioId={portfolio!.id} days={90} height={250} />
-            </div>
-          </div>
-        )}
-        
-        {/* HISTORY TAB */}
-        {activeTab === 'history' && (
-          <div className="w-full bg-slate-800/50 rounded-xl p-4">
-            <h3 className="text-lg font-semibold mb-4">Transaktions-Historie ({transactions.length})</h3>
-            {transactions.length === 0 ? (
-              <div className="text-center py-8 text-gray-400">Noch keine Transaktionen vorhanden</div>
-            ) : (
-              <div className="space-y-2">
-                {transactions.map((tx) => (
-                  <div key={tx.id} className="bg-slate-900/50 rounded-lg p-3 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                        tx.transactionType === 'buy' ? 'bg-green-500/20 text-green-400' :
-                        tx.transactionType === 'sell' || tx.transactionType === 'close' ? 'bg-red-500/20 text-red-400' :
-                        tx.transactionType === 'overnight_fee' ? 'bg-yellow-500/20 text-yellow-400' :
-                        'bg-blue-500/20 text-blue-400'
-                      }`}>
-                        {tx.transactionType === 'buy' ? '📈' :
-                         tx.transactionType === 'sell' || tx.transactionType === 'close' ? '📉' :
-                         tx.transactionType === 'overnight_fee' ? '🌙' :
-                         tx.transactionType === 'reset' ? '🔄' : '💰'}
-                      </div>
-                      <div>
-                        <div className="font-medium">
-                          {tx.symbol ? `${getSideName(tx.transactionType)} ${tx.symbol}` : 
-                           tx.transactionType === 'reset' ? 'Portfolio Reset' :
-                           tx.transactionType === 'overnight_fee' ? 'Overnight-Gebühr' :
-                           tx.description || tx.transactionType}
-                        </div>
-                        <div className="text-xs text-gray-400">
-                          {tx.quantity && `${tx.quantity}x @ ${formatCurrency(tx.price || 0)}`}
-                          {tx.totalFees > 0 && ` • Gebühren: ${formatCurrency(tx.totalFees)}`}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className={`font-medium ${(tx.cashImpact || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {tx.cashImpact ? formatCurrency(tx.cashImpact) : '-'}
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        {new Date(tx.executedAt).toLocaleString('de-DE')}
-                      </div>
-                    </div>
-                  </div>
-                ))}
+            {/* Equity Chart & Transactions - 2 columns on desktop */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+              {/* Equity Chart */}
+              <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4">
+                <h3 className="text-base sm:text-lg font-semibold mb-2 sm:mb-3">📈 Portfolio-Entwicklung</h3>
+                <EquityChart portfolioId={portfolio!.id} days={90} height={200} />
               </div>
-            )}
+              
+              {/* Transaction History */}
+              <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4 overflow-hidden">
+                <h3 className="text-base sm:text-lg font-semibold mb-2 sm:mb-3">📜 Transaktionen ({transactions.length})</h3>
+                {transactions.length === 0 ? (
+                  <div className="text-center py-6 sm:py-8 text-gray-400 text-sm">Noch keine Transaktionen</div>
+                ) : (
+                  <div className="space-y-1 sm:space-y-2 max-h-[300px] overflow-y-auto">
+                    {transactions.slice(0, 20).map((tx) => {
+                      // Kürze lange Beschreibungen für Mobile
+                      const getShortDescription = () => {
+                        if (tx.symbol) return `${getSideName(tx.transactionType)} ${tx.symbol}`;
+                        if (tx.transactionType === 'reset') return 'Reset';
+                        if (tx.transactionType === 'overnight_fee') return 'Overnight';
+                        if (tx.description?.includes('Startkapital') || tx.description?.includes('Kapital')) return 'Kapital';
+                        return tx.transactionType;
+                      };
+                      
+                      return (
+                        <div key={tx.id} className="bg-slate-900/50 rounded-lg p-1.5 sm:p-3 flex items-center gap-1.5 sm:gap-3">
+                          {/* Icon */}
+                          <div className={`w-5 h-5 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-[10px] sm:text-base flex-shrink-0 ${
+                            tx.transactionType === 'buy' ? 'bg-green-500/20 text-green-400' :
+                            tx.transactionType === 'sell' || tx.transactionType === 'close' ? 'bg-red-500/20 text-red-400' :
+                            tx.transactionType === 'overnight_fee' ? 'bg-yellow-500/20 text-yellow-400' :
+                            'bg-blue-500/20 text-blue-400'
+                          }`}>
+                            {tx.transactionType === 'buy' ? '📈' :
+                             tx.transactionType === 'sell' || tx.transactionType === 'close' ? '📉' :
+                             tx.transactionType === 'overnight_fee' ? '🌙' :
+                             tx.transactionType === 'reset' ? '🔄' : '💰'}
+                          </div>
+                          
+                          {/* Description */}
+                          <div className="min-w-0 flex-1 overflow-hidden">
+                            <div className="font-medium text-[11px] sm:text-sm truncate">
+                              {getShortDescription()}
+                            </div>
+                            <div className="text-[9px] sm:text-xs text-gray-400">
+                              {tx.quantity ? `${tx.quantity}x` : new Date(tx.executedAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
+                            </div>
+                          </div>
+                          
+                          {/* Amount & Date */}
+                          <div className="text-right flex-shrink-0">
+                            <div className={`font-bold text-[11px] sm:text-sm ${(tx.cashImpact || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {tx.cashImpact ? formatCurrency(tx.cashImpact) : '-'}
+                            </div>
+                            <div className="text-[9px] sm:text-xs text-gray-400">
+                              {new Date(tx.executedAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {transactions.length > 20 && (
+                      <div className="text-center text-xs text-gray-500 py-2">
+                        + {transactions.length - 20} weitere Transaktionen
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
         
         {/* SETTINGS TAB */}
         {activeTab === 'settings' && portfolio && (
-          <div className="w-full space-y-4">
-            {/* Capital */}
-            <div className="bg-slate-800/50 rounded-xl p-4">
-              <h3 className="text-lg font-semibold mb-4">💰 Startkapital</h3>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <div className="text-sm text-gray-400">Aktuelles Startkapital</div>
-                  <div className="text-2xl font-bold">{formatCurrency(portfolio.initialCapital)}</div>
+          <div className="w-full space-y-2 sm:space-y-4">
+            {/* Top Row: Capital + Danger Zone */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-4">
+              {/* Capital */}
+              <div className="bg-slate-800/50 rounded-xl p-2.5 sm:p-4">
+                <h3 className="text-base sm:text-lg font-semibold mb-2 sm:mb-4">💰 Startkapital</h3>
+                <div className="flex items-center justify-between gap-2 sm:gap-3 mb-2 sm:mb-4">
+                  <div>
+                    <div className="text-[10px] sm:text-sm text-gray-400">Aktuelles Startkapital</div>
+                    <div className="text-lg sm:text-2xl font-bold">{formatCurrency(portfolio.initialCapital)}</div>
+                  </div>
+                  {!showCapitalChange && (
+                    <button
+                      onClick={() => {
+                        setNewCapital(portfolio.initialCapital.toString());
+                        setShowCapitalChange(true);
+                      }}
+                      className="px-2.5 sm:px-4 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors text-xs sm:text-base"
+                    >
+                      Ändern
+                    </button>
+                  )}
                 </div>
-                {!showCapitalChange && (
-                  <button
-                    onClick={() => {
-                      setNewCapital(portfolio.initialCapital.toString());
-                      setShowCapitalChange(true);
-                    }}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                  >
-                    Ändern
-                  </button>
-                )}
-              </div>
-              
-              {showCapitalChange && (
-                <div className="border-t border-slate-700 pt-4">
-                  <p className="text-sm text-yellow-400 mb-3">
-                    ⚠️ Eine Änderung des Startkapitals setzt das Portfolio zurück.
-                  </p>
-                  <div className="flex gap-3 items-end">
-                    <div className="flex-1">
+                
+                {showCapitalChange && (
+                  <div className="border-t border-slate-700 pt-3 sm:pt-4">
+                    <p className="text-xs sm:text-sm text-yellow-400 mb-2 sm:mb-3">
+                      ⚠️ Änderung setzt Portfolio zurück.
+                    </p>
+                    <div className="flex flex-col gap-2">
                       <input
                         type="text"
                         value={newCapital}
                         onChange={(e) => setNewCapital(e.target.value)}
                         placeholder="z.B. 50000"
-                        className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:border-blue-500 focus:outline-none"
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:border-blue-500 focus:outline-none text-sm"
                       />
+                      <div className="flex gap-1.5 flex-wrap">
+                        {[1000, 5000, 10000, 25000, 50000, 100000].map((amount) => (
+                          <button
+                            key={amount}
+                            onClick={() => setNewCapital(amount.toString())}
+                            className={`px-2 py-1 text-[10px] sm:text-xs rounded transition-colors ${
+                              newCapital === amount.toString()
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-slate-700 hover:bg-slate-600 text-gray-300'
+                            }`}
+                          >
+                            {amount >= 1000000 ? `${amount / 1000000}M` : `${amount / 1000}k`}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleCapitalChange}
+                          className="flex-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 rounded-lg transition-colors text-xs sm:text-sm"
+                        >
+                          Speichern
+                        </button>
+                        <button
+                          onClick={() => { setShowCapitalChange(false); setNewCapital(''); }}
+                          className="flex-1 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-xs sm:text-sm"
+                        >
+                          Abbrechen
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      onClick={handleCapitalChange}
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
-                    >
-                      Speichern
-                    </button>
-                    <button
-                      onClick={() => { setShowCapitalChange(false); setNewCapital(''); }}
-                      className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
-                    >
-                      Abbrechen
-                    </button>
                   </div>
-                  <div className="flex gap-2 mt-3 flex-wrap">
-                    {[1000, 5000, 10000, 25000, 50000, 100000, 250000, 500000].map((amount) => (
+                )}
+              </div>
+              
+              {/* Danger Zone */}
+              <div className="bg-slate-800/50 rounded-xl p-2.5 sm:p-4">
+                <h3 className="text-base sm:text-lg font-semibold mb-2 sm:mb-4 text-red-400">⚠️ Gefahrenzone</h3>
+                {!showResetConfirm ? (
+                  <button
+                    onClick={() => setShowResetConfirm(true)}
+                    className="px-2.5 sm:px-4 py-1.5 sm:py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-colors text-xs sm:text-sm"
+                  >
+                    Portfolio zurücksetzen
+                  </button>
+                ) : (
+                  <div className="bg-red-500/20 rounded-lg p-2.5 sm:p-4">
+                    <p className="text-red-300 mb-2 text-[10px] sm:text-sm">
+                      Alle Positionen werden geschlossen und das Kapital auf {formatCurrency(portfolio.initialCapital)} zurückgesetzt.
+                    </p>
+                    <div className="flex gap-1.5 sm:gap-2">
                       <button
-                        key={amount}
-                        onClick={() => setNewCapital(amount.toString())}
-                        className={`px-3 py-1 text-sm rounded transition-colors ${
-                          newCapital === amount.toString()
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-slate-700 hover:bg-slate-600 text-gray-300'
-                        }`}
+                        onClick={handleReset}
+                        className="px-2.5 sm:px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-[10px] sm:text-sm"
                       >
-                        {amount >= 1000000 ? `${amount / 1000000}M` : `${amount / 1000}k`}
+                        Ja, zurücksetzen
                       </button>
-                    ))}
+                      <button
+                        onClick={() => setShowResetConfirm(false)}
+                        className="px-2.5 sm:px-4 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-[10px] sm:text-sm"
+                      >
+                        Abbrechen
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
             
-            {/* Broker Profile */}
-            <div className="bg-slate-800/50 rounded-xl p-4">
-              <h3 className="text-lg font-semibold mb-4">🏦 Broker-Profil</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Broker Profile - Full Width */}
+            <div className="bg-slate-800/50 rounded-xl p-2.5 sm:p-4">
+              <h3 className="text-base sm:text-lg font-semibold mb-2 sm:mb-4">🏦 Broker-Profil</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-1.5 sm:gap-3">
                 {brokerProfiles && Object.entries(brokerProfiles).map(([id, profile]) => (
                   <button
                     key={id}
                     onClick={() => handleBrokerChange(id as BrokerProfileId)}
-                    className={`p-4 rounded-lg text-left transition-colors ${
+                    className={`p-2 sm:p-4 rounded-lg text-left transition-colors ${
                       portfolio.brokerProfile === id
                         ? 'bg-blue-600 ring-2 ring-blue-400'
                         : 'bg-slate-900/50 hover:bg-slate-700'
                     }`}
                   >
-                    <div className="font-semibold">{profile.name}</div>
-                    <div className="text-sm text-gray-400 mt-1">{profile.description}</div>
-                    <div className="text-xs text-gray-500 mt-2">
-                      Spread: {profile.spreadPercent}% • Overnight: {profile.cfdOvernight.longRate}%/Tag
+                    <div className="font-semibold text-xs sm:text-base">{profile.name}</div>
+                    <div className="text-[10px] sm:text-sm text-gray-400 mt-0.5 line-clamp-2">{profile.description}</div>
+                    <div className="text-[9px] sm:text-xs text-gray-500 mt-1">
+                      Spread: {profile.spreadPercent}%
                     </div>
                   </button>
                 ))}
               </div>
-            </div>
-            
-            {/* Danger Zone */}
-            <div className="bg-slate-800/50 rounded-xl p-4">
-              <h3 className="text-lg font-semibold mb-4 text-red-400">⚠️ Gefahrenzone</h3>
-              {!showResetConfirm ? (
-                <button
-                  onClick={() => setShowResetConfirm(true)}
-                  className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-colors"
-                >
-                  Portfolio zurücksetzen
-                </button>
-              ) : (
-                <div className="bg-red-500/20 rounded-lg p-4">
-                  <p className="text-red-300 mb-3">
-                    Alle Positionen werden geschlossen und das Kapital auf {formatCurrency(portfolio.initialCapital)} zurückgesetzt.
-                  </p>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleReset}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-                    >
-                      Ja, zurücksetzen
-                    </button>
-                    <button
-                      onClick={() => setShowResetConfirm(false)}
-                      className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
-                    >
-                      Abbrechen
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}

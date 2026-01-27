@@ -321,36 +321,38 @@ export function StockSelector({
 
   return (
     <div className="relative inline-block">
-      {/* Combined Stock Selector Button with integrated Freshness */}
+      {/* Combined Stock Selector Button with integrated Freshness - Mobile Responsive */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 bg-slate-800/70 border border-slate-600/50 rounded-xl px-3 py-2 hover:bg-slate-700/60 hover:border-slate-500/50 hover:shadow-blue-500/10 transition-all duration-300 shadow-xl shadow-black/20 backdrop-blur-md ring-1 ring-white/5"
+        className="flex items-center gap-1 sm:gap-2 bg-slate-800/70 border border-slate-600/50 rounded-xl px-2 sm:px-3 py-1.5 sm:py-2 hover:bg-slate-700/60 hover:border-slate-500/50 hover:shadow-blue-500/10 transition-all duration-300 shadow-xl shadow-black/20 backdrop-blur-md ring-1 ring-white/5 max-w-[180px] sm:max-w-none"
       >
-        {/* Symbol Icon */}
-        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+        {/* Symbol Icon - smaller on mobile */}
+        <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs sm:text-sm flex-shrink-0">
           {selectedSymbol.charAt(0)}
         </div>
         
         {/* Symbol & Price Info */}
-        <div className="text-left min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="text-white font-semibold text-sm">{selectedSymbol}</span>
+        <div className="text-left min-w-0 flex-1">
+          <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
+            <span className="text-white font-semibold text-xs sm:text-sm truncate">{selectedSymbol}</span>
+            {/* Price - show on mobile but smaller */}
             {selectedStock?.price !== undefined && (
-              <span className="text-white font-bold text-sm">
+              <span className="text-white font-bold text-xs sm:text-sm">
                 {formatPrice(selectedStock.price)}
               </span>
             )}
+            {/* Change percent - hidden on mobile */}
             {selectedStock?.changePercent !== undefined && (
-              <span className={`text-xs font-medium px-1 py-0.5 rounded ${selectedStock.changePercent >= 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+              <span className={`hidden md:inline text-xs font-medium px-1 py-0.5 rounded ${selectedStock.changePercent >= 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
                 {selectedStock.changePercent >= 0 ? '+' : ''}{selectedStock.changePercent.toFixed(1)}%
               </span>
             )}
           </div>
         </div>
 
-        {/* Freshness Indicator - compact */}
+        {/* Freshness Indicator - hidden on mobile, compact on tablet+ */}
         {freshnessData && (
-          <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-xs ${freshnessData.overall === 'fresh' ? 'bg-green-500/10' : freshnessData.overall === 'stale' ? 'bg-yellow-500/10' : freshnessData.overall === 'old' ? 'bg-red-500/10' : 'bg-slate-700/50'}`}>
+          <div className={`hidden md:flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-xs ${freshnessData.overall === 'fresh' ? 'bg-green-500/10' : freshnessData.overall === 'stale' ? 'bg-yellow-500/10' : freshnessData.overall === 'old' ? 'bg-red-500/10' : 'bg-slate-700/50'}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${freshnessData.overall === 'fresh' ? 'bg-green-400' : freshnessData.overall === 'stale' ? 'bg-yellow-400' : freshnessData.overall === 'old' ? 'bg-red-400' : 'bg-gray-400'}`} />
             <span className={`font-medium ${FRESHNESS_COLORS[freshnessData.overall]}`}>
               {formatAge(freshnessData.oldestAge)}
@@ -359,7 +361,7 @@ export function StockSelector({
         )}
         
         {/* Dropdown Arrow */}
-        <svg className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className={`w-3 h-3 sm:w-4 sm:h-4 text-gray-400 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
@@ -368,11 +370,11 @@ export function StockSelector({
       {isOpen && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="absolute top-full left-0 mt-2 w-[400px] bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden">
+          <div className="absolute top-full left-0 mt-2 w-auto min-w-[280px] sm:w-[400px] max-w-[400px] bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden">
             
-            {/* Freshness Details Section */}
+            {/* Freshness Details Section - hidden on mobile for more space */}
             {freshnessData && onRefresh && (
-              <div className="p-3 border-b border-slate-700 bg-slate-900/50">
+              <div className="hidden sm:block p-2 sm:p-3 border-b border-slate-700 bg-slate-900/50">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium text-gray-400">Daten-Aktualität</span>
                   <button
@@ -407,20 +409,20 @@ export function StockSelector({
               </div>
             )}
             
-            {/* Search */}
-            <div className="p-3 border-b border-slate-700">
+            {/* Search - more compact on mobile */}
+            <div className="p-2 sm:p-3 border-b border-slate-700">
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Symbol suchen..."
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-white text-sm placeholder-gray-400 focus:outline-none focus:border-blue-500"
                 autoFocus
               />
             </div>
             
             {/* Stock List */}
-            <div className="max-h-[350px] overflow-y-auto">
+            <div className="max-h-[400px] sm:max-h-[350px] overflow-y-auto">
                 {isLoading ? (
                   <div className="p-4 text-center text-gray-400">Lade...</div>
                 ) : filteredStocks.length === 0 ? (
@@ -436,11 +438,54 @@ export function StockSelector({
                         setIsOpen(false);
                         setSearch('');
                       }}
-                      className={`w-full px-4 py-3 hover:bg-slate-700/50 transition-colors ${
+                      className={`w-full px-2 sm:px-4 py-2 sm:py-3 hover:bg-slate-700/50 transition-colors ${
                         stock.symbol === selectedSymbol ? 'bg-blue-500/20' : ''
                       }`}
                     >
-                      <div className="flex items-center gap-3">
+                      {/* Mobile: Compact single-line layout */}
+                      <div className="sm:hidden flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                          {stock.symbol.charAt(0)}
+                        </div>
+                        <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-white font-semibold text-sm">{stock.symbol}</span>
+                            {stock.price !== undefined && (
+                              <span className="text-gray-400 text-xs">{formatPrice(stock.price)}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            {stock.changePercent !== undefined && (
+                              <span className={`text-[10px] font-medium px-1 py-0.5 rounded ${
+                                stock.changePercent >= 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                              }`}>
+                                {stock.changePercent >= 0 ? '+' : ''}{stock.changePercent.toFixed(1)}%
+                              </span>
+                            )}
+                            {authState.isAuthenticated && (
+                              <span
+                                role="button"
+                                tabIndex={0}
+                                onClick={(e) => handleRemoveStock(stock.symbol, e)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleRemoveStock(stock.symbol, e as unknown as React.MouseEvent)}
+                                className="p-0.5 hover:bg-red-500/20 rounded text-gray-500 hover:text-red-400 transition-colors cursor-pointer"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </span>
+                            )}
+                            {stock.symbol === selectedSymbol && (
+                              <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Desktop: Full detailed layout */}
+                      <div className="hidden sm:flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                           {stock.symbol.charAt(0)}
                         </div>

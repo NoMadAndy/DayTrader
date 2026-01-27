@@ -5,10 +5,14 @@
  */
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, NewsPanel, TradingSignalPanel, CompanyInfoPanel, type NewsItemWithSentiment } from '../components';
 import { type DataTimestamps } from '../components/StockSelector';
 import { useStockData, useSimpleAutoRefresh } from '../hooks';
 import { generateForecast } from '../utils/forecast';
+import { getAuthState } from '../services/authService';
+import { getOrCreatePortfolio, executeMarketOrder, getPortfolioMetrics } from '../services/tradingService';
+import type { Portfolio, PortfolioMetrics, OrderSide, ProductType } from '../types/trading';
 
 // ML Prediction type for trading signals
 interface MLPrediction {
@@ -25,7 +29,74 @@ interface DashboardPageProps {
 }
 
 export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageProps) {
+  const navigate = useNavigate();
   const { data: stockData, isLoading, refetch } = useStockData(selectedSymbol);
+
+  // Quick Trade State
+  const [showQuickTrade, setShowQuickTrade] = useState(false);
+  const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
+  const [metrics, setMetrics] = useState<PortfolioMetrics | null>(null);
+  const [tradeQuantity, setTradeQuantity] = useState('1');
+  const [tradeSide, setTradeSide] = useState<OrderSide>('buy');
+  const [productType, setProductType] = useState<ProductType>('stock');
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [tradeResult, setTradeResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Load portfolio data when quick trade is opened
+  useEffect(() => {
+    const loadPortfolio = async () => {
+      const { isAuthenticated } = getAuthState();
+      if (!isAuthenticated) return;
+      try {
+        const p = await getOrCreatePortfolio();
+        setPortfolio(p);
+        if (p) {
+          const m = await getPortfolioMetrics(p.id);
+          setMetrics(m);
+        }
+      } catch (err) {
+        console.error('Failed to load portfolio:', err);
+      }
+    };
+    if (showQuickTrade) {
+      loadPortfolio();
+    }
+  }, [showQuickTrade]);
+
+  // Execute quick trade
+  const handleQuickTrade = async () => {
+    if (!portfolio || !currentPrice) return;
+    setIsExecuting(true);
+    setTradeResult(null);
+    try {
+      const qty = parseFloat(tradeQuantity);
+      if (isNaN(qty) || qty <= 0) {
+        setTradeResult({ success: false, message: 'Ungültige Menge' });
+        return;
+      }
+      const result = await executeMarketOrder({
+        portfolioId: portfolio.id,
+        symbol: selectedSymbol,
+        side: tradeSide,
+        quantity: qty,
+        currentPrice: currentPrice,
+        productType: productType,
+      });
+      if (result.success) {
+        const action = tradeSide === 'buy' ? 'Kauf' : tradeSide === 'sell' ? 'Verkauf' : 'Short';
+        setTradeResult({ success: true, message: `${action} erfolgreich! Neuer Kontostand: ${result.newBalance?.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}` });
+        // Refresh metrics
+        const m = await getPortfolioMetrics(portfolio.id);
+        setMetrics(m);
+      } else {
+        setTradeResult({ success: false, message: result.error || 'Order fehlgeschlagen' });
+      }
+    } catch (err) {
+      setTradeResult({ success: false, message: err instanceof Error ? err.message : 'Unbekannter Fehler' });
+    } finally {
+      setIsExecuting(false);
+    }
+  };
 
   // Local state for live price updates (doesn't cause full re-render)
   const [_livePrice, setLivePrice] = useState<{ price: number; change: number } | null>(null);
@@ -163,15 +234,14 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
   }, [refetch]);
 
   // Collapsible section states (default: collapsed)
-  const [showIndicators, setShowIndicators] = useState(false);
   const [showChart, setShowChart] = useState(false);
 
-  // Chart indicator toggles
-  const [showSMA20, setShowSMA20] = useState(true);
-  const [showSMA50, setShowSMA50] = useState(true);
+  // Chart indicator toggles (Bollinger, MACD, RSI, Volume enabled by default)
+  const [showSMA20, setShowSMA20] = useState(false);
+  const [showSMA50, setShowSMA50] = useState(false);
   const [showEMA12, setShowEMA12] = useState(false);
   const [showEMA26, setShowEMA26] = useState(false);
-  const [showBollingerBands, setShowBollingerBands] = useState(false);
+  const [showBollingerBands, setShowBollingerBands] = useState(true);
   const [showMACD, setShowMACD] = useState(true);
   const [showRSI, setShowRSI] = useState(true);
   const [showVolume, setShowVolume] = useState(true);
@@ -225,7 +295,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
     <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 flex-1 relative">
       {/* Floating Stock Selector - elegant eingebettet beim Scrollen */}
       <div className="sticky top-[62px] z-30 py-2 pointer-events-none">
-        <div className="pointer-events-auto inline-block">
+        <div className="pointer-events-auto inline-flex items-center gap-2 relative">
           <StockSelector 
             selectedSymbol={selectedSymbol} 
             onSelect={onSymbolChange}
@@ -233,6 +303,168 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
             onRefresh={handleRefreshAll}
             isRefreshing={isRefreshing}
           />
+          {/* Quick Trade Button with Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowQuickTrade(!showQuickTrade)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all text-sm font-medium ${
+                showQuickTrade 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-slate-800/90 hover:bg-slate-700 text-gray-300 border border-slate-600'
+              }`}
+              title="Quick Trade"
+            >
+              <span className="text-lg">💹</span>
+              <span className="hidden sm:inline">Handeln</span>
+              <svg
+                className={`w-4 h-4 transition-transform ${showQuickTrade ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            
+            {/* Quick Trade Dropdown Panel */}
+            {showQuickTrade && (
+              <div className="absolute top-full left-0 sm:right-0 sm:left-auto mt-2 w-[min(calc(100vw-1rem),20rem)] bg-slate-800/95 backdrop-blur-sm rounded-xl border border-slate-700 p-3 shadow-xl">
+                {!getAuthState().isAuthenticated ? (
+                  <div className="text-center py-3">
+                    <p className="text-gray-400 mb-2 text-sm">Bitte einloggen um zu handeln</p>
+                    <button
+                      onClick={() => navigate('/trading')}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors text-xs"
+                    >
+                      Zum Paper Trading →
+                    </button>
+                  </div>
+                ) : !portfolio ? (
+                  <div className="text-center py-3">
+                    <p className="text-gray-400 mb-2 text-sm">Kein Portfolio vorhanden</p>
+                    <button
+                      onClick={() => navigate('/trading')}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors text-xs"
+                    >
+                      Portfolio erstellen →
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {/* Header with portfolio info */}
+                    <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-700">
+                      <div className="flex items-center gap-2">
+                        <span>💼</span>
+                        <div>
+                          <div className="text-[10px] text-gray-400">Verfügbar</div>
+                          <div className="font-semibold text-green-400 text-sm">
+                            {metrics?.cashBalance.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }) || '---'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[10px] text-gray-400">{selectedSymbol}</div>
+                        <div className="font-semibold text-sm">
+                          {currentPrice?.toLocaleString('de-DE', { style: 'currency', currency: 'USD' }) || '---'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Trade Form - Compact */}
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {/* Side Selection */}
+                      <div className="col-span-2">
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => setTradeSide('buy')}
+                            className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${
+                              tradeSide === 'buy' ? 'bg-green-600 text-white' : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                            }`}
+                          >
+                            Kauf
+                          </button>
+                          <button
+                            onClick={() => setTradeSide('short')}
+                            className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${
+                              tradeSide === 'short' ? 'bg-red-600 text-white' : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                            }`}
+                          >
+                            Short
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Product Type */}
+                      <div>
+                        <select
+                          value={productType}
+                          onChange={(e) => setProductType(e.target.value as ProductType)}
+                          className="w-full px-1.5 py-1.5 bg-slate-900 border border-slate-600 rounded text-xs focus:border-blue-500 focus:outline-none"
+                        >
+                          <option value="stock">Aktie</option>
+                          <option value="cfd">CFD</option>
+                        </select>
+                      </div>
+
+                      {/* Quantity */}
+                      <div>
+                        <input
+                          type="number"
+                          value={tradeQuantity}
+                          onChange={(e) => setTradeQuantity(e.target.value)}
+                          min="1"
+                          step="1"
+                          placeholder="Menge"
+                          className="w-full px-1.5 py-1.5 bg-slate-900 border border-slate-600 rounded text-xs focus:border-blue-500 focus:outline-none text-center"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Order Preview + Execute */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[10px] text-gray-400 flex-1">
+                        {currentPrice && tradeQuantity && (
+                          <span>
+                            {parseFloat(tradeQuantity) || 0}× @ {currentPrice.toFixed(2)} = <span className="text-white font-medium">${((parseFloat(tradeQuantity) || 0) * currentPrice).toFixed(2)}</span>
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={handleQuickTrade}
+                        disabled={isExecuting || !currentPrice}
+                        className={`px-4 py-1.5 rounded font-medium text-xs transition-colors ${
+                          tradeSide === 'buy' 
+                            ? 'bg-green-600 hover:bg-green-700 disabled:bg-green-800' 
+                            : 'bg-red-600 hover:bg-red-700 disabled:bg-red-800'
+                        } text-white disabled:opacity-50`}
+                      >
+                        {isExecuting ? '...' : tradeSide === 'buy' ? 'Kaufen' : 'Shorten'}
+                      </button>
+                    </div>
+
+                    {/* Result Message */}
+                    {tradeResult && (
+                      <div className={`text-[10px] px-2 py-1.5 rounded ${
+                        tradeResult.success ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                      }`}>
+                        {tradeResult.message}
+                      </div>
+                    )}
+
+                    {/* Link to full trading page */}
+                    <div className="text-center pt-1 border-t border-slate-700">
+                      <button
+                        onClick={() => navigate('/trading')}
+                        className="text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
+                      >
+                        Vollständiges Trading →
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
       
@@ -277,49 +509,14 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
         </div>
       </div>
 
-      {/* Indicator Controls - Collapsible */}
-      <div className="mb-6">
-        <div className="bg-slate-800/50 rounded-xl border border-slate-700">
-          <button
-            onClick={() => setShowIndicators(!showIndicators)}
-            className="w-full flex items-center justify-between p-4 text-left"
-          >
-            <h3 className="text-white font-semibold">Chart Indicators</h3>
-            <svg
-              className={`w-5 h-5 text-gray-400 transition-transform ${showIndicators ? 'rotate-180' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          {showIndicators && (
-            <div className="px-4 pb-4">
-              <IndicatorControls
-                showSMA20={showSMA20}
-                showSMA50={showSMA50}
-                showEMA12={showEMA12}
-                showEMA26={showEMA26}
-                showBollingerBands={showBollingerBands}
-                showMACD={showMACD}
-                showRSI={showRSI}
-                showVolume={showVolume}
-                onToggle={handleIndicatorToggle}
-              />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Chart - Collapsible, Full Width */}
+      {/* Chart - Collapsible, Full Width with integrated Indicator Controls */}
       <div className="mb-6">
         <div className="bg-slate-800/50 rounded-xl border border-slate-700">
           <button
             onClick={() => setShowChart(!showChart)}
-            className="w-full flex items-center justify-between p-6 text-left"
+            className="w-full flex items-center justify-between p-4 text-left"
           >
-            <h3 className="text-white font-semibold">Chart</h3>
+            <h3 className="text-white font-semibold">📈 Chart</h3>
             <svg
               className={`w-5 h-5 text-gray-400 transition-transform ${showChart ? 'rotate-180' : ''}`}
               fill="none"
@@ -330,7 +527,23 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
             </svg>
           </button>
           {showChart && (
-            <div className="px-6 pb-6">
+            <div className="px-3 sm:px-6 pb-4 sm:pb-6">
+              {/* Indicator Controls - Always visible inline */}
+              <div className="mb-3">
+                <IndicatorControls
+                  showSMA20={showSMA20}
+                  showSMA50={showSMA50}
+                  showEMA12={showEMA12}
+                  showEMA26={showEMA26}
+                  showBollingerBands={showBollingerBands}
+                  showMACD={showMACD}
+                  showRSI={showRSI}
+                  showVolume={showVolume}
+                  onToggle={handleIndicatorToggle}
+                />
+              </div>
+              
+              {/* Stock Chart */}
               <StockChart
                 data={stockData.data}
                 symbol={stockData.symbol}

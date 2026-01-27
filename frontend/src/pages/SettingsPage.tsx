@@ -367,7 +367,12 @@ export function SettingsPage() {
                   <input
                     type="number"
                     value={mlSettings.sequenceLength}
-                    onChange={(e) => setMlSettings(prev => ({ ...prev, sequenceLength: parseInt(e.target.value) || 60 }))}
+                    onChange={(e) => setMlSettings(prev => ({ ...prev, sequenceLength: e.target.value === '' ? 0 : parseInt(e.target.value) || prev.sequenceLength }))}
+                    onBlur={(e) => {
+                      const val = parseInt(e.target.value);
+                      if (!val || val < 30) setMlSettings(prev => ({ ...prev, sequenceLength: 30 }));
+                      else if (val > 120) setMlSettings(prev => ({ ...prev, sequenceLength: 120 }));
+                    }}
                     min={30}
                     max={120}
                     className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
@@ -382,7 +387,12 @@ export function SettingsPage() {
                   <input
                     type="number"
                     value={mlSettings.forecastDays}
-                    onChange={(e) => setMlSettings(prev => ({ ...prev, forecastDays: parseInt(e.target.value) || 14 }))}
+                    onChange={(e) => setMlSettings(prev => ({ ...prev, forecastDays: e.target.value === '' ? 0 : parseInt(e.target.value) || prev.forecastDays }))}
+                    onBlur={(e) => {
+                      const val = parseInt(e.target.value);
+                      if (!val || val < 1) setMlSettings(prev => ({ ...prev, forecastDays: 1 }));
+                      else if (val > 30) setMlSettings(prev => ({ ...prev, forecastDays: 30 }));
+                    }}
                     min={1}
                     max={30}
                     className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
@@ -397,7 +407,12 @@ export function SettingsPage() {
                   <input
                     type="number"
                     value={mlSettings.epochs}
-                    onChange={(e) => setMlSettings(prev => ({ ...prev, epochs: parseInt(e.target.value) || 100 }))}
+                    onChange={(e) => setMlSettings(prev => ({ ...prev, epochs: e.target.value === '' ? 0 : parseInt(e.target.value) || prev.epochs }))}
+                    onBlur={(e) => {
+                      const val = parseInt(e.target.value);
+                      if (!val || val < 10) setMlSettings(prev => ({ ...prev, epochs: 10 }));
+                      else if (val > 500) setMlSettings(prev => ({ ...prev, epochs: 500 }));
+                    }}
                     min={10}
                     max={500}
                     className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
@@ -412,7 +427,12 @@ export function SettingsPage() {
                   <input
                     type="number"
                     value={mlSettings.learningRate}
-                    onChange={(e) => setMlSettings(prev => ({ ...prev, learningRate: parseFloat(e.target.value) || 0.001 }))}
+                    onChange={(e) => setMlSettings(prev => ({ ...prev, learningRate: e.target.value === '' ? 0 : parseFloat(e.target.value) || prev.learningRate }))}
+                    onBlur={(e) => {
+                      const val = parseFloat(e.target.value);
+                      if (!val || val < 0.0001) setMlSettings(prev => ({ ...prev, learningRate: 0.0001 }));
+                      else if (val > 0.1) setMlSettings(prev => ({ ...prev, learningRate: 0.1 }));
+                    }}
                     min={0.0001}
                     max={0.1}
                     step={0.0001}
