@@ -17,12 +17,27 @@ import backgroundJobs from './backgroundJobs.js';
 import { registerUser, loginUser, logoutUser, authMiddleware, optionalAuthMiddleware } from './auth.js';
 import { getUserSettings, updateUserSettings, getCustomSymbols, addCustomSymbol, removeCustomSymbol, syncCustomSymbols } from './userSettings.js';
 import * as trading from './trading.js';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Read version from package.json for accurate version info
+let packageVersion = '1.9.0';
+try {
+  const packageJson = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'));
+  packageVersion = packageJson.version;
+} catch (e) {
+  console.warn('Could not read package.json version:', e.message);
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Build info from environment (set during Docker build)
-const BUILD_VERSION = process.env.BUILD_VERSION || '1.4.0';
+// Build info from environment (set during Docker build), fallback to package.json version
+const BUILD_VERSION = process.env.BUILD_VERSION || packageVersion;
 const BUILD_COMMIT = process.env.BUILD_COMMIT || 'unknown';
 const BUILD_TIME = process.env.BUILD_TIME || new Date().toISOString();
 
@@ -67,6 +82,123 @@ app.get('/api/version', (req, res) => {
     commit: BUILD_COMMIT,
     buildTime: BUILD_TIME,
     service: 'daytrader-backend'
+  });
+});
+
+// Changelog endpoint - serves parsed CHANGELOG.md
+/**
+ * Parse CHANGELOG.md into structured format
+ */
+function parseChangelog() {
+  try {
+    // Try multiple paths (Docker mounted volume, local dev, etc.)
+    const possiblePaths = [
+      '/app/CHANGELOG.md',                          // Docker mounted volume
+      join(__dirname, '../../CHANGELOG.md'),         // Local dev: backend/src -> backend -> root
+      join(__dirname, '../../../CHANGELOG.md'),      // Alternative structure
+    ];
+    
+    let content;
+    for (const changelogPath of possiblePaths) {
+      try {
+        content = readFileSync(changelogPath, 'utf8');
+        console.log(`[Changelog] Loaded from: ${changelogPath}`);
+        break;
+      } catch {
+        // Try next path
+      }
+    }
+    
+    if (!content) {
+      console.warn('[Changelog] Could not find CHANGELOG.md in any expected location');
+      return [];
+    }
+    
+    const entries = [];
+    const lines = content.split('\n');
+    let currentEntry = null;
+    let currentSection = null;
+    let currentItem = null;
+    
+    for (const line of lines) {
+      // Match version header: ## [1.9.0] - 2026-01-27
+      const versionMatch = line.match(/^## \[([^\]]+)\](?: - (\d{4}-\d{2}-\d{2}))?/);
+      if (versionMatch) {
+        // Save current item if exists
+        if (currentItem && currentSection) {
+          currentSection.items.push(currentItem);
+          currentItem = null;
+        }
+        if (currentEntry) {
+          entries.push(currentEntry);
+        }
+        currentEntry = {
+          version: versionMatch[1],
+          date: versionMatch[2] || null,
+          sections: []
+        };
+        currentSection = null;
+        continue;
+      }
+      
+      // Match section header: ### Added, ### Changed, ### Fixed
+      const sectionMatch = line.match(/^### (\w+)/);
+      if (sectionMatch && currentEntry) {
+        // Save current item if exists
+        if (currentItem && currentSection) {
+          currentSection.items.push(currentItem);
+          currentItem = null;
+        }
+        currentSection = {
+          title: sectionMatch[1],
+          items: []
+        };
+        currentEntry.sections.push(currentSection);
+        continue;
+      }
+      
+      // Match main list item: - **Feature** - Description
+      const itemMatch = line.match(/^- (.+)/);
+      if (itemMatch && currentSection) {
+        // Save previous item
+        if (currentItem) {
+          currentSection.items.push(currentItem);
+        }
+        currentItem = itemMatch[1].trim();
+        continue;
+      }
+      
+      // Match sub-list item (indented):   - Sub item
+      const subItemMatch = line.match(/^  +- (.+)/);
+      if (subItemMatch && currentItem) {
+        // Append sub-item to current item
+        currentItem += ' • ' + subItemMatch[1].trim();
+        continue;
+      }
+    }
+    
+    // Save last item and entry
+    if (currentItem && currentSection) {
+      currentSection.items.push(currentItem);
+    }
+    if (currentEntry) {
+      entries.push(currentEntry);
+    }
+    
+    return entries;
+  } catch (e) {
+    console.error('Failed to parse changelog:', e.message);
+    return [];
+  }
+}
+
+app.get('/api/changelog', (req, res) => {
+  const entries = parseChangelog();
+  res.json({
+    version: BUILD_VERSION,
+    commit: BUILD_COMMIT,
+    buildTime: BUILD_TIME,
+    entries
   });
 });
 

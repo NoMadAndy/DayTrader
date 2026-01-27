@@ -416,7 +416,7 @@ export function StockSelector({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Symbol suchen..."
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-white text-sm placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-white text-base sm:text-sm placeholder-gray-400 focus:outline-none focus:border-blue-500"
                 autoFocus
               />
             </div>
@@ -602,7 +602,7 @@ export function StockSelector({
                         setAddError('');
                       }}
                       placeholder="Symbol (z.B. BTC)"
-                      className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 text-sm"
+                      className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 text-base sm:text-sm"
                       autoFocus
                       maxLength={10}
                     />
@@ -611,7 +611,7 @@ export function StockSelector({
                       value={newName}
                       onChange={(e) => setNewName(e.target.value)}
                       placeholder="Name (optional)"
-                      className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 text-sm"
+                      className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 text-base sm:text-sm"
                     />
                     {addError && (
                       <p className="text-red-400 text-xs">{addError}</p>

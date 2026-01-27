@@ -2,65 +2,59 @@
  * Changelog Panel Component
  * 
  * Displays the application changelog in a formatted view.
+ * Fetches changelog dynamically from the backend API.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
-// Build info from Vite config
-declare const __BUILD_VERSION__: string;
-declare const __BUILD_COMMIT__: string;
-declare const __BUILD_TIME__: string;
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
 interface ChangelogEntry {
   version: string;
-  date?: string;
+  date?: string | null;
   sections: {
     title: string;
     items: string[];
   }[];
 }
 
-// Parsed changelog data - we'll fetch this from the CHANGELOG.md file via API
-const CHANGELOG_DATA: ChangelogEntry[] = [
-  {
-    version: 'Unreleased',
-    sections: [
-      {
-        title: 'Added',
-        items: [
-          '**Hamburger Menu** - Neues Hauptmenü mit 6 Tabs: API, Daten, ML-Settings, Info, Changelog, Login',
-          '**User-spezifische Einstellungen** - ML-Parameter pro User in der Datenbank speicherbar',
-          '**ML Settings Tab** - Epochen, Lernrate, Sequenzlänge, CUDA/GPU direkt konfigurierbar',
-          '**Technical Analysis Info** - Erklärung aller Indikatoren im Menü',
-          '**User Authentication** - Login und Registrierung mit PostgreSQL-Backend',
-          '**Combined Trading Signals** - Multi-Quellen-Analyse: News + Technisch + ML',
-          '**FinBERT ML Sentiment Analysis** - Transformer-basierte Nachrichtenanalyse',
-          '**Custom Stock Symbols** - Eigene Aktien-Symbole hinzufügen und verwalten',
-          '**ML Price Prediction** - LSTM-basierte Kursprognosen',
-        ],
-      },
-      {
-        title: 'Changed',
-        items: [
-          '**UI Vereinfachung** - Data Source & Technical Methods aus Hauptansicht ins Menü verschoben',
-          '**API-Keys Sync** - Keys werden bei Login automatisch mit Server synchronisiert',
-          '**Yahoo Finance** - Standardmäßig aktiv (kein API-Key nötig)',
-        ],
-      },
-      {
-        title: 'Fixed',
-        items: [
-          '**Production deployment: Fixed container port mapping**',
-          '**Docker Compose port conflict** - Duplicate port bindings fixed',
-          '**API keys not restored on page reload**',
-        ],
-      },
-    ],
-  },
-];
+interface ChangelogData {
+  version: string;
+  commit: string;
+  buildTime: string;
+  entries: ChangelogEntry[];
+}
 
 export function ChangelogPanel() {
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['Unreleased-Added']));
+  const [changelogData, setChangelogData] = useState<ChangelogData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+
+  // Fetch changelog from backend
+  useEffect(() => {
+    const fetchChangelog = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/changelog`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch changelog');
+        }
+        const data = await response.json();
+        setChangelogData(data);
+        
+        // Expand first version's first section by default
+        if (data.entries.length > 0 && data.entries[0].sections.length > 0) {
+          setExpandedSections(new Set([`${data.entries[0].version}-${data.entries[0].sections[0].title}`]));
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchChangelog();
+  }, []);
 
   const toggleSection = (key: string) => {
     setExpandedSections(prev => {
@@ -112,6 +106,26 @@ export function ChangelogPanel() {
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 bg-red-500/10 rounded-lg border border-red-500/30 text-red-400 text-sm">
+        Changelog konnte nicht geladen werden: {error}
+      </div>
+    );
+  }
+
+  if (!changelogData) {
+    return null;
+  }
+
   return (
     <div className="space-y-4">
       {/* Build Info */}
@@ -119,21 +133,23 @@ export function ChangelogPanel() {
         <div className="text-xs text-gray-400 space-y-1">
           <div className="flex justify-between">
             <span>Version:</span>
-            <span className="text-white font-mono">{__BUILD_VERSION__}</span>
+            <span className="text-white font-mono">{changelogData.version}</span>
           </div>
           <div className="flex justify-between">
             <span>Commit:</span>
-            <span className="text-white font-mono">{__BUILD_COMMIT__}</span>
+            <span className="text-white font-mono">{changelogData.commit?.substring(0, 7) || 'dev'}</span>
           </div>
           <div className="flex justify-between">
             <span>Build:</span>
-            <span className="text-white font-mono">{new Date(__BUILD_TIME__).toLocaleDateString('de-DE')}</span>
+            <span className="text-white font-mono">
+              {changelogData.buildTime ? new Date(changelogData.buildTime).toLocaleDateString('de-DE') : '—'}
+            </span>
           </div>
         </div>
       </div>
 
       {/* Changelog Entries */}
-      {CHANGELOG_DATA.map((entry) => (
+      {changelogData.entries.map((entry) => (
         <div key={entry.version} className="space-y-2">
           <div className="flex items-center gap-2">
             <h3 className="text-white font-semibold">

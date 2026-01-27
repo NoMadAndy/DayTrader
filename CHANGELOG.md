@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1] - 2026-01-27
+
+### Added
+- **Dynamisches Changelog** - Changelog wird jetzt live vom Backend geladen
+  - Neuer `/api/changelog` Endpoint parst CHANGELOG.md automatisch
+  - Version, Commit und Build-Zeit werden vom Server bereitgestellt
+  - Keine manuellen statischen Updates mehr nötig
+- **Version aus package.json** - Backend und Frontend lesen Version automatisch
+  - Keine hartcodierten Versionen mehr in Dockerfiles oder Configs
+
+### Fixed
+- **Mobile Browser Zoom** - Input-Felder zoomen nicht mehr beim Fokussieren
+  - Schriftgröße auf 16px für Mobile (iOS Safari Zoom-Prevention)
+  - Betrifft: StockSelector Suchfeld und Symbol-Hinzufügen-Formular
+
 ## [1.9.0] - 2026-01-27
 
 ### Added

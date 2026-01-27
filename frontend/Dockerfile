@@ -4,8 +4,8 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Accept build arguments for build info
-ARG BUILD_VERSION=1.3.0
+# Accept build arguments for build info (defaults read from package.json in vite.config.ts)
+ARG BUILD_VERSION
 ARG BUILD_COMMIT=unknown
 ARG BUILD_TIME=unknown
 
