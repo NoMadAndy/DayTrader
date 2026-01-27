@@ -2039,6 +2039,24 @@ app.get('/api/rl/train/status/:agentName', async (req, res) => {
 });
 
 /**
+ * Proxy RL Trading Service - get training logs
+ */
+app.get('/api/rl/train/logs/:agentName', async (req, res) => {
+  try {
+    const since = req.query.since || 0;
+    const response = await fetch(`${RL_SERVICE_URL}/train/logs/${req.params.agentName}?since=${since}`);
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('RL Trading Service training logs error:', error);
+    res.status(503).json({ 
+      error: 'RL Trading Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
  * Proxy RL Trading Service - get trading signal
  */
 app.post('/api/rl/signal', express.json({ limit: '10mb' }), async (req, res) => {

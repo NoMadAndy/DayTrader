@@ -35,7 +35,8 @@ interface TrainingConsoleProps {
   onClose?: () => void;
 }
 
-const RL_SERVICE_URL = import.meta.env.VITE_RL_SERVICE_URL || 'http://localhost:8001';
+// Use backend proxy for RL service (works in Codespace and local dev)
+const RL_API_BASE = '/api/rl';
 
 export function TrainingConsole({ agentName, isTraining, progress, onClose }: TrainingConsoleProps) {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -48,7 +49,7 @@ export function TrainingConsole({ agentName, isTraining, progress, onClose }: Tr
   const fetchLogs = useCallback(async () => {
     try {
       const response = await fetch(
-        `${RL_SERVICE_URL}/train/logs/${encodeURIComponent(agentName)}?since=${lastLogCount.current}`
+        `${RL_API_BASE}/train/logs/${encodeURIComponent(agentName)}?since=${lastLogCount.current}`
       );
       if (response.ok) {
         const data = await response.json();
