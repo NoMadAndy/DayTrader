@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useDataService } from '../hooks';
+import { useSettings, type Language, type Currency } from '../contexts';
 import { DataSourceSelector } from '../components/DataSourceSelector';
 import { ApiQuotaDisplay } from '../components/ApiQuotaDisplay';
 import { subscribeToAuth, getAuthState, logout, checkAuthStatus, type AuthState } from '../services/authService';
@@ -51,10 +52,11 @@ function saveConfig(config: ApiConfig): void {
   }
 }
 
-type SettingsTab = 'api' | 'data-source' | 'ml' | 'auth';
+type SettingsTab = 'api' | 'data-source' | 'ml' | 'auth' | 'preferences';
 
 export function SettingsPage() {
   const { setConfig } = useDataService();
+  const { t, language, currency, setLanguage, setCurrency } = useSettings();
   const [activeTab, setActiveTab] = useState<SettingsTab>('auth');
   const [localConfig, setLocalConfig] = useState<ApiConfig>(loadStoredConfig);
   const [saved, setSaved] = useState(false);
@@ -62,6 +64,7 @@ export function SettingsPage() {
   const [showRegister, setShowRegister] = useState(false);
   const [mlSettings, setMlSettings] = useState<MLSettings>({ ...DEFAULT_ML_SETTINGS });
   const [mlSettingsSaved, setMlSettingsSaved] = useState(false);
+  const [prefsSaved, setPrefsSaved] = useState(false);
 
   // Subscribe to auth state changes
   useEffect(() => {
@@ -161,13 +164,25 @@ export function SettingsPage() {
     await logout();
   };
 
+  const handleLanguageChange = (lang: Language) => {
+    setLanguage(lang);
+    setPrefsSaved(true);
+    setTimeout(() => setPrefsSaved(false), 2000);
+  };
+
+  const handleCurrencyChange = (curr: Currency) => {
+    setCurrency(curr);
+    setPrefsSaved(true);
+    setTimeout(() => setPrefsSaved(false), 2000);
+  };
+
   const hasAnyKey = localConfig.finnhubApiKey || localConfig.alphaVantageApiKey || 
                     localConfig.twelveDataApiKey || localConfig.newsApiKey;
 
   const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
     {
       id: 'auth',
-      label: authState.isAuthenticated ? 'Konto' : 'Login',
+      label: authState.isAuthenticated ? t('nav.account') : t('nav.login'),
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -175,8 +190,17 @@ export function SettingsPage() {
       ),
     },
     {
+      id: 'preferences',
+      label: t('settings.preferences'),
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+        </svg>
+      ),
+    },
+    {
       id: 'api',
-      label: 'API Keys',
+      label: t('settings.apiKeys'),
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
@@ -185,7 +209,7 @@ export function SettingsPage() {
     },
     {
       id: 'data-source',
-      label: 'Datenquellen',
+      label: t('settings.dataSources'),
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
@@ -194,7 +218,7 @@ export function SettingsPage() {
     },
     {
       id: 'ml',
-      label: 'ML Settings',
+      label: t('settings.mlSettings'),
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -208,10 +232,10 @@ export function SettingsPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white flex items-center gap-3">
           <span className="text-3xl">⚙️</span>
-          Einstellungen
+          {t('settings.title')}
         </h1>
         <p className="text-gray-400 mt-2">
-          API-Schlüssel, Datenquellen und ML-Konfiguration
+          {t('settings.subtitle')}
         </p>
       </div>
 
@@ -237,21 +261,109 @@ export function SettingsPage() {
 
         {/* Tab Content */}
         <div className="p-4 sm:p-6 flex-1 overflow-y-auto">
+          {/* Preferences Tab */}
+          {activeTab === 'preferences' && (
+            <div className="space-y-6">
+              <p className="text-gray-400 mb-4">
+                {language === 'de' ? 'Passe die Anzeige nach deinen Wünschen an.' : 'Customize the display to your preferences.'}
+              </p>
+
+              {/* Language Selection */}
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">
+                  {t('settings.language')}
+                </label>
+                <p className="text-xs text-gray-500 mb-3">{t('settings.languageDesc')}</p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => handleLanguageChange('de')}
+                    className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
+                      language === 'de'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    <span className="text-xl">🇩🇪</span>
+                    {t('settings.german')}
+                  </button>
+                  <button
+                    onClick={() => handleLanguageChange('en')}
+                    className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
+                      language === 'en'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    <span className="text-xl">🇬🇧</span>
+                    {t('settings.english')}
+                  </button>
+                </div>
+              </div>
+
+              {/* Currency Selection */}
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">
+                  {t('settings.currency')}
+                </label>
+                <p className="text-xs text-gray-500 mb-3">{t('settings.currencyDesc')}</p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => handleCurrencyChange('USD')}
+                    className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
+                      currency === 'USD'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    <span className="text-xl">$</span>
+                    US Dollar (USD)
+                  </button>
+                  <button
+                    onClick={() => handleCurrencyChange('EUR')}
+                    className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
+                      currency === 'EUR'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    <span className="text-xl">€</span>
+                    Euro (EUR)
+                  </button>
+                </div>
+              </div>
+
+              {prefsSaved && (
+                <div className="mt-4 p-3 bg-green-500/20 border border-green-500/50 rounded-lg text-green-400 text-center">
+                  {t('settings.saved')}
+                </div>
+              )}
+
+              <div className="mt-6 p-4 bg-slate-900/50 rounded-lg">
+                <h4 className="text-white font-medium mb-2">{language === 'de' ? 'Hinweis' : 'Note'}</h4>
+                <p className="text-sm text-gray-400">
+                  {language === 'de' 
+                    ? 'Aktiensymbole und Börsenbegriffe bleiben in englischer Sprache, um Missverständnisse zu vermeiden. Währungskurse werden näherungsweise umgerechnet.'
+                    : 'Stock symbols and exchange terms remain in English to avoid confusion. Currency rates are approximately converted.'}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* API Keys Tab */}
           {activeTab === 'api' && (
             <div className="space-y-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className={`w-3 h-3 rounded-full ${hasAnyKey ? 'bg-green-500' : 'bg-blue-500'}`} />
                 <span className="text-sm text-gray-400">
-                  {hasAnyKey ? 'API-Schlüssel konfiguriert' : 'Yahoo Finance wird verwendet (kein API-Schlüssel nötig)'}
+                  {hasAnyKey ? t('settings.apiConfigured') : t('settings.yahooUsed')}
                 </span>
               </div>
 
               <div>
                 <label className="block text-sm text-gray-400 mb-2">
-                  Finnhub API Key
+                  {t('settings.finnhubKey')}
                   <a href="https://finnhub.io/register" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
-                    (Kostenlos registrieren)
+                    {t('settings.freeRegister')}
                   </a>
                 </label>
                 <input
@@ -259,15 +371,15 @@ export function SettingsPage() {
                   value={localConfig.finnhubApiKey}
                   onChange={(e) => setLocalConfig(prev => ({ ...prev, finnhubApiKey: e.target.value }))}
                   className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                  placeholder="Finnhub API-Schlüssel eingeben"
+                  placeholder={t('settings.enterKey')}
                 />
               </div>
 
               <div>
                 <label className="block text-sm text-gray-400 mb-2">
-                  Alpha Vantage API Key
+                  {t('settings.alphaVantageKey')}
                   <a href="https://www.alphavantage.co/support/#api-key" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
-                    (Kostenlos registrieren)
+                    {t('settings.freeRegister')}
                   </a>
                 </label>
                 <input
@@ -275,15 +387,15 @@ export function SettingsPage() {
                   value={localConfig.alphaVantageApiKey}
                   onChange={(e) => setLocalConfig(prev => ({ ...prev, alphaVantageApiKey: e.target.value }))}
                   className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                  placeholder="Alpha Vantage API-Schlüssel eingeben"
+                  placeholder={t('settings.enterKey')}
                 />
               </div>
 
               <div>
                 <label className="block text-sm text-gray-400 mb-2">
-                  Twelve Data API Key
+                  {t('settings.twelveDataKey')}
                   <a href="https://twelvedata.com/register" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
-                    (Kostenlos registrieren)
+                    {t('settings.freeRegister')}
                   </a>
                 </label>
                 <input
@@ -291,7 +403,7 @@ export function SettingsPage() {
                   value={localConfig.twelveDataApiKey}
                   onChange={(e) => setLocalConfig(prev => ({ ...prev, twelveDataApiKey: e.target.value }))}
                   className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                  placeholder="Twelve Data API-Schlüssel eingeben"
+                  placeholder={t('settings.enterKey')}
                 />
               </div>
 
@@ -307,7 +419,7 @@ export function SettingsPage() {
                   value={localConfig.newsApiKey}
                   onChange={(e) => setLocalConfig(prev => ({ ...prev, newsApiKey: e.target.value }))}
                   className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                  placeholder="NewsAPI-Schlüssel eingeben"
+                  placeholder={t('settings.enterKey')}
                 />
               </div>
 
@@ -316,18 +428,18 @@ export function SettingsPage() {
                   onClick={handleClear}
                   className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 rounded-lg text-gray-300 font-medium transition-colors"
                 >
-                  Alle löschen
+                  {t('settings.clear')}
                 </button>
                 <button
                   onClick={handleSave}
                   className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg text-white font-medium transition-colors"
                 >
-                  {saved ? '✓ Gespeichert!' : 'Speichern & Anwenden'}
+                  {saved ? t('settings.saved') : t('settings.save')}
                 </button>
               </div>
 
               <p className="text-xs text-gray-500 mt-4">
-                API-Schlüssel werden lokal gespeichert. Bei Anmeldung werden sie mit deinem Konto synchronisiert.
+                {t('settings.keysStoredLocally')}
               </p>
             </div>
           )}
@@ -336,16 +448,15 @@ export function SettingsPage() {
           {activeTab === 'data-source' && (
             <div className="space-y-6">
               <p className="text-gray-400 mb-4">
-                Wähle deine bevorzugte Datenquelle für Aktienkurse.
+                {t('settings.selectDataSource')}
               </p>
               <DataSourceSelector />
               
               {/* API Quota Display */}
               <div className="mt-6">
-                <h3 className="text-lg font-medium text-white mb-3">API-Verbrauch</h3>
+                <h3 className="text-lg font-medium text-white mb-3">{t('settings.apiUsage')}</h3>
                 <p className="text-gray-400 text-sm mb-4">
-                  Übersicht über dein verbleibendes API-Kontingent. Daten werden automatisch gecached, 
-                  um API-Aufrufe zu minimieren und Rate-Limits einzuhalten.
+                  {t('settings.apiUsageDesc')}
                 </p>
                 <ApiQuotaDisplay />
               </div>
@@ -356,13 +467,13 @@ export function SettingsPage() {
           {activeTab === 'ml' && (
             <div className="space-y-6">
               <p className="text-gray-400 mb-4">
-                Konfiguriere die Parameter für das Machine Learning Modell.
+                {t('settings.mlConfig')}
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">
-                    Sequenzlänge (Tage)
+                    {t('settings.sequenceLength')}
                   </label>
                   <input
                     type="number"
@@ -377,12 +488,12 @@ export function SettingsPage() {
                     max={120}
                     className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Anzahl der Tage für die Eingabesequenz (30-120)</p>
+                  <p className="text-xs text-gray-500 mt-1">{t('settings.sequenceLengthDesc')}</p>
                 </div>
 
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">
-                    Vorhersage-Tage
+                    {t('settings.forecastDays')}
                   </label>
                   <input
                     type="number"
@@ -397,12 +508,12 @@ export function SettingsPage() {
                     max={30}
                     className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Anzahl der Tage für die Vorhersage (1-30)</p>
+                  <p className="text-xs text-gray-500 mt-1">{t('settings.forecastDaysDesc')}</p>
                 </div>
 
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">
-                    Epochen
+                    {t('settings.epochs')}
                   </label>
                   <input
                     type="number"
@@ -417,12 +528,12 @@ export function SettingsPage() {
                     max={500}
                     className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Trainings-Epochen (10-500)</p>
+                  <p className="text-xs text-gray-500 mt-1">{t('settings.epochsDesc')}</p>
                 </div>
 
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">
-                    Lernrate
+                    {t('settings.learningRate')}
                   </label>
                   <input
                     type="number"
@@ -438,7 +549,7 @@ export function SettingsPage() {
                     step={0.0001}
                     className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Lernrate für das Training (0.0001-0.1)</p>
+                  <p className="text-xs text-gray-500 mt-1">{t('settings.learningRateDesc')}</p>
                 </div>
               </div>
 
@@ -451,8 +562,8 @@ export function SettingsPage() {
                     className="w-5 h-5 rounded bg-slate-900 border-slate-600 text-blue-500 focus:ring-blue-500"
                   />
                   <div>
-                    <span className="text-white">GPU/CUDA verwenden</span>
-                    <p className="text-xs text-gray-500">Beschleunigt Training wenn NVIDIA GPU verfügbar</p>
+                    <span className="text-white">{t('settings.useCuda')}</span>
+                    <p className="text-xs text-gray-500">{t('settings.useCudaDesc')}</p>
                   </div>
                 </label>
 
@@ -464,8 +575,8 @@ export function SettingsPage() {
                     className="w-5 h-5 rounded bg-slate-900 border-slate-600 text-blue-500 focus:ring-blue-500"
                   />
                   <div>
-                    <span className="text-white">FinBERT vorladen</span>
-                    <p className="text-xs text-gray-500">Lädt Sentiment-Modell beim Start (mehr RAM, schnellere Analyse)</p>
+                    <span className="text-white">{t('settings.preloadFinbert')}</span>
+                    <p className="text-xs text-gray-500">{t('settings.preloadFinbertDesc')}</p>
                   </div>
                 </label>
               </div>
@@ -474,7 +585,7 @@ export function SettingsPage() {
                 onClick={handleSaveMLSettings}
                 className="w-full py-3 bg-purple-600 hover:bg-purple-500 rounded-lg text-white font-medium transition-colors mt-4"
               >
-                {mlSettingsSaved ? '✓ ML-Einstellungen gespeichert!' : 'ML-Einstellungen speichern'}
+                {mlSettingsSaved ? t('settings.mlSaved') : t('settings.saveML')}
               </button>
             </div>
           )}
@@ -493,15 +604,15 @@ export function SettingsPage() {
                         <h3 className="text-xl font-semibold text-white">{authState.user?.username}</h3>
                         <p className="text-gray-400">{authState.user?.email}</p>
                         <span className="text-xs text-green-400 bg-green-500/20 px-2 py-0.5 rounded-full">
-                          ✓ Eingeloggt
+                          {t('settings.loggedIn')}
                         </span>
                       </div>
                     </div>
 
                     <div className="text-sm text-gray-400 space-y-1">
-                      <p>✓ API-Schlüssel werden synchronisiert</p>
-                      <p>✓ Custom Symbols werden gespeichert</p>
-                      <p>✓ ML-Einstellungen geräteübergreifend</p>
+                      <p>{t('settings.apiKeysSynced')}</p>
+                      <p>{t('settings.customSymbolsSaved')}</p>
+                      <p>{t('settings.mlSettingsAcross')}</p>
                     </div>
                   </div>
 
@@ -509,7 +620,7 @@ export function SettingsPage() {
                     onClick={handleLogout}
                     className="w-full py-3 bg-red-600/20 hover:bg-red-600/30 border border-red-600/50 rounded-lg text-red-400 font-medium transition-colors"
                   >
-                    Abmelden
+                    {t('settings.logout')}
                   </button>
                 </div>
               ) : (
@@ -518,12 +629,12 @@ export function SettingsPage() {
                     <div>
                       <RegisterForm onSuccess={() => setShowRegister(false)} />
                       <p className="text-center text-gray-400 mt-4">
-                        Bereits ein Konto?{' '}
+                        {t('settings.alreadyAccount')}{' '}
                         <button
                           onClick={() => setShowRegister(false)}
                           className="text-blue-400 hover:text-blue-300"
                         >
-                          Anmelden
+                          {t('settings.signIn')}
                         </button>
                       </p>
                     </div>
@@ -531,24 +642,24 @@ export function SettingsPage() {
                     <div>
                       <LoginForm />
                       <p className="text-center text-gray-400 mt-4">
-                        Noch kein Konto?{' '}
+                        {t('settings.noAccount')}{' '}
                         <button
                           onClick={() => setShowRegister(true)}
                           className="text-blue-400 hover:text-blue-300"
                         >
-                          Registrieren
+                          {t('settings.register')}
                         </button>
                       </p>
                     </div>
                   )}
 
                   <div className="mt-6 p-4 bg-slate-900/50 rounded-lg">
-                    <h4 className="text-white font-medium mb-2">Vorteile eines Kontos:</h4>
+                    <h4 className="text-white font-medium mb-2">{t('settings.benefits')}</h4>
                     <ul className="text-sm text-gray-400 space-y-1">
-                      <li>• API-Schlüssel geräteübergreifend synchronisieren</li>
-                      <li>• Custom Symbols speichern</li>
-                      <li>• ML-Einstellungen beibehalten</li>
-                      <li>• Watchlist zwischen Geräten teilen</li>
+                      <li>{t('settings.benefit1')}</li>
+                      <li>{t('settings.benefit2')}</li>
+                      <li>{t('settings.benefit3')}</li>
+                      <li>{t('settings.benefit4')}</li>
                     </ul>
                   </div>
                 </div>

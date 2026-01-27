@@ -9,9 +9,9 @@ import { getAuthState, subscribeToAuth, type AuthState } from '../services/authS
 import {
   getLeaderboard,
   getUserRank,
-  formatCurrency,
   formatPercent,
 } from '../services/tradingService';
+import { useSettings } from '../contexts/SettingsContext';
 import type { LeaderboardEntry, UserRank } from '../types/trading';
 
 type TimeframeType = 'all' | 'month' | 'week' | 'day';
@@ -23,6 +23,7 @@ export function LeaderboardPage() {
   const [timeframe, setTimeframe] = useState<TimeframeType>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { t, formatCurrency } = useSettings();
   
   useEffect(() => {
     return subscribeToAuth(setAuthState);
@@ -42,7 +43,7 @@ export function LeaderboardPage() {
         setLeaderboard(leaderboardData);
         setUserRank(rankData);
       } catch (e) {
-        setError('Leaderboard konnte nicht geladen werden');
+        setError(t('leaderboard.loadError'));
         console.error(e);
       } finally {
         setLoading(false);
@@ -72,20 +73,20 @@ export function LeaderboardPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            🏆 Leaderboard
+            🏆 {t('leaderboard.title')}
           </h1>
           <p className="text-gray-400 text-sm mt-1">
-            Top-Trader nach Performance
+            {t('leaderboard.description')}
           </p>
         </div>
         
         {/* Timeframe Selector */}
         <div className="flex gap-2">
           {[
-            { id: 'all', label: 'Gesamt' },
-            { id: 'month', label: '30 Tage' },
-            { id: 'week', label: '7 Tage' },
-            { id: 'day', label: 'Heute' },
+            { id: 'all', labelKey: 'leaderboard.timeframe.all' },
+            { id: 'month', labelKey: 'leaderboard.timeframe.month' },
+            { id: 'week', labelKey: 'leaderboard.timeframe.week' },
+            { id: 'day', labelKey: 'leaderboard.timeframe.day' },
           ].map((tf) => (
             <button
               key={tf.id}
@@ -96,7 +97,7 @@ export function LeaderboardPage() {
                   : 'bg-slate-800 text-gray-300 hover:bg-slate-700'
               }`}
             >
-              {tf.label}
+              {t(tf.labelKey)}
             </button>
           ))}
         </div>
@@ -111,9 +112,9 @@ export function LeaderboardPage() {
                 #{userRank.rank}
               </div>
               <div>
-                <div className="font-semibold">Dein Rang</div>
+                <div className="font-semibold">{t('leaderboard.yourRank')}</div>
                 <div className="text-sm text-gray-400">
-                  von {userRank.totalParticipants} Teilnehmern
+                  {userRank.totalParticipants} {t('leaderboard.columns.trader')}
                 </div>
               </div>
             </div>
@@ -129,7 +130,7 @@ export function LeaderboardPage() {
       
       {authState.isAuthenticated && userRank?.rank === null && (
         <div className="bg-slate-800/50 rounded-xl p-4 text-center text-gray-400">
-          <p>Du bist noch nicht im Leaderboard. Schließe deinen ersten Trade ab!</p>
+          <p>{t('leaderboard.notRanked')} {t('leaderboard.tradeToAppear')}</p>
         </div>
       )}
       
@@ -151,7 +152,7 @@ export function LeaderboardPage() {
           {leaderboard.length === 0 ? (
             <div className="text-center py-12 text-gray-400">
               <div className="text-4xl mb-4">📭</div>
-              <p>Noch keine Teilnehmer im Zeitraum</p>
+              <p>{t('leaderboard.noTraders')}</p>
             </div>
           ) : (
             <div className="divide-y divide-slate-700/50">
@@ -172,11 +173,11 @@ export function LeaderboardPage() {
                   
                   <div className="flex items-center gap-8">
                     <div className="text-right hidden md:block">
-                      <div className="text-sm text-gray-400">Trades</div>
+                      <div className="text-sm text-gray-400">{t('leaderboard.columns.trades')}</div>
                       <div className="font-medium">{entry.totalTrades}</div>
                     </div>
                     <div className="text-right hidden md:block">
-                      <div className="text-sm text-gray-400">Win-Rate</div>
+                      <div className="text-sm text-gray-400">{t('leaderboard.columns.winRate')}</div>
                       <div className={`font-medium ${entry.winRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>
                         {entry.winRate.toFixed(1)}%
                       </div>
@@ -202,8 +203,7 @@ export function LeaderboardPage() {
       <div className="bg-slate-800/50 rounded-xl p-4 text-sm text-gray-400">
         <p className="flex items-center gap-2">
           <span>ℹ️</span>
-          Das Leaderboard zeigt Trader mit mindestens einem abgeschlossenen Trade.
-          Die Rangliste basiert auf der prozentualen Rendite seit Start.
+          {t('leaderboard.tradeToAppear')}
         </p>
       </div>
     </div>

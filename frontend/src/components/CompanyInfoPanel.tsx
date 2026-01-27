@@ -16,21 +16,44 @@
 import { useState, useEffect } from 'react';
 import { 
   fetchCompanyInfo, 
-  formatCurrency, 
   formatPercent,
-  formatMarketCap,
   formatPE,
   type CompanyInfo 
 } from '../services/companyInfoService';
+import { useSettings } from '../contexts/SettingsContext';
 
 interface CompanyInfoPanelProps {
   symbol: string;
 }
 
 export function CompanyInfoPanel({ symbol }: CompanyInfoPanelProps) {
+  const { t, formatCurrency, language, currency } = useSettings();
   const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Format market cap with currency conversion
+  const formatMarketCapValue = (value?: number): string => {
+    if (!value) return '—';
+    // Convert if needed (original value is in USD)
+    const converted = currency === 'EUR' ? value * 0.92 : value;
+    const symbol = currency === 'EUR' ? '€' : '$';
+    
+    if (converted >= 1e12) return `${symbol}${(converted / 1e12).toFixed(2)} ${t('marketCap.trillion')}`;
+    if (converted >= 1e9) return `${symbol}${(converted / 1e9).toFixed(2)} ${t('marketCap.billion')}`;
+    if (converted >= 1e6) return `${symbol}${(converted / 1e6).toFixed(2)} ${t('marketCap.million')}`;
+    if (converted >= 1e3) return `${symbol}${(converted / 1e3).toFixed(0)} ${t('marketCap.thousand')}`;
+    return `${symbol}${converted.toLocaleString(language === 'de' ? 'de-DE' : 'en-US')}`;
+  };
+
+  // Format volume with localized suffixes
+  const formatVolume = (vol?: number): string => {
+    if (!vol) return '—';
+    if (vol >= 1e9) return `${(vol / 1e9).toFixed(1)} ${t('marketCap.billion')}`;
+    if (vol >= 1e6) return `${(vol / 1e6).toFixed(1)} ${t('marketCap.million')}`;
+    if (vol >= 1e3) return `${(vol / 1e3).toFixed(1)} ${t('marketCap.thousand')}`;
+    return vol.toLocaleString(language === 'de' ? 'de-DE' : 'en-US');
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -45,12 +68,12 @@ export function CompanyInfoPanel({ symbol }: CompanyInfoPanelProps) {
           if (info) {
             setCompanyInfo(info);
           } else {
-            setError('Keine Daten verfügbar');
+            setError(t('company.noData'));
           }
         }
       } catch (err) {
         if (isMounted) {
-          setError('Fehler beim Laden');
+          setError(t('company.loadError'));
         }
       } finally {
         if (isMounted) {
@@ -64,7 +87,7 @@ export function CompanyInfoPanel({ symbol }: CompanyInfoPanelProps) {
     return () => {
       isMounted = false;
     };
-  }, [symbol]);
+  }, [symbol, t]);
 
   if (isLoading) {
     return (
@@ -86,21 +109,12 @@ export function CompanyInfoPanel({ symbol }: CompanyInfoPanelProps) {
   if (error || !companyInfo) {
     return (
       <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
-        <p className="text-gray-400 text-sm">{error || 'Keine Daten'}</p>
+        <p className="text-gray-400 text-sm">{error || t('company.noData')}</p>
       </div>
     );
   }
 
   const isPositive = companyInfo.changePercent >= 0;
-
-  // Format volume for display
-  const formatVolume = (vol?: number): string => {
-    if (!vol) return '—';
-    if (vol >= 1e9) return `${(vol / 1e9).toFixed(1)} Mrd.`;
-    if (vol >= 1e6) return `${(vol / 1e6).toFixed(1)} Mio.`;
-    if (vol >= 1e3) return `${(vol / 1e3).toFixed(1)} Tsd.`;
-    return vol.toLocaleString('de-DE');
-  };
 
   // Get instrument type styling
   const getInstrumentTypeStyle = (type?: CompanyInfo['instrumentType']) => {
@@ -185,19 +199,16 @@ export function CompanyInfoPanel({ symbol }: CompanyInfoPanelProps) {
           )}
         </div>
         
-        {/* Price in EUR */}
+        {/* Price */}
         <div className="text-right flex-shrink-0">
           <div className="text-xl sm:text-2xl font-bold text-white">
-            {formatCurrency(companyInfo.priceEUR, 'EUR')}
+            {formatCurrency(companyInfo.priceUSD)}
           </div>
           <div className={`text-sm font-medium ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
             {formatPercent(companyInfo.changePercent)}
             <span className="text-gray-500 ml-1">
-              ({isPositive ? '+' : ''}{formatCurrency(companyInfo.changeAbsolute * (companyInfo.priceEUR / companyInfo.priceUSD), 'EUR')})
+              ({isPositive ? '+' : ''}{formatCurrency(companyInfo.changeAbsolute)})
             </span>
-          </div>
-          <div className="text-xs text-gray-500">
-            ≈ {formatCurrency(companyInfo.priceUSD, 'USD')}
           </div>
         </div>
       </div>
@@ -231,56 +242,56 @@ export function CompanyInfoPanel({ symbol }: CompanyInfoPanelProps) {
         <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-3">
           <div className="flex items-center gap-2 text-orange-400 text-sm font-medium mb-2">
             <span>⚠️</span>
-            <span>{isDerivative ? 'Derivat / Hebelprodukt' : 'Gehebeltes Produkt (Leveraged)'}</span>
+            <span>{isDerivative ? t('company.derivative') : t('company.leveraged')}</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             {companyInfo.leverage && (
               <div>
-                <span className="text-gray-500">Hebel: </span>
+                <span className="text-gray-500">{t('company.leverage')}: </span>
                 <span className="text-white font-semibold">{companyInfo.leverage}x</span>
               </div>
             )}
             {companyInfo.knockoutLevel && (
               <div>
-                <span className="text-gray-500">Knock-Out: </span>
-                <span className="text-red-400 font-semibold">{formatCurrency(companyInfo.knockoutLevel, 'EUR')}</span>
+                <span className="text-gray-500">{t('company.knockout')}: </span>
+                <span className="text-red-400 font-semibold">{formatCurrency(companyInfo.knockoutLevel)}</span>
               </div>
             )}
             {companyInfo.strikePrice && (
               <div>
-                <span className="text-gray-500">Strike: </span>
-                <span className="text-white font-semibold">{formatCurrency(companyInfo.strikePrice, 'EUR')}</span>
+                <span className="text-gray-500">{t('company.strike')}: </span>
+                <span className="text-white font-semibold">{formatCurrency(companyInfo.strikePrice)}</span>
               </div>
             )}
             {companyInfo.expirationDate && (
               <div>
-                <span className="text-gray-500">Verfall: </span>
+                <span className="text-gray-500">{t('company.expiration')}: </span>
                 <span className="text-yellow-400 font-semibold">{companyInfo.expirationDate}</span>
               </div>
             )}
             {companyInfo.underlyingSymbol && (
               <div>
-                <span className="text-gray-500">Basiswert: </span>
+                <span className="text-gray-500">{t('company.underlying')}: </span>
                 <span className="text-blue-400 font-semibold">{companyInfo.underlyingSymbol}</span>
               </div>
             )}
             {companyInfo.overnightFee !== undefined && companyInfo.overnightFee > 0 && (
               <div>
-                <span className="text-gray-500">Overnight: </span>
+                <span className="text-gray-500">{t('company.overnight')}: </span>
                 <span className="text-yellow-400 font-semibold">~{(companyInfo.overnightFee * 365).toFixed(1)}% p.a.</span>
               </div>
             )}
             {companyInfo.spreadPercent !== undefined && companyInfo.spreadPercent > 0 && (
               <div>
-                <span className="text-gray-500">Spread: </span>
+                <span className="text-gray-500">{t('company.spread')}: </span>
                 <span className="text-white font-semibold">~{companyInfo.spreadPercent.toFixed(2)}%</span>
               </div>
             )}
           </div>
           <div className="text-xs text-orange-400/70 mt-2">
             {isDerivative 
-              ? '⚡ Hebelprodukte bergen erhöhte Risiken. Totalverlust möglich.'
-              : '⚡ Leveraged ETFs unterliegen dem Pfadabhängigkeits-Effekt. Nicht für langfristiges Halten geeignet.'}
+              ? `⚡ ${t('company.derivativeWarning')}`
+              : `⚡ ${t('company.leveragedWarning')}`}
           </div>
         </div>
       )}
@@ -289,20 +300,15 @@ export function CompanyInfoPanel({ symbol }: CompanyInfoPanelProps) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         {/* Market Cap */}
         <div className="bg-slate-900/50 rounded-lg p-2.5 sm:p-3">
-          <div className="text-xs text-gray-400 mb-1">Marktkapitalisierung</div>
+          <div className="text-xs text-gray-400 mb-1">{t('company.marketCap')}</div>
           <div className="text-sm sm:text-base font-semibold text-white">
-            {companyInfo.marketCapEUR ? `€${formatMarketCap(companyInfo.marketCapEUR)}` : '—'}
+            {companyInfo.marketCapUSD ? formatMarketCapValue(companyInfo.marketCapUSD) : '—'}
           </div>
-          {companyInfo.marketCapUSD && (
-            <div className="text-xs text-gray-500">
-              ≈ ${formatMarketCap(companyInfo.marketCapUSD)}
-            </div>
-          )}
         </div>
 
         {/* P/E Ratio (KGV) */}
         <div className="bg-slate-900/50 rounded-lg p-2.5 sm:p-3">
-          <div className="text-xs text-gray-400 mb-1">KGV (P/E)</div>
+          <div className="text-xs text-gray-400 mb-1">{t('company.peRatio')}</div>
           <div className={`text-sm sm:text-base font-semibold ${
             companyInfo.peRatio === undefined ? 'text-white' :
             companyInfo.peRatio > 30 ? 'text-yellow-400' : 
@@ -313,14 +319,14 @@ export function CompanyInfoPanel({ symbol }: CompanyInfoPanelProps) {
           </div>
           {companyInfo.forwardPE !== undefined && (
             <div className="text-xs text-gray-500">
-              Fwd: {formatPE(companyInfo.forwardPE)}
+              {t('company.forwardPE')}: {formatPE(companyInfo.forwardPE)}
             </div>
           )}
         </div>
 
         {/* Dividend Yield */}
         <div className="bg-slate-900/50 rounded-lg p-2.5 sm:p-3">
-          <div className="text-xs text-gray-400 mb-1">Dividendenrendite</div>
+          <div className="text-xs text-gray-400 mb-1">{t('company.dividendYield')}</div>
           <div className={`text-sm sm:text-base font-semibold ${
             companyInfo.dividendYield === undefined || companyInfo.dividendYield === 0 ? 'text-white' :
             companyInfo.dividendYield > 4 ? 'text-green-400' : 
@@ -332,20 +338,20 @@ export function CompanyInfoPanel({ symbol }: CompanyInfoPanelProps) {
           </div>
           {companyInfo.eps !== undefined && (
             <div className="text-xs text-gray-500">
-              EPS: ${companyInfo.eps.toFixed(2)}
+              {t('company.eps')}: {formatCurrency(companyInfo.eps)}
             </div>
           )}
         </div>
 
         {/* Volume */}
         <div className="bg-slate-900/50 rounded-lg p-2.5 sm:p-3">
-          <div className="text-xs text-gray-400 mb-1">Volumen (heute)</div>
+          <div className="text-xs text-gray-400 mb-1">{t('company.volume')}</div>
           <div className="text-sm sm:text-base font-semibold text-white">
             {formatVolume(companyInfo.volume)}
           </div>
           {companyInfo.beta !== undefined && (
             <div className="text-xs text-gray-500">
-              Beta: {companyInfo.beta.toFixed(2)}
+              {t('company.beta')}: {companyInfo.beta.toFixed(2)}
             </div>
           )}
         </div>
@@ -354,10 +360,10 @@ export function CompanyInfoPanel({ symbol }: CompanyInfoPanelProps) {
       {/* 52-Week Range */}
       {companyInfo.fiftyTwoWeekLow && companyInfo.fiftyTwoWeekHigh && (
         <div className="bg-slate-900/50 rounded-lg p-2.5 sm:p-3">
-          <div className="text-xs text-gray-400 mb-2">52-Wochen Bereich</div>
+          <div className="text-xs text-gray-400 mb-2">{t('company.weekRange')}</div>
           <div className="flex justify-between text-sm font-semibold text-white mb-1">
-            <span>{formatCurrency(companyInfo.fiftyTwoWeekLow, 'USD')}</span>
-            <span>{formatCurrency(companyInfo.fiftyTwoWeekHigh, 'USD')}</span>
+            <span>{formatCurrency(companyInfo.fiftyTwoWeekLow)}</span>
+            <span>{formatCurrency(companyInfo.fiftyTwoWeekHigh)}</span>
           </div>
           {/* Position indicator */}
           <div className="relative h-2 bg-slate-700 rounded-full overflow-hidden">
@@ -376,16 +382,15 @@ export function CompanyInfoPanel({ symbol }: CompanyInfoPanelProps) {
             />
           </div>
           <div className="text-xs text-gray-500 mt-1 text-center">
-            Aktuell: {formatCurrency(companyInfo.priceUSD, 'USD')}
+            {t('company.current')}: {formatCurrency(companyInfo.priceUSD)}
           </div>
         </div>
       )}
 
       {/* Data sources and info */}
       <div className="text-xs text-gray-500 pt-2 border-t border-slate-700/50 flex justify-between items-center flex-wrap gap-2">
-        <span>💱 Preise in EUR umgerechnet zum aktuellen Wechselkurs</span>
         {companyInfo.dataSources && companyInfo.dataSources.length > 0 && (
-          <span className="text-gray-600" title={`Daten von: ${companyInfo.dataSources.join(', ')}`}>
+          <span className="text-gray-600">
             📊 {companyInfo.dataSources.join(', ')}
           </span>
         )}

@@ -10,7 +10,7 @@ import {
   addCustomSymbolToServer, 
   removeCustomSymbolFromServer 
 } from '../services/userSettingsService';
-import { fetchCompanyInfo, type CompanyInfo } from '../services/companyInfoService';
+import { fetchCompanyInfo } from '../services/companyInfoService';
 
 // Re-export DataTimestamps type for external use
 export interface DataTimestamps {
@@ -97,12 +97,6 @@ function formatPrice(price: number | undefined): string {
   if (price >= 1000) return price.toFixed(0);
   if (price >= 100) return price.toFixed(1);
   return price.toFixed(2);
-}
-
-// Get color class for change
-function getChangeColor(change: number | undefined): string {
-  if (!change || change === 0) return 'text-gray-400';
-  return change > 0 ? 'text-green-400' : 'text-red-400';
 }
 
 // Get 52-week position as percentage

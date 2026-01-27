@@ -1,4 +1,5 @@
 import type { ForecastResult, TrendSignal, IndicatorAnalysis } from '../types/stock';
+import { useSettings } from '../contexts/SettingsContext';
 
 interface ForecastPanelProps {
   forecast: ForecastResult;
@@ -49,14 +50,14 @@ function calculateIndicatorAgreement(
 }
 
 // Agreement-Styling
-function getAgreementStyle(agreement: AgreementLevel) {
+function getAgreementStyle(agreement: AgreementLevel, t: (key: string) => string) {
   switch (agreement) {
     case 'strong':
       return {
         border: 'border-green-500/50',
         indicator: '●',
         indicatorColor: 'text-green-400',
-        label: 'Starke Übereinstimmung',
+        label: t('forecast.agreementStrong'),
         bgTint: 'ring-1 ring-green-500/20'
       };
     case 'moderate':
@@ -64,7 +65,7 @@ function getAgreementStyle(agreement: AgreementLevel) {
         border: 'border-slate-600',
         indicator: '◐',
         indicatorColor: 'text-blue-400',
-        label: 'Moderate Übereinstimmung',
+        label: t('forecast.agreementModerate'),
         bgTint: ''
       };
     case 'weak':
@@ -72,7 +73,7 @@ function getAgreementStyle(agreement: AgreementLevel) {
         border: 'border-yellow-500/30 border-dashed',
         indicator: '○',
         indicatorColor: 'text-yellow-400',
-        label: 'Schwache Übereinstimmung',
+        label: t('forecast.agreementWeak'),
         bgTint: ''
       };
     case 'conflicting':
@@ -80,13 +81,13 @@ function getAgreementStyle(agreement: AgreementLevel) {
         border: 'border-red-500/30 border-dashed',
         indicator: '⚠',
         indicatorColor: 'text-red-400',
-        label: 'Widersprüchlich zu anderen',
+        label: t('forecast.agreementConflicting'),
         bgTint: 'bg-red-500/5'
       };
   }
 }
 
-function SignalBadge({ signal }: { signal: TrendSignal }) {
+function SignalBadge({ signal, t }: { signal: TrendSignal; t: (key: string) => string }) {
   const colors = {
     STRONG_BUY: 'bg-green-500 text-white',
     BUY: 'bg-green-400/80 text-white',
@@ -95,17 +96,17 @@ function SignalBadge({ signal }: { signal: TrendSignal }) {
     STRONG_SELL: 'bg-red-500 text-white',
   };
 
-  const labels = {
-    STRONG_BUY: 'Strong Buy',
-    BUY: 'Buy',
-    NEUTRAL: 'Neutral',
-    SELL: 'Sell',
-    STRONG_SELL: 'Strong Sell',
+  const labelKeys: Record<TrendSignal, string> = {
+    STRONG_BUY: 'signals.strongBuy',
+    BUY: 'signals.buy',
+    NEUTRAL: 'forecast.neutral',
+    SELL: 'signals.sell',
+    STRONG_SELL: 'signals.strongSell',
   };
 
   return (
     <span className={`px-3 py-1 rounded-full text-sm font-semibold ${colors[signal]}`}>
-      {labels[signal]}
+      {t(labelKeys[signal])}
     </span>
   );
 }
@@ -133,6 +134,7 @@ function SignalIcon({ signal }: { signal: TrendSignal }) {
 }
 
 export function ForecastPanel({ forecast, currentPrice }: ForecastPanelProps) {
+  const { t, formatCurrency } = useSettings();
   const priceChange = forecast.priceTarget - currentPrice;
   const priceChangePercent = (priceChange / currentPrice) * 100;
 
@@ -140,39 +142,39 @@ export function ForecastPanel({ forecast, currentPrice }: ForecastPanelProps) {
     <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold text-white">AI Forecast</h2>
-        <SignalBadge signal={forecast.overallSignal} />
+        <h2 className="text-xl font-bold text-white">{t('forecast.aiTitle')}</h2>
+        <SignalBadge signal={forecast.overallSignal} t={t} />
       </div>
 
       {/* Main Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-slate-900/50 rounded-lg p-4">
-          <div className="text-gray-400 text-sm mb-1">Current Price</div>
-          <div className="text-white text-xl font-bold">${currentPrice.toFixed(2)}</div>
+          <div className="text-gray-400 text-sm mb-1">{t('forecast.currentPrice')}</div>
+          <div className="text-white text-xl font-bold">{formatCurrency(currentPrice)}</div>
         </div>
         <div className="bg-slate-900/50 rounded-lg p-4">
-          <div className="text-gray-400 text-sm mb-1">Price Target</div>
+          <div className="text-gray-400 text-sm mb-1">{t('forecast.priceTarget')}</div>
           <div className={`text-xl font-bold ${priceChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-            ${forecast.priceTarget.toFixed(2)}
+            {formatCurrency(forecast.priceTarget)}
           </div>
           <div className={`text-sm ${priceChange >= 0 ? 'text-green-400/70' : 'text-red-400/70'}`}>
             {priceChange >= 0 ? '+' : ''}{priceChangePercent.toFixed(1)}%
           </div>
         </div>
         <div className="bg-slate-900/50 rounded-lg p-4">
-          <div className="text-gray-400 text-sm mb-1">Support Level</div>
-          <div className="text-green-400 text-xl font-bold">${forecast.supportLevel.toFixed(2)}</div>
+          <div className="text-gray-400 text-sm mb-1">{t('forecast.supportLevel')}</div>
+          <div className="text-green-400 text-xl font-bold">{formatCurrency(forecast.supportLevel)}</div>
         </div>
         <div className="bg-slate-900/50 rounded-lg p-4">
-          <div className="text-gray-400 text-sm mb-1">Resistance Level</div>
-          <div className="text-red-400 text-xl font-bold">${forecast.resistanceLevel.toFixed(2)}</div>
+          <div className="text-gray-400 text-sm mb-1">{t('forecast.resistanceLevel')}</div>
+          <div className="text-red-400 text-xl font-bold">{formatCurrency(forecast.resistanceLevel)}</div>
         </div>
       </div>
 
       {/* Confidence Meter */}
       <div className="mb-6">
         <div className="flex justify-between items-center mb-2">
-          <span className="text-gray-400 text-sm">Indicator Agreement</span>
+          <span className="text-gray-400 text-sm">{t('forecast.indicatorAgreement')}</span>
           <span className="text-white font-semibold">{forecast.confidence}%</span>
         </div>
         <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
@@ -188,26 +190,26 @@ export function ForecastPanel({ forecast, currentPrice }: ForecastPanelProps) {
 
       {/* Summary */}
       <div className="bg-slate-900/50 rounded-lg p-4 mb-6">
-        <h3 className="text-white font-semibold mb-2">Analysis Summary</h3>
+        <h3 className="text-white font-semibold mb-2">{t('forecast.analysisSummary')}</h3>
         <p className="text-gray-300 text-sm leading-relaxed">{forecast.summary}</p>
       </div>
 
       {/* Indicator Details */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-white font-semibold">Technical Indicators</h3>
+          <h3 className="text-white font-semibold">{t('forecast.technicalIndicators')}</h3>
           <div className="flex items-center gap-2 text-xs text-gray-500">
-            <span>Agreement:</span>
-            <span className="text-green-400">● stark</span>
-            <span className="text-blue-400">◐ moderat</span>
-            <span className="text-yellow-400">○ schwach</span>
-            <span className="text-red-400">⚠ widerspr.</span>
+            <span>{t('forecast.agreement')}:</span>
+            <span className="text-green-400">● {t('forecast.agreementStrong')}</span>
+            <span className="text-blue-400">◐ {t('forecast.agreementModerate')}</span>
+            <span className="text-yellow-400">○ {t('forecast.agreementWeak')}</span>
+            <span className="text-red-400">⚠ {t('forecast.agreementConflicting')}</span>
           </div>
         </div>
         <div className="space-y-3">
           {forecast.indicators.map((indicator, index) => {
             const agreement = calculateIndicatorAgreement(indicator, forecast.indicators);
-            const agreementStyle = getAgreementStyle(agreement);
+            const agreementStyle = getAgreementStyle(agreement, t);
             
             return (
               <div 
@@ -225,13 +227,13 @@ export function ForecastPanel({ forecast, currentPrice }: ForecastPanelProps) {
                       {agreementStyle.indicator}
                     </span>
                   </div>
-                  <SignalBadge signal={indicator.signal} />
+                  <SignalBadge signal={indicator.signal} t={t} />
                 </div>
                 <div className="text-gray-400 text-sm mb-2">{indicator.value}</div>
                 <p className="text-gray-300 text-sm">{indicator.explanation}</p>
                 {agreement === 'conflicting' && (
                   <p className="text-red-400/80 text-xs mt-2 italic">
-                    ⚠ Dieser Indikator widerspricht der Mehrheit - mit Vorsicht interpretieren
+                    ⚠ {t('forecast.conflictingWarning')}
                   </p>
                 )}
               </div>

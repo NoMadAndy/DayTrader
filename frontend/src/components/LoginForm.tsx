@@ -4,6 +4,7 @@
 
 import { useState } from 'react';
 import { login } from '../services/authService';
+import { useSettings } from '../contexts/SettingsContext';
 
 interface LoginFormProps {
   onSuccess?: () => void;
@@ -14,6 +15,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const { t } = useSettings();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,14 +29,14 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     if (result.success) {
       onSuccess?.();
     } else {
-      setError(result.error || 'Login fehlgeschlagen');
+      setError(result.error || t('login.failed'));
     }
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm text-gray-400 mb-1">E-Mail</label>
+        <label className="block text-sm text-gray-400 mb-1">{t('login.email')}</label>
         <input
           type="email"
           value={email}
@@ -47,7 +49,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       </div>
 
       <div>
-        <label className="block text-sm text-gray-400 mb-1">Passwort</label>
+        <label className="block text-sm text-gray-400 mb-1">{t('login.password')}</label>
         <input
           type="password"
           value={password}
@@ -76,10 +78,10 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
-            Einloggen...
+            {t('login.loggingIn')}
           </span>
         ) : (
-          'Einloggen'
+          t('login.submit')
         )}
       </button>
     </form>

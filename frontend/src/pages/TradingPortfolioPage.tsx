@@ -11,6 +11,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useDataService } from '../hooks';
 import { useSimpleAutoRefresh } from '../hooks';
 import { getAuthState, subscribeToAuth, type AuthState } from '../services/authService';
+import { useSettings } from '../contexts/SettingsContext';
 import {
   getOrCreatePortfolio,
   getOpenPositions,
@@ -23,13 +24,12 @@ import {
   calculateFees,
   getProductTypes,
   calculatePositionPnL,
-  formatCurrency,
   formatPercent,
   getProductTypeName,
   getSideName,
+  getOrderTypeName,
   validateOrder,
   createPendingOrder,
-  getOrderTypeName,
   checkTriggers,
   updatePositionLevels,
   resetPortfolio,
@@ -60,6 +60,7 @@ type TabType = 'trading' | 'overview' | 'settings';
 export function TradingPortfolioPage() {
   const { dataService } = useDataService();
   const [searchParams] = useSearchParams();
+  const { t, formatCurrency } = useSettings();
   
   // Auth state
   const [authState, setAuthState] = useState<AuthState>(getAuthState());
@@ -175,7 +176,7 @@ export function TradingPortfolioPage() {
       setOpenPositions(updatedPositions);
     } catch (e) {
       console.error('Failed to load portfolio:', e);
-      setError('Portfolio konnte nicht geladen werden');
+      setError(t('trading.loadError'));
     } finally {
       setLoading(false);
     }
@@ -332,21 +333,21 @@ export function TradingPortfolioPage() {
         const parsedStopPrice = parseFloat(stopOrderPrice);
         
         if (orderType === 'limit' && (isNaN(parsedLimitPrice) || parsedLimitPrice <= 0)) {
-          setError('Bitte gültigen Limit-Preis eingeben');
+          setError(t('trading.enterValidLimitPrice'));
           return;
         }
         if (orderType === 'stop' && (isNaN(parsedStopPrice) || parsedStopPrice <= 0)) {
-          setError('Bitte gültigen Stop-Preis eingeben');
+          setError(t('trading.enterValidStopPrice'));
           return;
         }
         if (orderType === 'stop_limit' && ((isNaN(parsedStopPrice) || parsedStopPrice <= 0) || (isNaN(parsedLimitPrice) || parsedLimitPrice <= 0))) {
-          setError('Bitte gültigen Stop- und Limit-Preis eingeben');
+          setError(t('trading.enterValidBothPrices'));
           return;
         }
         
         const qty = parseInt(quantity) || 0;
         if (qty <= 0) {
-          setError('Bitte gültige Menge eingeben');
+          setError(t('trading.enterValidQuantity'));
           return;
         }
         
@@ -363,17 +364,17 @@ export function TradingPortfolioPage() {
         });
         
         if (result.success) {
-          setSuccessMessage(`${getOrderTypeName(orderType)}-Order erstellt für ${selectedSymbol}`);
+          setSuccessMessage(`${t('trading.orderCreated')} ${selectedSymbol}`);
           await loadPortfolioData();
           setQuantity('10');
           setLimitPrice('');
           setStopOrderPrice('');
           setTimeout(() => setSuccessMessage(null), 5000);
         } else {
-          setError(result.error || 'Order konnte nicht erstellt werden');
+          setError(result.error || t('trading.orderFailed'));
         }
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Order fehlgeschlagen');
+        setError(e instanceof Error ? e.message : t('trading.orderFailed'));
       } finally {
         setOrderLoading(false);
       }
@@ -383,7 +384,7 @@ export function TradingPortfolioPage() {
     // Market order
     const qty = parseInt(quantity) || 0;
     if (qty <= 0) {
-      setError('Bitte gültige Menge eingeben');
+      setError(t('trading.enterValidQuantity'));
       return;
     }
     
@@ -412,17 +413,18 @@ export function TradingPortfolioPage() {
       const result = await executeMarketOrder(request);
       
       if (result.success) {
-        setSuccessMessage(`Order erfolgreich: ${getSideName(side)} ${qty}x ${selectedSymbol}`);
+        const sideLabel = side === 'buy' ? t('trading.buy') : side === 'sell' ? t('trading.sell') : t('trading.short');
+        setSuccessMessage(`${t('trading.orderSuccess')}: ${sideLabel} ${qty}x ${selectedSymbol}`);
         await loadPortfolioData();
         setQuantity('10');
         setStopLoss('');
         setTakeProfit('');
         setTimeout(() => setSuccessMessage(null), 5000);
       } else {
-        setError(result.error || 'Order fehlgeschlagen');
+        setError(result.error || t('trading.orderFailed'));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Order fehlgeschlagen');
+      setError(e instanceof Error ? e.message : t('trading.orderFailed'));
     } finally {
       setOrderLoading(false);
     }
@@ -436,22 +438,22 @@ export function TradingPortfolioPage() {
       
       const quote = await dataService.fetchQuote(position.symbol);
       if (!quote) {
-        throw new Error('Kurs konnte nicht abgerufen werden');
+        throw new Error(t('trading.quoteError'));
       }
       
       const result = await closePosition(position.id, quote.price);
       
       if (result.success) {
         setSuccessMessage(
-          `Position geschlossen: ${position.symbol} - P&L: ${formatCurrency(result.realizedPnl || 0)}`
+          `${t('trading.positionClosed')}: ${position.symbol} - P&L: ${formatCurrency(result.realizedPnl || 0)}`
         );
         await loadPortfolioData();
         setTimeout(() => setSuccessMessage(null), 5000);
       } else {
-        setError(result.error || 'Position konnte nicht geschlossen werden');
+        setError(result.error || t('trading.closeError'));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Fehler beim Schließen');
+      setError(e instanceof Error ? e.message : t('trading.closeError'));
     } finally {
       setOrderLoading(false);
     }
@@ -469,7 +471,7 @@ export function TradingPortfolioPage() {
       const result = await updatePositionLevels(positionId, { stopLoss: sl, takeProfit: tp });
       
       if (result) {
-        setSuccessMessage('Stop-Loss/Take-Profit aktualisiert');
+        setSuccessMessage(t('trading.updateSuccess'));
         setEditingPosition(null);
         setEditStopLoss('');
         setEditTakeProfit('');
@@ -477,7 +479,7 @@ export function TradingPortfolioPage() {
         setTimeout(() => setSuccessMessage(null), 3000);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Fehler beim Aktualisieren');
+      setError(e instanceof Error ? e.message : t('trading.updateError'));
     } finally {
       setOrderLoading(false);
     }
@@ -495,12 +497,12 @@ export function TradingPortfolioPage() {
     
     try {
       await resetPortfolio(portfolio.id);
-      setSuccessMessage('Portfolio wurde zurückgesetzt');
+      setSuccessMessage(t('trading.resetSuccess'));
       setShowResetConfirm(false);
       await loadPortfolioData();
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch {
-      setError('Reset fehlgeschlagen');
+      setError(t('trading.resetError'));
     }
   };
   
@@ -509,20 +511,20 @@ export function TradingPortfolioPage() {
     
     const capital = parseFloat(newCapital.replace(/[^\d.,]/g, '').replace(',', '.'));
     if (isNaN(capital)) {
-      setError('Ungültiger Betrag');
+      setError(t('trading.invalidAmount'));
       return;
     }
     
     try {
       setError(null);
       await setInitialCapital(portfolio.id, capital);
-      setSuccessMessage(`Startkapital wurde auf ${formatCurrency(capital)} geändert`);
+      setSuccessMessage(`${t('trading.capitalChanged').replace('{amount}', formatCurrency(capital))}`);
       setShowCapitalChange(false);
       setNewCapital('');
       await loadPortfolioData();
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Änderung fehlgeschlagen');
+      setError(e instanceof Error ? e.message : t('trading.orderFailed'));
     }
   };
   
@@ -532,10 +534,10 @@ export function TradingPortfolioPage() {
     try {
       await updatePortfolioSettings(portfolio.id, { brokerProfile });
       setPortfolio({ ...portfolio, brokerProfile });
-      setSuccessMessage('Broker-Profil geändert');
+      setSuccessMessage(t('trading.brokerChanged'));
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch {
-      setError('Einstellung konnte nicht gespeichert werden');
+      setError(t('trading.settingsError'));
     }
   };
   
@@ -544,15 +546,15 @@ export function TradingPortfolioPage() {
     return (
       <div className="max-w-7xl mx-auto px-2 sm:px-4 py-8">
         <div className="bg-slate-800/50 rounded-xl p-8 text-center">
-          <h2 className="text-2xl font-bold mb-4">📊 Paper Trading & Portfolio</h2>
+          <h2 className="text-2xl font-bold mb-4">📊 {t('trading.title')}</h2>
           <p className="text-gray-400 mb-6">
-            Melde dich an, um mit virtuellem Geld zu handeln und dein Portfolio zu verwalten.
+            {t('trading.loginPrompt')}
           </p>
           <a 
             href="/settings" 
             className="inline-block px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors"
           >
-            Anmelden
+            {t('settings.signIn')}
           </a>
         </div>
       </div>
@@ -573,88 +575,76 @@ export function TradingPortfolioPage() {
   const canShort = productTypes?.[productType]?.canShort || false;
   
   return (
-    <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4 space-y-4">
-      {/* Header with Portfolio Summary */}
-      <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4">
-        <div className="flex flex-col gap-3 sm:gap-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-lg sm:text-2xl font-bold flex items-center gap-2">
-                📊 <span className="hidden xs:inline">Paper </span>Trading
-              </h1>
-              <p className="text-gray-400 text-xs sm:text-sm mt-0.5 sm:mt-1 truncate max-w-[200px] sm:max-w-none">
-                {portfolio?.name} • {brokerProfiles?.[portfolio?.brokerProfile || 'standard']?.name}
-              </p>
-            </div>
-          </div>
+    <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4 space-y-3">
+      {/* Compact Header with Key Metrics */}
+      <div className="bg-slate-800/50 rounded-xl p-2 sm:p-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          {/* Title - minimal */}
+          <h1 className="text-base sm:text-lg font-bold flex items-center gap-1.5">
+            📊 Trading
+          </h1>
           
+          {/* Key Metrics - inline */}
           {metrics && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
-              <div className="bg-slate-900/50 rounded-lg px-2 sm:px-4 py-1.5 sm:py-2">
-                <div className="text-[10px] sm:text-xs text-gray-400">Wert</div>
-                <div className="text-sm sm:text-lg font-bold truncate">{formatCurrency(metrics.totalValue)}</div>
+            <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm">
+              <div className="flex items-center gap-1">
+                <span className="text-gray-400 hidden sm:inline">Wert:</span>
+                <span className="font-semibold">{formatCurrency(metrics.totalValue)}</span>
               </div>
-              <div className="bg-slate-900/50 rounded-lg px-2 sm:px-4 py-1.5 sm:py-2">
-                <div className="text-[10px] sm:text-xs text-gray-400">P&L</div>
-                <div className={`text-sm sm:text-lg font-bold truncate ${metrics.netPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {formatCurrency(metrics.netPnl)}
-                </div>
+              <div className={`flex items-center gap-1 ${metrics.netPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                <span className="text-gray-400 hidden sm:inline">P&L:</span>
+                <span className="font-semibold">{formatCurrency(metrics.netPnl)}</span>
+                <span className="text-[10px] sm:text-xs">({formatPercent(metrics.totalReturn)})</span>
               </div>
-              <div className="bg-slate-900/50 rounded-lg px-2 sm:px-4 py-1.5 sm:py-2">
-                <div className="text-[10px] sm:text-xs text-gray-400">Rendite</div>
-                <div className={`text-sm sm:text-lg font-bold ${metrics.totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {formatPercent(metrics.totalReturn)}
-                </div>
-              </div>
-              <div className="bg-slate-900/50 rounded-lg px-2 sm:px-4 py-1.5 sm:py-2">
-                <div className="text-[10px] sm:text-xs text-gray-400">Verfügbar</div>
-                <div className="text-sm sm:text-lg font-bold text-blue-400 truncate">{formatCurrency(metrics.cashBalance)}</div>
+              <div className="flex items-center gap-1 text-blue-400">
+                <span className="text-gray-400 hidden sm:inline">Cash:</span>
+                <span className="font-semibold">{formatCurrency(metrics.cashBalance)}</span>
               </div>
             </div>
           )}
         </div>
       </div>
       
-      {/* Messages */}
+      {/* Messages - compact */}
       {error && (
-        <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 text-red-300">
+        <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-2 sm:p-3 text-red-300 text-sm">
           <div className="flex items-start gap-2">
             <span>⚠️</span>
-            <div className="whitespace-pre-line flex-1">{error}</div>
-            <button onClick={() => setError(null)} className="text-sm underline">×</button>
+            <div className="whitespace-pre-line flex-1 text-xs sm:text-sm">{error}</div>
+            <button onClick={() => setError(null)} className="text-xs">×</button>
           </div>
         </div>
       )}
       
       {successMessage && (
-        <div className="bg-green-500/20 border border-green-500/50 rounded-lg p-4 text-green-300">
+        <div className="bg-green-500/20 border border-green-500/50 rounded-lg p-2 sm:p-3 text-green-300 text-sm">
           <div className="flex items-center gap-2">
             <span>✅</span>
-            <div className="whitespace-pre-line">{successMessage}</div>
+            <div className="whitespace-pre-line text-xs sm:text-sm">{successMessage}</div>
           </div>
         </div>
       )}
       
-      {/* Tabs - scrollbar horizontal auf Mobile */}
-      <div className="flex border-b border-slate-700 overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
+      {/* Tabs - kompakt */}
+      <div className="flex border-b border-slate-700 overflow-x-auto scrollbar-hide">
         {[
-          { id: 'trading', label: '📈 Handeln', shortLabel: '📈', badge: openPositions.length || null },
-          { id: 'overview', label: '📊 Übersicht', shortLabel: '📊', badge: null },
-          { id: 'settings', label: '⚙️ Einstellungen', shortLabel: '⚙️', badge: null },
+          { id: 'trading', label: 'Handeln', icon: '📈', badge: openPositions.length || null },
+          { id: 'overview', label: 'Übersicht', icon: '📊', badge: null },
+          { id: 'settings', label: 'Settings', icon: '⚙️', badge: null },
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as TabType)}
-            className={`flex-1 min-w-[70px] sm:min-w-0 px-2 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap flex items-center justify-center gap-1 sm:gap-2 ${
+            className={`flex-1 px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap flex items-center justify-center gap-1 ${
               activeTab === tab.id
                 ? 'bg-slate-800 text-white border-b-2 border-blue-500'
                 : 'text-gray-400 hover:text-white hover:bg-slate-800/50'
             }`}
           >
-            <span className="sm:hidden">{tab.shortLabel}</span>
-            <span className="hidden sm:inline">{tab.label}</span>
+            <span>{tab.icon}</span>
+            <span className="hidden xs:inline">{tab.label}</span>
             {tab.badge && (
-              <span className="px-1 sm:px-1.5 py-0.5 text-[10px] sm:text-xs bg-blue-500 rounded-full">{tab.badge}</span>
+              <span className="px-1 py-0.5 text-[10px] bg-blue-500 rounded-full min-w-[16px]">{tab.badge}</span>
             )}
           </button>
         ))}

@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-01-27
+
+### Added
+- **Mehrsprachige Benutzeroberfläche** - Deutsch und Englisch wählbar
+  - Neue Einstellungsseite "Darstellung" mit Sprach- und Währungsauswahl
+  - Alle UI-Texte übersetzt (Navigation, Einstellungen, Trading, Dashboard, Watchlist, Leaderboard)
+  - LoginForm und RegisterForm vollständig übersetzt
+  - Fehlermeldungen und Bestätigungen in beiden Sprachen
+  - Aktienbegriffe und Symbole bleiben englisch, um Missverständnisse zu vermeiden
+  - Sprache wird lokal gespeichert und mit Account synchronisiert
+  - Standard: Deutsch
+
+- **Währungsumrechnung** - Anzeige in USD oder EUR
+  - Alle Preise, Werte und Beträge werden in der gewählten Währung angezeigt
+  - Automatische USD→EUR Umrechnung (ca. 0.92 Wechselkurs)
+  - Betrifft: Trading-Seite, Portfolio-Übersicht, Dashboard, Leaderboard, Quick Trade
+  - Standard: US Dollar (USD)
+
+- **SettingsContext** - Zentraler Context für Benutzereinstellungen
+  - `useSettings()` Hook für React-Komponenten
+  - `formatCurrencyValue()` Export für Service-Funktionen
+  - `getCurrentCurrency()` für direkte Abfrage der Währung
+  - Persistenz via localStorage und Server-Sync
+
+### Changed
+- **Settings-Seite reorganisiert** - Neuer Tab "Darstellung" zwischen Konto und API Keys
+- **Navigation übersetzt** - Alle Navigationspunkte verwenden jetzt Übersetzungsschlüssel
+- **formatCurrency globalisiert** - tradingService und companyInfoService nutzen jetzt globale Einstellung
+- **Seitenkomponenten aktualisiert** - WatchlistPage, DashboardPage, LeaderboardPage, TradingPortfolioPage verwenden jetzt t() und formatCurrency()
+
 ## [1.9.1] - 2026-01-27
 
 ### Added
@@ -483,76 +513,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Navigation erweitert mit "Paper Trading" und "Portfolio" Menüpunkten
 
-## [1.3.0] - 2026-01-24
+## [1.2.0] - 2026-01-19
 
 ### Added
-- **Multi-Provider Datenaggregation** - Unternehmensdaten werden von allen verfügbaren Quellen zusammengeführt
-  - Yahoo Finance: Preisdaten, 52-Wochen-Range, Volumen, Unternehmensname
-  - Finnhub (API-Key erforderlich): Unternehmensprofil (Marktkapitalisierung, Branche, ISIN), Finanzkennzahlen (KGV, Dividendenrendite, Beta)
-  - Alpha Vantage (API-Key erforderlich): Unternehmensübersicht (Name, Sektor, KGV, EPS, Marktkapitalisierung)
-  - Twelve Data (API-Key erforderlich): Echtzeit-Kurse
-  - Automatischer Fallback: Wenn eine Quelle keine Daten hat, werden andere abgefragt
-  - Datenquellen-Anzeige: Zeigt an, von welchen Providern die Daten stammen
-  - **Hinweis**: Für vollständige Fundamentaldaten (KGV, Marktkapitalisierung, Dividenden) werden Finnhub oder Alpha Vantage API-Keys benötigt
-- **Unternehmensname in Selector und Watchlist** - Namen werden von Datenanbietern geladen
-  - StockSelector zeigt vollständigen Unternehmensnamen (z.B. "Apple Inc." statt "AAPL")
-  - Watchlist zeigt ebenfalls den vollen Namen wenn verfügbar
-  - Namen werden im Hintergrund geladen und automatisch aktualisiert
-- **Erweiterte Unternehmenskennzahlen** - Neue Datenfelder hinzugefügt
-  - Marktkapitalisierung in EUR und USD
-  - KGV (P/E Ratio) mit Forward P/E
-  - Dividendenrendite in Prozent
-  - EPS (Earnings per Share)
-  - Beta-Faktor
-  - Branche und Sektor
-  - ISIN und CUSIP Identifikatoren
-- **Watchlist mit EUR-Preisen** - Preise werden jetzt auch in EUR angezeigt
-  - Primärer Preis in EUR (grün), USD als Sekundärpreis
-  - Marktkapitalisierung, KGV und Dividende werden angezeigt
-  - Branche wird für jeden Titel angezeigt
-  - Quellen-Indikator zeigt Anzahl der verwendeten Datenquellen
-- **Company Info Panel** - Neues Panel im Dashboard mit Unternehmensinformationen
-  - Preise werden in Euro (EUR) angezeigt, mit USD-Preis als Referenz
-  - 52-Wochen Hoch/Tief mit visuellem Positionsindikator
-  - Tagesvolumen
-  - Börse und Währung
-- **EUR/USD Wechselkurs** - Automatische Währungsumrechnung
-  - Live-Kurs von Yahoo Finance
-  - Caching für 5 Minuten um API-Limits zu schonen
-  - Fallback-Kurs falls API nicht verfügbar
-- **Watchlist-Integration im Dashboard** - StockSelector zeigt Watchlist-Symbole
-  - Eingeloggte User sehen ihre Watchlist-Symbole
-  - Nicht eingeloggte User sehen Standard-Symbole
-- **Multi-Page Navigation** - App wurde von Single-Page auf Multi-Page Architektur umgestellt
-  - React Router für Seitennavigation integriert
-  - **Dashboard** (/) - Hauptansicht mit Charts, Prognosen und Trading-Signalen
-  - **Watchlist** (/watchlist) - Eigene Seite für Watchlist-Verwaltung
-  - **Einstellungen** (/settings) - Kombinierte Seite für API-Keys, ML, Datenquellen und Auth
-  - **Info** (/info) - Ausführliche Erklärungen zur technischen Analyse
-  - **Changelog** (/changelog) - Versionshistorie als eigene Seite
-- **Navigation Bar** - Neue Navigationsleiste ersetzt das Hamburger-Menü
-  - Logo und App-Name mit Versionsanzeige
-  - Icon-basierte Navigation mit Labels auf größeren Bildschirmen
-  - Aktiver Link wird hervorgehoben
-  - Benutzer-Avatar und Quick-Login Zugang
-  - Responsive Design für Mobile und Desktop
-
-### Changed
-- **HamburgerMenu** entfernt - Funktionalität auf eigene Seiten verteilt
-- **Settings** - API-Keys, ML-Einstellungen, Datenquellen und Auth in einer kombinierten Seite
-- **StockSelector** - Aus der Navigation entfernt, jetzt nur noch im Dashboard
-- **Watchlist Symbolverwaltung** - Komplett überarbeitet
-  - Nicht eingeloggte Benutzer: Sehen nur Standard-Symbole (AAPL, GOOGL, etc.) - kein Bearbeiten möglich
-  - Eingeloggte Benutzer: Volle Kontrolle über eigene Symbolliste
-  - Symbole werden von Server-Datenbank geladen (nicht mehr localStorage)
-  - Add/Remove synchronisiert direkt mit Server-API
-  - Keine "Custom"-Unterscheidung mehr - alle Symbole eines Users sind seine Symbole
-
-### Fixed
-- WatchlistPage verwendet jetzt Events für Symbol-Auswahl (kein Prop-Drilling mehr)
-
----
-
 - **Watchlist Panel** - Neue Übersicht aller beobachteten Aktien im Hamburger-Menü
   - Zeigt alle Symbole mit aktuellem Preis und Änderung
   - Trading-Empfehlungen für 4 Haltedauern (1h, 1d, 1w, Long) pro Symbol

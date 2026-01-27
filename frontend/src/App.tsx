@@ -12,6 +12,7 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { DataServiceProvider, useServiceWorker } from './hooks';
+import { SettingsProvider, useSettings } from './contexts';
 import { Navigation } from './components/Navigation';
 import { DashboardPage, WatchlistPage, SettingsPage, ChangelogPage, InfoPage, TradingPortfolioPage, LeaderboardPage } from './pages';
 import BacktestPage from './pages/BacktestPage';
@@ -115,33 +116,42 @@ function AppContent() {
           </Routes>
         </main>
 
-        {/* Footer */}
-        <footer className="border-t border-slate-700/50 py-6">
-          <div className="max-w-7xl mx-auto px-4">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-400">
-              <div>
-                <p>⚠️ <strong>Disclaimer:</strong> This is for educational/testing purposes only. Not financial advice.</p>
-              </div>
-              <div className="flex items-center gap-4">
-                <span>v{__BUILD_VERSION__}</span>
-                <span>•</span>
-                <span>{__BUILD_COMMIT__}</span>
-                <span>•</span>
-                <span>{new Date(__BUILD_TIME__).toLocaleDateString()}</span>
-              </div>
-            </div>
-          </div>
-        </footer>
+        <AppFooter />
       </div>
     </BrowserRouter>
   );
 }
 
+function AppFooter() {
+  const { t } = useSettings();
+  
+  return (
+    <footer className="border-t border-slate-700/50 py-6">
+      <div className="max-w-7xl mx-auto px-4">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-400">
+          <div>
+            <p>{t('footer.disclaimer')}</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <span>v{__BUILD_VERSION__}</span>
+            <span>•</span>
+            <span>{__BUILD_COMMIT__}</span>
+            <span>•</span>
+            <span>{new Date(__BUILD_TIME__).toLocaleDateString()}</span>
+          </div>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
 function App() {
   return (
-    <DataServiceProvider>
-      <AppContent />
-    </DataServiceProvider>
+    <SettingsProvider>
+      <DataServiceProvider>
+        <AppContent />
+      </DataServiceProvider>
+    </SettingsProvider>
   );
 }
 

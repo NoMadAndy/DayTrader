@@ -4,6 +4,7 @@
 
 import { useState } from 'react';
 import { register, login } from '../services/authService';
+import { useSettings } from '../contexts/SettingsContext';
 
 interface RegisterFormProps {
   onSuccess?: () => void;
@@ -16,6 +17,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
   const [username, setUsername] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const { t, language } = useSettings();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,13 +25,13 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
 
     // Validate passwords match
     if (password !== confirmPassword) {
-      setError('Passwörter stimmen nicht überein');
+      setError(language === 'de' ? 'Passwörter stimmen nicht überein' : 'Passwords do not match');
       return;
     }
 
     // Validate password strength
     if (password.length < 8) {
-      setError('Passwort muss mindestens 8 Zeichen lang sein');
+      setError(language === 'de' ? 'Passwort muss mindestens 8 Zeichen lang sein' : 'Password must be at least 8 characters');
       return;
     }
 
@@ -40,7 +42,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
 
     if (!registerResult.success) {
       setIsLoading(false);
-      setError(registerResult.error || 'Registrierung fehlgeschlagen');
+      setError(registerResult.error || t('register.failed'));
       return;
     }
 
@@ -61,7 +63,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label className="block text-sm text-gray-400 mb-1">
-          Benutzername <span className="text-gray-500">(optional)</span>
+          {t('register.username')} <span className="text-gray-500">({t('trading.optional')})</span>
         </label>
         <input
           type="text"
@@ -74,7 +76,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       </div>
 
       <div>
-        <label className="block text-sm text-gray-400 mb-1">E-Mail</label>
+        <label className="block text-sm text-gray-400 mb-1">{t('register.email')}</label>
         <input
           type="email"
           value={email}
@@ -87,13 +89,13 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       </div>
 
       <div>
-        <label className="block text-sm text-gray-400 mb-1">Passwort</label>
+        <label className="block text-sm text-gray-400 mb-1">{t('register.password')}</label>
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
-          placeholder="Mindestens 8 Zeichen"
+          placeholder={language === 'de' ? 'Mindestens 8 Zeichen' : 'At least 8 characters'}
           required
           minLength={8}
           disabled={isLoading}
@@ -101,13 +103,13 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       </div>
 
       <div>
-        <label className="block text-sm text-gray-400 mb-1">Passwort bestätigen</label>
+        <label className="block text-sm text-gray-400 mb-1">{t('register.confirmPassword')}</label>
         <input
           type="password"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
-          placeholder="Passwort wiederholen"
+          placeholder={language === 'de' ? 'Passwort wiederholen' : 'Repeat password'}
           required
           disabled={isLoading}
         />
@@ -130,15 +132,17 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
-            Registrieren...
+            {t('register.registering')}
           </span>
         ) : (
-          'Registrieren'
+          t('register.submit')
         )}
       </button>
 
       <p className="text-xs text-gray-500 text-center">
-        Mit der Registrierung akzeptierst du unsere Nutzungsbedingungen.
+        {language === 'de' 
+          ? 'Mit der Registrierung akzeptierst du unsere Nutzungsbedingungen.'
+          : 'By registering, you accept our terms of service.'}
       </p>
     </form>
   );

@@ -6,9 +6,11 @@
 
 import { WatchlistPanel } from '../components/WatchlistPanel';
 import { useNavigate } from 'react-router-dom';
+import { useSettings } from '../contexts/SettingsContext';
 
 export function WatchlistPage() {
   const navigate = useNavigate();
+  const { t } = useSettings();
 
   const handleSelectSymbol = (symbol: string) => {
     // Dispatch event for App to update selected symbol
@@ -21,10 +23,10 @@ export function WatchlistPage() {
       <div className="mb-4 sm:mb-6 px-2 sm:px-0">
         <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2 sm:gap-3">
           <span className="text-2xl sm:text-3xl">📋</span>
-          Meine Watchlist
+          {t('watchlistPage.title')}
         </h1>
         <p className="text-gray-400 mt-1 sm:mt-2 text-sm sm:text-base">
-          Übersicht aller beobachteten Aktien mit Trading-Empfehlungen
+          {t('watchlistPage.description')}
         </p>
       </div>
 

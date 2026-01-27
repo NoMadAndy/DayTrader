@@ -12,6 +12,7 @@ import { useStockData, useSimpleAutoRefresh } from '../hooks';
 import { generateForecast } from '../utils/forecast';
 import { getAuthState } from '../services/authService';
 import { getOrCreatePortfolio, executeMarketOrder, getPortfolioMetrics } from '../services/tradingService';
+import { useSettings } from '../contexts/SettingsContext';
 import type { Portfolio, PortfolioMetrics, OrderSide, ProductType } from '../types/trading';
 
 // ML Prediction type for trading signals
@@ -31,6 +32,7 @@ interface DashboardPageProps {
 export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageProps) {
   const navigate = useNavigate();
   const { data: stockData, isLoading, refetch } = useStockData(selectedSymbol);
+  const { t, formatCurrency } = useSettings();
 
   // Quick Trade State
   const [showQuickTrade, setShowQuickTrade] = useState(false);
@@ -41,6 +43,17 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
   const [productType, setProductType] = useState<ProductType>('stock');
   const [isExecuting, setIsExecuting] = useState(false);
   const [tradeResult, setTradeResult] = useState<{ success: boolean; message: string } | null>(null);
+  const quickTradeButtonRef = useRef<HTMLButtonElement>(null);
+  const [dropdownTop, setDropdownTop] = useState<number>(0);
+
+  // Calculate dropdown position when opening on mobile
+  useEffect(() => {
+    if (showQuickTrade && quickTradeButtonRef.current) {
+      const rect = quickTradeButtonRef.current.getBoundingClientRect();
+      // Position dropdown just below the button
+      setDropdownTop(rect.bottom + 8);
+    }
+  }, [showQuickTrade]);
 
   // Load portfolio data when quick trade is opened
   useEffect(() => {
@@ -71,7 +84,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
     try {
       const qty = parseFloat(tradeQuantity);
       if (isNaN(qty) || qty <= 0) {
-        setTradeResult({ success: false, message: 'Ungültige Menge' });
+        setTradeResult({ success: false, message: t('dashboard.invalidQuantity') });
         return;
       }
       const result = await executeMarketOrder({
@@ -83,13 +96,13 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
         productType: productType,
       });
       if (result.success) {
-        const action = tradeSide === 'buy' ? 'Kauf' : tradeSide === 'sell' ? 'Verkauf' : 'Short';
-        setTradeResult({ success: true, message: `${action} erfolgreich! Neuer Kontostand: ${result.newBalance?.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}` });
+        const actionKey = tradeSide === 'buy' ? 'dashboard.purchaseSuccess' : tradeSide === 'sell' ? 'dashboard.sellSuccess' : 'dashboard.shortSuccess';
+        setTradeResult({ success: true, message: `${t(actionKey)} ${formatCurrency(result.newBalance || 0)}` });
         // Refresh metrics
         const m = await getPortfolioMetrics(portfolio.id);
         setMetrics(m);
       } else {
-        setTradeResult({ success: false, message: result.error || 'Order fehlgeschlagen' });
+        setTradeResult({ success: false, message: result.error || t('dashboard.tradeFailed') });
       }
     } catch (err) {
       setTradeResult({ success: false, message: err instanceof Error ? err.message : 'Unbekannter Fehler' });
@@ -277,7 +290,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
       <div className="flex items-center justify-center h-96">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-400">Loading analysis...</p>
+          <p className="text-gray-400">{t('dashboard.loadingChart')}</p>
         </div>
       </div>
     );
@@ -286,7 +299,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
   if (!stockData || !forecast) {
     return (
       <div className="flex items-center justify-center h-96">
-        <p className="text-gray-400">No data available for {selectedSymbol}</p>
+        <p className="text-gray-400">{t('dashboard.noData')} {selectedSymbol}</p>
       </div>
     );
   }
@@ -306,16 +319,17 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
           {/* Quick Trade Button with Dropdown */}
           <div className="relative">
             <button
+              ref={quickTradeButtonRef}
               onClick={() => setShowQuickTrade(!showQuickTrade)}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all text-sm font-medium ${
                 showQuickTrade 
                   ? 'bg-blue-600 text-white' 
                   : 'bg-slate-800/90 hover:bg-slate-700 text-gray-300 border border-slate-600'
               }`}
-              title="Quick Trade"
+              title={t('dashboard.quickTrade')}
             >
               <span className="text-lg">💹</span>
-              <span className="hidden sm:inline">Handeln</span>
+              <span className="hidden sm:inline">{t('dashboard.quickTrade')}</span>
               <svg
                 className={`w-4 h-4 transition-transform ${showQuickTrade ? 'rotate-180' : ''}`}
                 fill="none"
@@ -328,25 +342,28 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
             
             {/* Quick Trade Dropdown Panel */}
             {showQuickTrade && (
-              <div className="fixed sm:absolute top-auto sm:top-full left-2 right-2 sm:left-auto sm:right-0 mt-2 sm:w-80 bg-slate-800/95 backdrop-blur-sm rounded-xl border border-slate-700 p-3 shadow-xl z-50">
+              <div 
+                className="fixed sm:absolute sm:top-full left-2 right-2 sm:left-auto sm:right-0 sm:mt-2 sm:w-80 bg-slate-800/95 backdrop-blur-sm rounded-xl border border-slate-700 p-3 shadow-xl z-50"
+                style={{ top: window.innerWidth < 640 ? `${dropdownTop}px` : undefined }}
+              >
                 {!getAuthState().isAuthenticated ? (
                   <div className="text-center py-3">
-                    <p className="text-gray-400 mb-2 text-sm">Bitte einloggen um zu handeln</p>
+                    <p className="text-gray-400 mb-2 text-sm">{t('dashboard.loginToTrade')}</p>
                     <button
                       onClick={() => navigate('/trading')}
                       className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors text-xs"
                     >
-                      Zum Paper Trading →
+                      {t('trading.goToSettings')} →
                     </button>
                   </div>
                 ) : !portfolio ? (
                   <div className="text-center py-3">
-                    <p className="text-gray-400 mb-2 text-sm">Kein Portfolio vorhanden</p>
+                    <p className="text-gray-400 mb-2 text-sm">{t('dashboard.noPortfolio')}</p>
                     <button
                       onClick={() => navigate('/trading')}
                       className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors text-xs"
                     >
-                      Portfolio erstellen →
+                      {t('trading.goToSettings')} →
                     </button>
                   </div>
                 ) : (
@@ -356,16 +373,16 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
                       <div className="flex items-center gap-2">
                         <span>💼</span>
                         <div>
-                          <div className="text-[10px] text-gray-400">Verfügbar</div>
+                          <div className="text-[10px] text-gray-400">{t('dashboard.available')}</div>
                           <div className="font-semibold text-green-400 text-sm">
-                            {metrics?.cashBalance.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }) || '---'}
+                            {metrics ? formatCurrency(metrics.cashBalance) : '---'}
                           </div>
                         </div>
                       </div>
                       <div className="text-right">
                         <div className="text-[10px] text-gray-400">{selectedSymbol}</div>
                         <div className="font-semibold text-sm">
-                          {currentPrice?.toLocaleString('de-DE', { style: 'currency', currency: 'USD' }) || '---'}
+                          {currentPrice ? formatCurrency(currentPrice) : '---'}
                         </div>
                       </div>
                     </div>
@@ -381,7 +398,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
                               tradeSide === 'buy' ? 'bg-green-600 text-white' : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
                             }`}
                           >
-                            Kauf
+                            {t('trading.buy')}
                           </button>
                           <button
                             onClick={() => setTradeSide('short')}
@@ -389,7 +406,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
                               tradeSide === 'short' ? 'bg-red-600 text-white' : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
                             }`}
                           >
-                            Short
+                            {t('trading.short')}
                           </button>
                         </div>
                       </div>
@@ -401,7 +418,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
                           onChange={(e) => setProductType(e.target.value as ProductType)}
                           className="w-full px-1.5 py-1.5 bg-slate-900 border border-slate-600 rounded text-xs focus:border-blue-500 focus:outline-none"
                         >
-                          <option value="stock">Aktie</option>
+                          <option value="stock">{t('trading.stock')}</option>
                           <option value="cfd">CFD</option>
                         </select>
                       </div>
@@ -414,7 +431,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
                           onChange={(e) => setTradeQuantity(e.target.value)}
                           min="1"
                           step="1"
-                          placeholder="Menge"
+                          placeholder={t('trading.quantity')}
                           className="w-full px-1.5 py-1.5 bg-slate-900 border border-slate-600 rounded text-xs focus:border-blue-500 focus:outline-none text-center"
                         />
                       </div>
@@ -425,7 +442,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
                       <div className="text-[10px] text-gray-400 flex-1">
                         {currentPrice && tradeQuantity && (
                           <span>
-                            {parseFloat(tradeQuantity) || 0}× @ {currentPrice.toFixed(2)} = <span className="text-white font-medium">${((parseFloat(tradeQuantity) || 0) * currentPrice).toFixed(2)}</span>
+                            {parseFloat(tradeQuantity) || 0}× @ {currentPrice.toFixed(2)} = <span className="text-white font-medium">{formatCurrency((parseFloat(tradeQuantity) || 0) * currentPrice)}</span>
                           </span>
                         )}
                       </div>
@@ -438,7 +455,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
                             : 'bg-red-600 hover:bg-red-700 disabled:bg-red-800'
                         } text-white disabled:opacity-50`}
                       >
-                        {isExecuting ? '...' : tradeSide === 'buy' ? 'Kaufen' : 'Shorten'}
+                        {isExecuting ? '...' : tradeSide === 'buy' ? t('trading.buy') : t('trading.short')}
                       </button>
                     </div>
 
@@ -457,7 +474,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
                         onClick={() => navigate('/trading')}
                         className="text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
                       >
-                        Vollständiges Trading →
+                        {t('nav.trading')} →
                       </button>
                     </div>
                   </div>

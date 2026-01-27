@@ -10,6 +10,8 @@
  * Uses best available data from all sources.
  */
 
+import { formatCurrencyValue as formatFromSettings } from '../contexts';
+
 const API_BASE = '/api';
 
 export interface CompanyInfo {
@@ -553,15 +555,11 @@ export function formatMarketCap(value?: number): string {
 }
 
 /**
- * Format currency value
+ * Format currency value using global settings
  */
-export function formatCurrency(value: number, currency: string = 'EUR'): string {
-  return new Intl.NumberFormat('de-DE', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
+export function formatCurrency(value: number, _currency: string = 'USD'): string {
+  // Use global currency setting from context
+  return formatFromSettings(value);
 }
 
 /**
@@ -587,11 +585,10 @@ export function formatPE(value?: number): string {
 function detectInstrumentType(
   symbol: string, 
   name?: string, 
-  exchange?: string
+  _exchange?: string
 ): CompanyInfo['instrumentType'] {
   const symbolUpper = symbol.toUpperCase();
   const nameUpper = (name || '').toUpperCase();
-  const exchangeUpper = (exchange || '').toUpperCase();
   
   // ETF detection
   if (
@@ -711,7 +708,7 @@ interface DerivativeInfo {
   productType?: string;
 }
 
-function extractDerivativeInfo(name?: string, symbol?: string): DerivativeInfo {
+function extractDerivativeInfo(name?: string, _symbol?: string): DerivativeInfo {
   if (!name) return {};
   
   const nameUpper = name.toUpperCase();

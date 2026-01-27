@@ -12,6 +12,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { mlService, type MLPredictResponse, type MLTrainStatus, type MLServiceHealth } from '../services';
 import { DataService } from '../services/dataService';
 import { DEFAULT_ML_SETTINGS, type MLSettings } from '../services/userSettingsService';
+import { useSettings } from '../contexts/SettingsContext';
 import type { OHLCV } from '../types/stock';
 
 // ML Settings storage key (same as in SettingsPage)
@@ -43,6 +44,7 @@ interface MLForecastPanelProps {
 }
 
 export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefreshRegister }: MLForecastPanelProps) {
+  const { t, formatCurrency } = useSettings();
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
   const [health, setHealth] = useState<MLServiceHealth | null>(null);
   const [hasModel, setHasModel] = useState(false);
@@ -129,7 +131,7 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
       // Validate that the prediction is for the correct symbol
       if (result.symbol && result.symbol.toUpperCase() !== symbol.toUpperCase()) {
         console.error(`Prediction symbol mismatch: got ${result.symbol}, expected ${symbol}`);
-        setError(`Modell-Fehler: Vorhersage ist für ${result.symbol}, nicht ${symbol}`);
+        setError(t('ml.modelError').replace('{predSymbol}', result.symbol).replace('{symbol}', symbol));
         setPrediction(null);
         onPredictionsChange?.(null);
       } else {
@@ -139,7 +141,7 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
           const priceDiff = Math.abs(result.current_price - actualPrice) / actualPrice;
           if (priceDiff > 0.05) {
             console.error(`Price mismatch: prediction has $${result.current_price.toFixed(2)}, actual is $${actualPrice.toFixed(2)}`);
-            setError(`Modell-Daten veraltet: Bitte Modell neu trainieren`);
+            setError(t('ml.modelOutdated'));
             setPrediction(null);
             onPredictionsChange?.(null);
             setIsLoading(false);
@@ -192,12 +194,12 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
           trainingData = fetchedData.data;
           console.log(`[ML Training] Fetched ${trainingData.length} data points`);
         } else {
-          setError(`Konnte nicht genug Daten laden. Benötigt: ${minRequired}, Verfügbar: ${fetchedData?.data?.length || 0}`);
+          setError(t('ml.notEnoughData').replace('{required}', String(minRequired)).replace('{available}', String(fetchedData?.data?.length || 0)));
           return;
         }
       } catch (err) {
         console.error('[ML Training] Failed to fetch additional data:', err);
-        setError(`Fehler beim Laden zusätzlicher Daten: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        setError(`${t('ml.loadingError')}: ${err instanceof Error ? err.message : 'Unknown error'}`);
         return;
       }
     }
@@ -235,10 +237,10 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
           <svg className="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
-          ML Prediction
+          {t('ml.prediction')}
         </h3>
         <p className="text-gray-400 text-sm">
-          ML Service is not available. Start the ml-service container to enable AI predictions.
+          {t('ml.notAvailable')}
         </p>
       </div>
     );
@@ -262,7 +264,7 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
           <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
-          ML Prediction
+          {t('ml.prediction')}
           {health?.device_info.cuda_available && (
             <span className="text-xs bg-green-600/20 text-green-400 px-2 py-0.5 rounded-full">
               GPU: {health.device_info.cuda_device_name?.split(' ')[0] || 'CUDA'}
@@ -279,13 +281,13 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
                 disabled={isLoading}
                 className="text-xs px-3 py-1.5 bg-purple-600/20 text-purple-400 rounded-lg hover:bg-purple-600/30 transition-colors disabled:opacity-50"
               >
-                {isLoading ? 'Loading...' : 'Refresh'}
+                {isLoading ? t('ml.loading') : t('ml.refresh')}
               </button>
               <button
                 onClick={deleteModel}
                 className="text-xs px-3 py-1.5 bg-red-600/20 text-red-400 rounded-lg hover:bg-red-600/30 transition-colors"
               >
-                Delete Model
+                {t('ml.deleteModel')}
               </button>
             </>
           )}
@@ -294,7 +296,7 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
               onClick={startTraining}
               className="text-xs px-3 py-1.5 bg-blue-600/20 text-blue-400 rounded-lg hover:bg-blue-600/30 transition-colors"
             >
-              Train Model
+              {t('ml.trainModel')}
             </button>
           )}
         </div>
@@ -311,7 +313,7 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
       {isTraining && trainingStatus && (
         <div className="mb-4">
           <div className="flex items-center justify-between text-sm mb-2">
-            <span className="text-gray-400">Training {symbol}...</span>
+            <span className="text-gray-400">{t('ml.training').replace('{symbol}', symbol)}</span>
             <span className="text-purple-400">{trainingStatus.progress}%</span>
           </div>
           <div className="w-full bg-slate-700 rounded-full h-2">
@@ -330,9 +332,9 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
           <svg className="w-12 h-12 mx-auto text-gray-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
           </svg>
-          <p className="text-gray-400 text-sm">No ML model trained for {symbol}</p>
+          <p className="text-gray-400 text-sm">{t('ml.noModel').replace('{symbol}', symbol)}</p>
           <p className="text-gray-500 text-xs mt-1">
-            Click "Train Model" to create an LSTM prediction model using historical data
+            {t('ml.trainHint')}
           </p>
         </div>
       )}
@@ -343,15 +345,15 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
           {/* Summary */}
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-slate-700/50 rounded-lg p-3">
-              <p className="text-xs text-gray-400">Current Price</p>
-              <p className="text-lg font-semibold text-white">${prediction.current_price.toFixed(2)}</p>
+              <p className="text-xs text-gray-400">{t('ml.currentPrice')}</p>
+              <p className="text-lg font-semibold text-white">{formatCurrency(prediction.current_price)}</p>
             </div>
             <div className="bg-slate-700/50 rounded-lg p-3">
-              <p className="text-xs text-gray-400">7-Day Target</p>
+              <p className="text-xs text-gray-400">{t('ml.target7day')}</p>
               {prediction.predictions[6] && (
                 <>
                   <p className="text-lg font-semibold text-white">
-                    ${prediction.predictions[6].predicted_price.toFixed(2)}
+                    {formatCurrency(prediction.predictions[6].predicted_price)}
                   </p>
                   <p className={`text-xs ${prediction.predictions[6].change_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {prediction.predictions[6].change_pct >= 0 ? '+' : ''}{prediction.predictions[6].change_pct.toFixed(2)}%
@@ -360,11 +362,11 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
               )}
             </div>
             <div className="bg-slate-700/50 rounded-lg p-3">
-              <p className="text-xs text-gray-400">14-Day Target</p>
+              <p className="text-xs text-gray-400">{t('ml.target14day')}</p>
               {prediction.predictions[13] && (
                 <>
                   <p className="text-lg font-semibold text-white">
-                    ${prediction.predictions[13].predicted_price.toFixed(2)}
+                    {formatCurrency(prediction.predictions[13].predicted_price)}
                   </p>
                   <p className={`text-xs ${prediction.predictions[13].change_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {prediction.predictions[13].change_pct >= 0 ? '+' : ''}{prediction.predictions[13].change_pct.toFixed(2)}%
@@ -379,17 +381,17 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
             <table className="w-full text-sm">
               <thead className="text-gray-400 text-xs border-b border-slate-700">
                 <tr>
-                  <th className="text-left py-2">Day</th>
-                  <th className="text-right py-2">Price</th>
-                  <th className="text-right py-2">Change</th>
-                  <th className="text-right py-2">Confidence</th>
+                  <th className="text-left py-2">{t('ml.day')}</th>
+                  <th className="text-right py-2">{t('ml.price')}</th>
+                  <th className="text-right py-2">{t('ml.change')}</th>
+                  <th className="text-right py-2">{t('forecast.confidence')}</th>
                 </tr>
               </thead>
               <tbody>
                 {prediction.predictions.map((pred) => (
                   <tr key={pred.day} className="border-b border-slate-700/50">
-                    <td className="py-2 text-gray-300">Day {pred.day}</td>
-                    <td className="py-2 text-right text-white">${pred.predicted_price.toFixed(2)}</td>
+                    <td className="py-2 text-gray-300">{t('ml.day')} {pred.day}</td>
+                    <td className="py-2 text-right text-white">{formatCurrency(pred.predicted_price)}</td>
                     <td className={`py-2 text-right ${pred.change_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {pred.change_pct >= 0 ? '+' : ''}{pred.change_pct.toFixed(2)}%
                     </td>
@@ -411,12 +413,13 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
           {/* Model Info */}
           <div className="text-xs text-gray-500 pt-2 border-t border-slate-700">
             <p>
-              Model trained on {prediction.model_info.data_points} data points •
-              Device: {prediction.model_info.device} •
-              Val Loss: {prediction.model_info.final_val_loss?.toFixed(6) || 'N/A'}
+              {t('ml.modelInfo')
+                .replace('{points}', String(prediction.model_info.data_points))
+                .replace('{device}', prediction.model_info.device)
+                .replace('{loss}', prediction.model_info.final_val_loss?.toFixed(6) || 'N/A')}
             </p>
             <p className="mt-1 text-yellow-500/70">
-              ⚠️ ML predictions are experimental and for educational purposes only. Not financial advice.
+              {t('ml.disclaimer')}
             </p>
           </div>
         </div>

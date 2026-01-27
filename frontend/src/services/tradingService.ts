@@ -6,6 +6,7 @@
  */
 
 import { getAuthState } from './authService';
+import { formatCurrencyValue as formatFromSettings } from '../contexts';
 import type {
   Portfolio,
   PortfolioSettings,
@@ -322,13 +323,11 @@ export function calculatePositionPnL(position: Position, currentPrice: number): 
 }
 
 /**
- * Format currency value
+ * Format currency value using global settings
  */
-export function formatCurrency(value: number, currency = 'EUR'): string {
-  return new Intl.NumberFormat('de-DE', {
-    style: 'currency',
-    currency,
-  }).format(value);
+export function formatCurrency(value: number, _currency = 'USD'): string {
+  // Use global currency setting from context
+  return formatFromSettings(value);
 }
 
 /**
