@@ -5,6 +5,94 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-01-27
+
+### Added
+- **📺 Live Training Console** - Echtzeitanzeige des Trainingsfortschritts für RL Agents
+  - Aufklappbare Konsole mit detaillierten Training-Logs
+  - Live-Fortschrittsbalken mit Prozentanzeige und Timestep-Zähler
+  - Farbkodierte Log-Level (Info, Warning, Error, Success)
+  - Auto-Scroll mit manueller Überschreibung
+  - Episode-Tracking mit Reward-Anzeige
+  - Best-Reward-Meilensteine werden hervorgehoben
+  - Konsole bleibt nach Training für Review sichtbar
+
+### Changed
+- **Verbessertes Training-Feedback**: Backend sendet detaillierte Logs während des gesamten Trainingsprozesses
+  - Datenabholung wird protokolliert
+  - Modell-Architektur und Hyperparameter werden angezeigt
+  - Fortschritt in 1%-Schritten mit Mean Reward
+  - Evaluierungs-Ergebnisse nach Trainingsende
+
+### Technical
+- Neuer `/train/logs/{agent_name}` Endpoint für Training-Logs abrufen
+- Neuer `/train/logs/{agent_name}/stream` SSE-Endpoint für Live-Streaming
+- `TrainingConsole` React-Komponente für aufklappbare Log-Anzeige
+- Log-Callback-System im Trainer für strukturierte Logging
+
+## [1.11.0] - 2026-01-27
+
+### Added
+- **🤖 RL Trading Service** - Neuer Deep Reinforcement Learning Service für automatisiertes Trading
+  - **Trainierbare virtuelle Trader**: PPO-Algorithmus (Proximal Policy Optimization) lernt aus historischen Marktdaten
+  - **Konfigurierbare Agent-Profile**:
+    - Haltezeiträume: Scalping, Intraday, Swing (1-7 Tage), Position (Wochen/Monate), Investor
+    - Risikoprofile: Conservative, Moderate, Aggressive, Very Aggressive
+    - Trading-Stile: Trend Following, Mean Reversion, Momentum, Breakout, Contrarian, Mixed
+    - Broker-Profile mit realistischen Gebühren (Discount, Standard, Premium, Market Maker)
+  - **Backtesting-basiertes Training**: Agents werden für profitable Trades belohnt
+  - **Risk Management**: Stop-Loss, Take-Profit, Trailing Stop automatisch berücksichtigt
+  - **Technische Indikatoren**: SMA, EMA, RSI, MACD, Bollinger Bands, ATR, ADX, Stochastik, etc.
+  - **CUDA/GPU-Unterstützung**: Schnelleres Training mit NVIDIA GPUs
+  - **Persistente Modelle**: Trainierte Modelle bleiben über Container-Neustarts erhalten
+
+- **RL Agents Page** - Neue dedizierte Seite für Agent-Management (`/rl-agents`)
+  - Übersicht aller trainierten Agents mit Leistungsmetriken
+  - Agent-Erstellung mit Preset-Auswahl (Conservative Swing, Aggressive Momentum, Day Trader, Position Investor)
+  - Echtzeit-Training-Fortschrittsanzeige mit Live-Updates
+  - Performance-Metriken: Durchschnittliche Rendite, Max/Min Return, Win Rate
+  - **Symbol-Auswahl**: Symbole aus Datenbank (historische Daten) und eigener Watchlist wählbar
+
+- **RL Advisor Panel** - Trading-Signale von trainierten Agents
+  - Konsens-Signal aus mehreren Agents
+  - Individuelle Signale mit Konfidenz und Stärke
+  - Integration in Dashboard und Trading-Signale
+
+- **🎯 Signal-Quellen-Auswahl** - Neue Einstellungsseite für Trading-Signale
+  - **Auswählbare Datenquellen**:
+    - 📰 News-Sentiment: Stimmungsanalyse aus Nachrichten
+    - 📊 Technische Analyse: RSI, MACD, Bollinger, Stochastik
+    - 🤖 ML-Prognose: LSTM-basierte Preisvorhersagen
+    - 🎯 RL-Agenten: Signale von trainierten RL-Modellen
+  - **Agent-Selektor**: Wähle welche trainierten Agents für Signale verwendet werden
+  - **Dynamische Gewichtung**: Gewichte werden automatisch je nach Zeitrahmen angepasst
+  - **Einstellungen → Signal-Quellen**: Neuer Tab in den Einstellungen
+
+- **Frontend Service** - Neuer `rlTradingService.ts` für RL-API-Kommunikation
+  - Agent-Verwaltung (Liste, Status, Löschen)
+  - Training starten und überwachen
+  - Signale abrufen (einzeln, multi-agent, quick)
+  - Konfigurationsoptionen für UI
+
+- **Backend Proxy** - RL Trading Service Proxy-Endpunkte
+  - `/api/rl/health`, `/api/rl/info` - Service-Status
+  - `/api/rl/agents` - Agent-Verwaltung
+  - `/api/rl/train` - Training starten
+  - `/api/rl/signal` - Signale abrufen
+
+### Changed
+- **Docker Compose** erweitert mit `rl-trading-service` Container
+- **GPU Compose** erweitert für RL-Service CUDA-Unterstützung
+- **Navigation** um "RL Agents" Link erweitert
+- **TradingSignalPanel** zeigt jetzt auch RL-Agent-Signale (🎯) in der Legende
+
+### Technical Details
+- Eigener Docker-Container mit Stable Baselines3 + PyTorch
+- Gymnasium-kompatible Trading-Umgebung
+- 7 diskrete Aktionen: Hold, Buy (Small/Medium/Large), Sell (Small/Medium/All)
+- Observation: 60-Perioden Fenster mit OHLCV + Indikatoren + Portfolio-Status
+- Reward: Portfolio-Rendite + Holding-Period-Alignment + Risk-Adjusted Returns
+
 ## [1.10.0] - 2026-01-27
 
 ### Added

@@ -19,6 +19,7 @@ A modern, AI-powered stock technical analysis platform for day trading education
 - 📋 **Watchlist**: Personal watchlist with trading signals for all positions
 - 🧭 **Multi-Page Navigation**: Dedicated pages for Dashboard, Watchlist, Settings, Info, and Changelog
 - 🎮 **Paper Trading**: Stock market simulation with virtual money (see below)
+- 🤖 **RL Trading Agents**: Deep Reinforcement Learning virtual traders (see below)
 
 ## Paper Trading / Börsenspiel
 
@@ -68,6 +69,52 @@ The simulation follows ESMA retail leverage limits:
 - Major Indices: 1:20 max
 - Stocks: 1:5 max
 - Crypto: 1:2 max
+
+## RL Trading Agents / Deep Learning Trader
+
+Train virtual traders using Deep Reinforcement Learning that learn from historical market data!
+
+### Features
+
+- **PPO Algorithm**: State-of-the-art Proximal Policy Optimization
+- **Configurable Agent Profiles**:
+  - **Holding Periods**: Scalping, Intraday, Swing (1-7 days), Position (weeks/months), Investor
+  - **Risk Profiles**: Conservative, Moderate, Aggressive, Very Aggressive
+  - **Trading Styles**: Trend Following, Mean Reversion, Momentum, Breakout, Contrarian
+  - **Broker Profiles**: Realistic fee structures matching Paper Trading
+- **Technical Indicator Input**: 20+ indicators as observation features
+- **Backtesting-based Training**: Agents are rewarded for profitable trades
+- **GPU Acceleration**: CUDA support for faster training
+- **Persistent Models**: Trained models saved and available as "advisors"
+
+### Preset Agents
+
+| Preset | Risk | Holding | Style |
+|--------|------|---------|-------|
+| Conservative Swing | Low | 3-7 days | Trend Following |
+| Aggressive Momentum | High | 1-3 days | Momentum |
+| Day Trader | Moderate | Intraday | Mean Reversion |
+| Position Investor | Low | 1-3 months | Trend Following |
+
+### How to Use
+
+1. Navigate to **RL Agents** page
+2. Click **+ New Agent** and configure parameters (or choose a preset)
+3. Start training with historical data from your preferred symbols
+4. Monitor training progress in real-time
+5. Once trained, agents appear as **RL Advisors** in Trading Signals
+6. View consensus signals from multiple trained agents
+
+### GPU Training
+
+For faster training with NVIDIA GPUs:
+
+```bash
+# Start with GPU support
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+```
+
+Requires NVIDIA drivers and nvidia-container-toolkit installed.
 
 ## Getting Started
 

@@ -2,7 +2,7 @@
  * Trading Signal Summary Component
  * 
  * Displays aggregated trading signals for different holding periods
- * combining news sentiment, technical indicators, and ML predictions.
+ * combining news sentiment, technical indicators, ML predictions, and RL agents.
  */
 
 import { useMemo } from 'react';
@@ -12,7 +12,9 @@ import {
   getTimePeriodLabel,
   type TradingSignal,
   type CombinedSignalInput,
-  type SignalContribution
+  type SignalContribution,
+  type RLSignalInput,
+  type SignalSourceConfig
 } from '../utils/tradingSignals';
 import type { SentimentResult } from '../utils/sentimentAnalysis';
 import type { ForecastResult, OHLCV } from '../types/stock';
@@ -38,6 +40,10 @@ interface TradingSignalPanelProps {
   stockData?: OHLCV[];
   mlPredictions?: MLPrediction[];
   currentPrice?: number;
+  // RL Agent Signale
+  rlSignals?: RLSignalInput[];
+  // Signal-Quellen-Konfiguration
+  signalConfig?: SignalSourceConfig;
 }
 
 function SignalCard({ 
@@ -56,7 +62,8 @@ function SignalCard({
   const sourceIcon: Record<string, string> = {
     sentiment: '📰',
     technical: '📊',
-    ml: '🤖'
+    ml: '🤖',
+    rl: '🎯'
   };
 
   // Agreement styling
@@ -141,7 +148,7 @@ function SignalCard({
                 title={`${contrib.description}\nGewicht: ${Math.round(contrib.weight * 100)}%${weightReduced ? ` → ${Math.round(contrib.effectiveWeight * 100)}%` : ''}\n${agreementStyle.tooltip}`}
               >
                 {sourceIcon[contrib.source]}
-                <span>{contrib.score > 0 ? '+' : ''}{contrib.score}</span>
+                <span>{isNaN(contrib.score) ? '–' : (contrib.score > 0 ? '+' : '') + contrib.score}</span>
                 <span className={`${agreementStyle.indicatorColor} text-[10px]`} title={agreementStyle.tooltip}>
                   {agreementStyle.indicator}
                 </span>
@@ -165,7 +172,9 @@ export function TradingSignalPanel({
   forecast,
   stockData,
   mlPredictions,
-  currentPrice
+  currentPrice,
+  rlSignals,
+  signalConfig
 }: TradingSignalPanelProps) {
   const signals = useMemo(() => {
     const input: CombinedSignalInput = {
@@ -173,13 +182,16 @@ export function TradingSignalPanel({
       forecast,
       stockData,
       mlPredictions,
-      currentPrice
+      currentPrice,
+      rlSignals,
+      signalConfig
     };
     return calculateCombinedTradingSignals(input);
-  }, [newsItems, forecast, stockData, mlPredictions, currentPrice]);
+  }, [newsItems, forecast, stockData, mlPredictions, currentPrice, rlSignals, signalConfig]);
 
-  // Show panel if we have any data source
-  if (newsItems.length === 0 && !forecast && (!mlPredictions || mlPredictions.length === 0)) {
+  // Show panel if we have any data source (considering signal config)
+  const hasAnyData = newsItems.length > 0 || forecast || (mlPredictions && mlPredictions.length > 0) || (rlSignals && rlSignals.length > 0);
+  if (!hasAnyData) {
     return null;
   }
 
@@ -254,6 +266,7 @@ export function TradingSignalPanel({
           <span>📰 News</span>
           <span>📊 Technisch</span>
           <span>🤖 ML-Prognose</span>
+          <span>🎯 RL-Agent</span>
           <span className="text-gray-500 ml-2">|</span>
           <span className="text-gray-500">Agreement:</span>
           <span className="text-green-400">● stark</span>

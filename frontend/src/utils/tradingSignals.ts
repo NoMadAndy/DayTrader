@@ -23,7 +23,7 @@ export interface TradingSignal {
 }
 
 export interface SignalContribution {
-  source: 'sentiment' | 'technical' | 'ml';
+  source: 'sentiment' | 'technical' | 'ml' | 'rl';
   score: number;
   weight: number;
   effectiveWeight: number; // Tatsächliches Gewicht nach Agreement-Anpassung
@@ -59,15 +59,79 @@ export interface MLPredictionInput {
   change_pct: number;
 }
 
-// Gewichtungen pro Zeitraum
+// RL Agent Signal Interface
+export interface RLSignalInput {
+  signal: 'buy' | 'sell' | 'hold';
+  confidence: number;
+  action_probabilities: {
+    buy: number;
+    sell: number;
+    hold: number;
+  };
+  agent_name: string;
+  agent_style?: string;
+  holding_period?: string;
+}
+
+// Signal Source Configuration
+export interface SignalSourceConfig {
+  enableSentiment: boolean;
+  enableTechnical: boolean;
+  enableMLPrediction: boolean;
+  enableRLAgents: boolean;
+  customWeights?: {
+    sentiment: number;
+    technical: number;
+    ml: number;
+    rl: number;
+  } | null;
+}
+
+export const DEFAULT_SIGNAL_CONFIG: SignalSourceConfig = {
+  enableSentiment: true,
+  enableTechnical: true,
+  enableMLPrediction: true,
+  enableRLAgents: false,
+  customWeights: null,
+};
+
+// Gewichtungen pro Zeitraum (ohne RL)
 // Kurzfristig: News wichtiger (Reaktivität)
 // Langfristig: Technische Analyse & ML wichtiger (Trends)
-const WEIGHTS = {
+const BASE_WEIGHTS = {
   hourly: { sentiment: 0.55, technical: 0.35, ml: 0.10 },
   daily: { sentiment: 0.40, technical: 0.40, ml: 0.20 },
   weekly: { sentiment: 0.25, technical: 0.45, ml: 0.30 },
   longTerm: { sentiment: 0.15, technical: 0.45, ml: 0.40 }
 };
+
+// Gewichtungen mit RL-Agenten (RL ersetzt teilweise ML)
+const RL_WEIGHTS = {
+  hourly: { sentiment: 0.45, technical: 0.30, ml: 0.05, rl: 0.20 },
+  daily: { sentiment: 0.30, technical: 0.30, ml: 0.15, rl: 0.25 },
+  weekly: { sentiment: 0.20, technical: 0.35, ml: 0.20, rl: 0.25 },
+  longTerm: { sentiment: 0.10, technical: 0.35, ml: 0.30, rl: 0.25 }
+};
+
+/**
+ * Get weights based on enabled sources
+ */
+function getWeights(
+  period: 'hourly' | 'daily' | 'weekly' | 'longTerm',
+  config: SignalSourceConfig
+): { sentiment: number; technical: number; ml: number; rl: number } {
+  // Use custom weights if provided
+  if (config.customWeights) {
+    return config.customWeights;
+  }
+  
+  // Use RL weights if RL is enabled, otherwise base weights
+  if (config.enableRLAgents) {
+    return RL_WEIGHTS[period];
+  }
+  
+  return { ...BASE_WEIGHTS[period], rl: 0 };
+}
 
 interface NewsItemWithTimestamp {
   sentimentResult: SentimentResult;
@@ -83,6 +147,10 @@ export interface CombinedSignalInput {
   stockData?: OHLCV[];
   mlPredictions?: MLPredictionInput[];
   currentPrice?: number;
+  // RL Agent signals (new)
+  rlSignals?: RLSignalInput[];
+  // Signal source configuration
+  signalConfig?: SignalSourceConfig;
 }
 
 /**
@@ -240,6 +308,90 @@ function calculateMLScore(
 }
 
 /**
+ * Calculate RL agent signal score
+ */
+function calculateRLScore(
+  rlSignals: RLSignalInput[] | undefined,
+  period: 'hourly' | 'daily' | 'weekly' | 'longTerm'
+): { score: number; confidence: number; description: string } {
+  if (!rlSignals || rlSignals.length === 0) {
+    return { score: 0, confidence: 0, description: 'Keine RL-Signale' };
+  }
+
+  // Filter agents based on holding period relevance (if available)
+  const periodMap: Record<string, string[]> = {
+    hourly: ['scalping', 'intraday'],
+    daily: ['intraday', 'swing_short'],
+    weekly: ['swing_short', 'swing_medium', 'position_short'],
+    longTerm: ['position_medium', 'position_long', 'investor']
+  };
+  
+  const relevantPeriods = periodMap[period];
+  
+  // Prefer agents with matching holding periods, but use all if none match
+  let relevantSignals = rlSignals.filter(s => 
+    s.holding_period && relevantPeriods.includes(s.holding_period)
+  );
+  
+  if (relevantSignals.length === 0) {
+    relevantSignals = rlSignals;
+  }
+
+  // Filter out signals with missing or invalid data
+  const validSignals = relevantSignals.filter(s => 
+    s.action_probabilities && 
+    typeof s.action_probabilities.buy === 'number' &&
+    typeof s.action_probabilities.sell === 'number' &&
+    typeof s.confidence === 'number' &&
+    !isNaN(s.confidence)
+  );
+
+  if (validSignals.length === 0) {
+    return { score: 0, confidence: 0, description: 'Keine gültigen RL-Signale' };
+  }
+
+  // Calculate weighted average score from all relevant signals
+  let totalScore = 0;
+  let totalWeight = 0;
+  const agentDescriptions: string[] = [];
+
+  validSignals.forEach(signal => {
+    const { action_probabilities, confidence } = signal;
+    
+    // Calculate score: buy = positive, sell = negative
+    const buyProb = action_probabilities.buy || 0;
+    const sellProb = action_probabilities.sell || 0;
+    const netDirection = buyProb - sellProb;
+    const signalScore = netDirection * 100 * confidence;
+    
+    // Weight by confidence
+    totalScore += signalScore * confidence;
+    totalWeight += confidence;
+    
+    // Build description
+    const actionLabel = signal.signal === 'buy' ? '↑' : signal.signal === 'sell' ? '↓' : '→';
+    agentDescriptions.push(`${signal.agent_name}: ${actionLabel}`);
+  });
+
+  const avgScore = totalWeight > 0 ? totalScore / totalWeight : 0;
+  const avgConfidence = totalWeight > 0 ? totalWeight / validSignals.length : 0;
+  
+  // Ensure we never return NaN
+  const finalScore = isNaN(avgScore) ? 0 : avgScore;
+  const finalConfidence = isNaN(avgConfidence) ? 0 : avgConfidence;
+  
+  const description = agentDescriptions.length > 0
+    ? `RL: ${agentDescriptions.slice(0, 2).join(', ')}${agentDescriptions.length > 2 ? ` (+${agentDescriptions.length - 2})` : ''}`
+    : 'Keine relevanten RL-Agenten';
+
+  return {
+    score: Math.max(-100, Math.min(100, finalScore)),
+    confidence: finalConfidence,
+    description
+  };
+}
+
+/**
  * Calculate trading signals from news sentiment data
  */
 export function calculateTradingSignals(
@@ -256,13 +408,28 @@ export function calculateTradingSignals(
  * - News Sentiment (time-weighted)
  * - Technical Indicators (RSI, MACD, Bollinger, etc.)
  * - ML Price Predictions (LSTM)
+ * - RL Agent Signals (reinforcement learning)
  */
 export function calculateCombinedTradingSignals(
   input: CombinedSignalInput
 ): TradingSignalSummary {
-  const { newsItems, forecast, stockData, mlPredictions, currentPrice } = input;
+  const { 
+    newsItems, 
+    forecast, 
+    stockData, 
+    mlPredictions, 
+    currentPrice,
+    rlSignals,
+    signalConfig = DEFAULT_SIGNAL_CONFIG 
+  } = input;
   
-  if (newsItems.length === 0 && !forecast && !mlPredictions) {
+  // Check if we have any data based on enabled sources
+  const hasNews = newsItems.length > 0 && signalConfig.enableSentiment;
+  const hasTechnical = !!forecast && signalConfig.enableTechnical;
+  const hasML = !!(mlPredictions && mlPredictions.length > 0) && signalConfig.enableMLPrediction;
+  const hasRL = !!(rlSignals && rlSignals.length > 0) && signalConfig.enableRLAgents;
+  
+  if (!hasNews && !hasTechnical && !hasML && !hasRL) {
     return createNeutralSummary();
   }
 
@@ -279,9 +446,10 @@ export function calculateCombinedTradingSignals(
 
   // Track which data sources are used
   const dataSourcesUsed: string[] = [];
-  if (newsItems.length > 0) dataSourcesUsed.push('News-Sentiment');
-  if (forecast) dataSourcesUsed.push('Technische Analyse');
-  if (mlPredictions && mlPredictions.length > 0) dataSourcesUsed.push('ML-Prognose');
+  if (hasNews) dataSourcesUsed.push('News-Sentiment');
+  if (hasTechnical) dataSourcesUsed.push('Technische Analyse');
+  if (hasML) dataSourcesUsed.push('ML-Prognose');
+  if (hasRL) dataSourcesUsed.push(`RL-Agenten (${rlSignals!.length})`);
 
   // Contributions tracking
   const contributions: TradingSignalSummary['contributions'] = {
@@ -392,13 +560,13 @@ export function calculateCombinedTradingSignals(
     sentimentConfidence: number,
     sentimentDescription: string
   ): { score: number; confidence: number; contributions: SignalContribution[] } => {
-    const weights = WEIGHTS[period];
+    const weights = getWeights(period, signalConfig);
     
     // Erst alle Scores sammeln
-    const rawScores: { source: 'sentiment' | 'technical' | 'ml'; score: number; weight: number; confidence: number; description: string }[] = [];
+    const rawScores: { source: 'sentiment' | 'technical' | 'ml' | 'rl'; score: number; weight: number; confidence: number; description: string }[] = [];
     
-    // Sentiment
-    if (newsItems.length > 0) {
+    // Sentiment (if enabled)
+    if (hasNews) {
       const sentimentContrib = sentimentScore * 100;
       rawScores.push({
         source: 'sentiment',
@@ -409,8 +577,8 @@ export function calculateCombinedTradingSignals(
       });
     }
 
-    // Technical
-    if (forecast) {
+    // Technical (if enabled)
+    if (hasTechnical) {
       const technical = calculateTechnicalScore(forecast, stockData, period);
       rawScores.push({
         source: 'technical',
@@ -421,8 +589,8 @@ export function calculateCombinedTradingSignals(
       });
     }
 
-    // ML Predictions
-    if (mlPredictions && mlPredictions.length > 0) {
+    // ML Predictions (if enabled)
+    if (hasML) {
       const ml = calculateMLScore(mlPredictions, currentPrice, period);
       rawScores.push({
         source: 'ml',
@@ -430,6 +598,18 @@ export function calculateCombinedTradingSignals(
         weight: weights.ml,
         confidence: ml.confidence,
         description: ml.description
+      });
+    }
+
+    // RL Agent Signals (if enabled)
+    if (hasRL) {
+      const rl = calculateRLScore(rlSignals, period);
+      rawScores.push({
+        source: 'rl',
+        score: rl.score,
+        weight: weights.rl,
+        confidence: rl.confidence,
+        description: rl.description
       });
     }
 
@@ -445,13 +625,16 @@ export function calculateCombinedTradingSignals(
       const agreementFactor = getAgreementFactor(agreement);
       const effectiveWeight = item.weight * agreementFactor;
       
-      totalScore += item.score * effectiveWeight;
-      totalConfidence += item.confidence * effectiveWeight;
-      activeWeightSum += effectiveWeight;
+      // Skip NaN values
+      if (!isNaN(item.score) && !isNaN(effectiveWeight)) {
+        totalScore += item.score * effectiveWeight;
+        totalConfidence += item.confidence * effectiveWeight;
+        activeWeightSum += effectiveWeight;
+      }
       
       periodContributions.push({
         source: item.source,
-        score: Math.round(item.score),
+        score: isNaN(item.score) ? 0 : Math.round(item.score),
         weight: item.weight,
         effectiveWeight: effectiveWeight,
         description: item.description,

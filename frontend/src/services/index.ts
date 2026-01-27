@@ -14,6 +14,22 @@ export { mlService } from './mlService';
 export type { MLPrediction, MLPredictResponse, MLTrainStatus, MLModelInfo, MLServiceHealth } from './mlService';
 export { getRateLimiter, PROVIDER_RATE_LIMITS, type RateLimitConfig, type RateLimiter } from './rateLimiter';
 
+// RL Trading Service
+export { rlTradingService } from './rlTradingService';
+export type {
+  AgentConfig,
+  AgentStatus,
+  TrainingStatus,
+  TradingSignal,
+  MultiSignalResponse,
+  RLServiceHealth,
+  HoldingPeriod,
+  RiskProfile,
+  TradingStyle,
+  BrokerProfile,
+  ConfigOption,
+} from './rlTradingService';
+
 // Auth Service
 export {
   subscribeToAuth,

@@ -18,3 +18,7 @@ export { CompanyInfoPanel } from './CompanyInfoPanel';
 export { EquityChart } from './EquityChart';
 export { PendingOrders } from './PendingOrders';
 export { ApiQuotaDisplay, ApiQuotaCompact } from './ApiQuotaDisplay';
+export { default as RLAgentsPanel } from './RLAgentsPanel';
+export { default as RLAdvisorPanel } from './RLAdvisorPanel';
+export { SignalSourceSettingsPanel } from './SignalSourceSettings';
+export { TrainingConsole } from './TrainingConsole';

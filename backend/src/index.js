@@ -1853,6 +1853,269 @@ app.post('/api/ml/sentiment/analyze/batch', express.json({ limit: '5mb' }), asyn
 });
 
 // ============================================================================
+// RL Trading Service proxy endpoints
+// ============================================================================
+
+const RL_SERVICE_URL = process.env.RL_SERVICE_URL || 'http://rl-trading-service:8001';
+
+/**
+ * Proxy RL Trading Service health check
+ */
+app.get('/api/rl/health', async (req, res) => {
+  try {
+    const response = await fetch(`${RL_SERVICE_URL}/health`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('RL Trading Service health check error:', error);
+    res.status(503).json({ 
+      error: 'RL Trading Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy RL Trading Service info
+ */
+app.get('/api/rl/info', async (req, res) => {
+  try {
+    const response = await fetch(`${RL_SERVICE_URL}/info`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('RL Trading Service info error:', error);
+    res.status(503).json({ 
+      error: 'RL Trading Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy RL Trading Service - list agents
+ */
+app.get('/api/rl/agents', async (req, res) => {
+  try {
+    const response = await fetch(`${RL_SERVICE_URL}/agents`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('RL Trading Service agents list error:', error);
+    res.status(503).json({ 
+      error: 'RL Trading Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy RL Trading Service - get agent status
+ */
+app.get('/api/rl/agents/:agentName', async (req, res) => {
+  try {
+    const response = await fetch(`${RL_SERVICE_URL}/agents/${req.params.agentName}`);
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('RL Trading Service agent status error:', error);
+    res.status(503).json({ 
+      error: 'RL Trading Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy RL Trading Service - delete agent
+ */
+app.delete('/api/rl/agents/:agentName', authMiddleware, async (req, res) => {
+  try {
+    const response = await fetch(`${RL_SERVICE_URL}/agents/${req.params.agentName}`, {
+      method: 'DELETE'
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('RL Trading Service agent deletion error:', error);
+    res.status(503).json({ 
+      error: 'RL Trading Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy RL Trading Service - list presets
+ */
+app.get('/api/rl/presets', async (req, res) => {
+  try {
+    const response = await fetch(`${RL_SERVICE_URL}/presets`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('RL Trading Service presets error:', error);
+    res.status(503).json({ 
+      error: 'RL Trading Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy RL Trading Service - get preset
+ */
+app.get('/api/rl/presets/:presetName', async (req, res) => {
+  try {
+    const response = await fetch(`${RL_SERVICE_URL}/presets/${req.params.presetName}`);
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('RL Trading Service preset error:', error);
+    res.status(503).json({ 
+      error: 'RL Trading Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy RL Trading Service - train agent
+ */
+app.post('/api/rl/train', authMiddleware, express.json({ limit: '100mb' }), async (req, res) => {
+  try {
+    const response = await fetch(`${RL_SERVICE_URL}/train`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('RL Trading Service train error:', error);
+    res.status(503).json({ 
+      error: 'RL Trading Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy RL Trading Service - train agent from backend data
+ */
+app.post('/api/rl/train/from-backend', authMiddleware, express.json(), async (req, res) => {
+  try {
+    const response = await fetch(`${RL_SERVICE_URL}/train/from-backend`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('RL Trading Service train from backend error:', error);
+    res.status(503).json({ 
+      error: 'RL Trading Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy RL Trading Service - get training status
+ */
+app.get('/api/rl/train/status/:agentName', async (req, res) => {
+  try {
+    const response = await fetch(`${RL_SERVICE_URL}/train/status/${req.params.agentName}`);
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('RL Trading Service training status error:', error);
+    res.status(503).json({ 
+      error: 'RL Trading Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy RL Trading Service - get trading signal
+ */
+app.post('/api/rl/signal', express.json({ limit: '10mb' }), async (req, res) => {
+  try {
+    const response = await fetch(`${RL_SERVICE_URL}/signal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('RL Trading Service signal error:', error);
+    res.status(503).json({ 
+      error: 'RL Trading Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy RL Trading Service - get signals from multiple agents
+ */
+app.post('/api/rl/signals/multi', express.json({ limit: '10mb' }), async (req, res) => {
+  try {
+    const response = await fetch(`${RL_SERVICE_URL}/signals/multi`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('RL Trading Service multi-signal error:', error);
+    res.status(503).json({ 
+      error: 'RL Trading Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy RL Trading Service - quick signal (auto fetches data)
+ */
+app.get('/api/rl/signal/:agentName/quick', async (req, res) => {
+  try {
+    const symbol = req.query.symbol || 'AAPL';
+    const response = await fetch(`${RL_SERVICE_URL}/signal/${req.params.agentName}/quick?symbol=${symbol}`);
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('RL Trading Service quick signal error:', error);
+    res.status(503).json({ 
+      error: 'RL Trading Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Proxy RL Trading Service - configuration options
+ */
+app.get('/api/rl/options/:optionType', async (req, res) => {
+  try {
+    const response = await fetch(`${RL_SERVICE_URL}/options/${req.params.optionType}`);
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('RL Trading Service options error:', error);
+    res.status(503).json({ 
+      error: 'RL Trading Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+// ============================================================================
 // Paper Trading / Stock Market Simulation Endpoints
 // ============================================================================
 

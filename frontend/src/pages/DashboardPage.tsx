@@ -13,6 +13,9 @@ import { generateForecast } from '../utils/forecast';
 import { getAuthState } from '../services/authService';
 import { getOrCreatePortfolio, executeMarketOrder, getPortfolioMetrics } from '../services/tradingService';
 import { useSettings } from '../contexts/SettingsContext';
+import { getSignalSourceSettings } from '../services/userSettingsService';
+import { rlTradingService } from '../services/rlTradingService';
+import type { RLSignalInput, SignalSourceConfig } from '../utils/tradingSignals';
 import type { Portfolio, PortfolioMetrics, OrderSide, ProductType } from '../types/trading';
 
 // ML Prediction type for trading signals
@@ -139,6 +142,23 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
   // State for news sentiment (from NewsPanel callback)
   const [newsWithSentiment, setNewsWithSentiment] = useState<NewsItemWithSentiment[]>([]);
 
+  // State for RL signal configuration and signals
+  const [signalConfig, setSignalConfig] = useState<SignalSourceConfig>(() => {
+    const settings = getSignalSourceSettings();
+    return {
+      enableSentiment: settings.enableSentiment,
+      enableTechnical: settings.enableTechnical,
+      enableMLPrediction: settings.enableMLPrediction,
+      enableRLAgents: settings.enableRLAgents,
+      customWeights: settings.customWeights,
+    };
+  });
+  const [rlSignals, setRlSignals] = useState<RLSignalInput[]>([]);
+  const [selectedRLAgents, setSelectedRLAgents] = useState<string[]>(() => {
+    const settings = getSignalSourceSettings();
+    return settings.selectedRLAgents || [];
+  });
+
   // Data freshness timestamps
   const [dataTimestamps, setDataTimestamps] = useState<DataTimestamps>({
     financial: null,
@@ -169,6 +189,89 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
       }
     }
   }, [stockData, isLoading]);
+
+  // Reload signal config when it changes in settings
+  useEffect(() => {
+    const checkSettings = () => {
+      const settings = getSignalSourceSettings();
+      setSignalConfig({
+        enableSentiment: settings.enableSentiment,
+        enableTechnical: settings.enableTechnical,
+        enableMLPrediction: settings.enableMLPrediction,
+        enableRLAgents: settings.enableRLAgents,
+        customWeights: settings.customWeights,
+      });
+      setSelectedRLAgents(settings.selectedRLAgents || []);
+    };
+    
+    // Check settings on storage events (when changed in another tab or settings page)
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'daytrader_signal_sources') {
+        checkSettings();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorage);
+    
+    // Also check periodically (for same-tab changes)
+    const interval = setInterval(checkSettings, 5000);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Load RL signals when enabled and data is available
+  useEffect(() => {
+    const loadRLSignals = async () => {
+      if (!signalConfig.enableRLAgents || selectedRLAgents.length === 0) {
+        setRlSignals([]);
+        return;
+      }
+      
+      if (!stockData || stockData.data.length < 100) {
+        return;
+      }
+      
+      try {
+        // First, validate that selected agents actually exist
+        const availableAgents = await rlTradingService.listAgents();
+        const availableNames = new Set(availableAgents.filter(a => a.is_trained).map(a => a.name));
+        const validAgents = selectedRLAgents.filter(name => availableNames.has(name));
+        
+        if (validAgents.length === 0) {
+          console.warn('No valid RL agents found. Selected agents may have been deleted.');
+          setRlSignals([]);
+          return;
+        }
+        
+        const response = await rlTradingService.getMultiSignals(
+          validAgents,
+          stockData.data
+        );
+        
+        if (response && response.signals) {
+          const signals: RLSignalInput[] = Object.entries(response.signals)
+            .filter(([_, signal]) => !signal.error)
+            .map(([agentName, signal]) => ({
+              signal: signal.signal,
+              confidence: signal.confidence,
+              action_probabilities: signal.action_probabilities as { buy: number; sell: number; hold: number },
+              agent_name: agentName,
+              agent_style: signal.agent_style,
+              holding_period: signal.holding_period,
+            }));
+          setRlSignals(signals);
+        }
+      } catch (err) {
+        console.warn('Failed to load RL signals:', err);
+        setRlSignals([]);
+      }
+    };
+    
+    loadRLSignals();
+  }, [signalConfig.enableRLAgents, selectedRLAgents, stockData]);
 
   // Track last news data to detect actual changes
   const lastNewsCountRef = useRef<number>(0);
@@ -500,6 +603,8 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
         stockData={stockData?.data}
         mlPredictions={mlPredictions ?? undefined}
         currentPrice={currentPrice}
+        rlSignals={rlSignals.length > 0 ? rlSignals : undefined}
+        signalConfig={signalConfig}
       />
 
       {/* AI Forecast and News Row */}

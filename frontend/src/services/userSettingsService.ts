@@ -27,6 +27,66 @@ export const DEFAULT_ML_SETTINGS: MLSettings = {
   preloadFinbert: false,
 };
 
+/**
+ * Signal source settings for trading signal aggregation
+ */
+export interface SignalSourceSettings {
+  // Enable/disable individual signal sources
+  enableSentiment: boolean;      // News sentiment analysis
+  enableTechnical: boolean;      // Technical indicators (RSI, MACD, etc.)
+  enableMLPrediction: boolean;   // LSTM price predictions
+  enableRLAgents: boolean;       // Reinforcement learning agents
+  
+  // Selected RL agents for signal generation
+  selectedRLAgents: string[];
+  
+  // Custom weights (optional, null = use defaults)
+  customWeights?: {
+    sentiment: number;
+    technical: number;
+    ml: number;
+    rl: number;
+  } | null;
+}
+
+export const DEFAULT_SIGNAL_SOURCE_SETTINGS: SignalSourceSettings = {
+  enableSentiment: true,
+  enableTechnical: true,
+  enableMLPrediction: true,
+  enableRLAgents: false,
+  selectedRLAgents: [],
+  customWeights: null,
+};
+
+const SIGNAL_SETTINGS_KEY = 'daytrader_signal_sources';
+
+/**
+ * Get signal source settings from localStorage
+ */
+export function getSignalSourceSettings(): SignalSourceSettings {
+  try {
+    const stored = localStorage.getItem(SIGNAL_SETTINGS_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return { ...DEFAULT_SIGNAL_SOURCE_SETTINGS, ...parsed };
+    }
+  } catch {
+    console.warn('Failed to load signal source settings');
+  }
+  return { ...DEFAULT_SIGNAL_SOURCE_SETTINGS };
+}
+
+/**
+ * Save signal source settings to localStorage
+ */
+export function saveSignalSourceSettings(settings: SignalSourceSettings): void {
+  try {
+    localStorage.setItem(SIGNAL_SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    console.warn('Failed to save signal source settings');
+  }
+}
+
 export interface UserSettings {
   preferredDataSource: string;
   apiKeys: Record<string, string>;
@@ -206,6 +266,31 @@ export async function syncLocalSymbolsToServer(symbols: Array<{ symbol: string; 
   return null;
 }
 
+/**
+ * Get all symbols with historical data available in database
+ * These are symbols that users have previously fetched data for
+ */
+export async function getAvailableSymbols(): Promise<string[]> {
+  try {
+    const response = await fetch(`${API_BASE}/historical-prices/symbols/available`);
+    
+    if (response.ok) {
+      const data = await response.json();
+      // Extract symbol names from response (may be objects with symbol property)
+      if (Array.isArray(data.symbols)) {
+        return data.symbols.map((s: string | { symbol: string }) => 
+          typeof s === 'string' ? s : s.symbol
+        );
+      }
+      return [];
+    }
+  } catch {
+    // Network error
+  }
+  
+  return [];
+}
+
 export default {
   getUserSettings,
   updateUserSettings,
@@ -213,4 +298,7 @@ export default {
   addCustomSymbolToServer,
   removeCustomSymbolFromServer,
   syncLocalSymbolsToServer,
+  getAvailableSymbols,
+  getSignalSourceSettings,
+  saveSignalSourceSettings,
 };
