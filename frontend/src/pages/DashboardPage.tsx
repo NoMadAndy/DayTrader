@@ -328,7 +328,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
             
             {/* Quick Trade Dropdown Panel */}
             {showQuickTrade && (
-              <div className="absolute top-full left-0 sm:right-0 sm:left-auto mt-2 w-[min(calc(100vw-1rem),20rem)] bg-slate-800/95 backdrop-blur-sm rounded-xl border border-slate-700 p-3 shadow-xl">
+              <div className="fixed sm:absolute top-auto sm:top-full left-2 right-2 sm:left-auto sm:right-0 mt-2 sm:w-80 bg-slate-800/95 backdrop-blur-sm rounded-xl border border-slate-700 p-3 shadow-xl z-50">
                 {!getAuthState().isAuthenticated ? (
                   <div className="text-center py-3">
                     <p className="text-gray-400 mb-2 text-sm">Bitte einloggen um zu handeln</p>

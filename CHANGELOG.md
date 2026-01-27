@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-01-27
+
+### Added
+- **Quick Trade Dropdown auf Dashboard** - Schnelles Handeln direkt vom Dashboard aus
+  - Sticky Button neben StockSelector zum sofortigen Trading
+  - Dropdown zeigt verfügbares Guthaben und aktuellen Kurs
+  - Kauf/Short-Auswahl mit Produkttyp (Aktie/CFD) und Mengenfeld
+  - Order-Vorschau mit Gesamtbetrag vor Ausführung
+  - Erfolgsmeldung mit neuem Kontostand nach Trade
+
+### Changed
+- **Mobile-optimierte UI** - Verbesserte Responsivität für alle Hauptkomponenten
+  - Trading-Tabs von 5 auf 3 reduziert (Handeln, Übersicht, Einstellungen)
+  - Einstellungs-Tab nutzt volle Breite auf Mobilgeräten
+  - Chart-Indikatoren jetzt integriert im Chart-Panel (immer sichtbar, nicht mehr ausklappbar)
+  - Standard-Indikatoren aktiviert: Bollinger Bands, MACD, RSI, Volume
+- **Quick Trade Dropdown-Position** - Fixed-Positionierung auf Mobile für volle Viewport-Breite
+
+### Fixed
+- **Mobile Input-Bug behoben** - Letzte Ziffer in Zahlenfeldern kann jetzt gelöscht werden
+  - Mengenfelder im Trading verwenden jetzt String-State mit onBlur-Validierung
+  - ML-Einstellungsfelder (Epochs, Tage) ebenfalls korrigiert
+  - Gilt für: TradingPortfolioPage, SettingsPage, HamburgerMenu
+
 ## [1.8.0] - 2026-01-26
 
 ### Changed
