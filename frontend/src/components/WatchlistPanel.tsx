@@ -119,7 +119,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
     return () => unsubscribe();
   }, []);
 
-  // Load portfolio data when quick trade is opened
+  // Load portfolio data once on mount for authenticated users
   useEffect(() => {
     const loadPortfolio = async () => {
       const { isAuthenticated } = getAuthState();
@@ -135,10 +135,10 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
         console.error('Failed to load portfolio:', err);
       }
     };
-    if (quickTradeSymbol) {
+    if (authState.isAuthenticated) {
       loadPortfolio();
     }
-  }, [quickTradeSymbol]);
+  }, [authState.isAuthenticated]);
 
   // Execute quick trade
   const handleQuickTrade = async (symbol: string, price: number) => {
@@ -149,6 +149,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
       const qty = parseFloat(tradeQuantity);
       if (isNaN(qty) || qty <= 0) {
         setTradeResult({ success: false, message: t('dashboard.invalidQuantity') });
+        setIsExecuting(false);
         return;
       }
       const result = await executeMarketOrder({
@@ -160,7 +161,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
         productType: productType,
       });
       if (result.success) {
-        const actionKey = tradeSide === 'buy' ? 'dashboard.purchaseSuccess' : tradeSide === 'sell' ? 'dashboard.sellSuccess' : 'dashboard.shortSuccess';
+        const actionKey = tradeSide === 'buy' ? 'dashboard.purchaseSuccess' : 'dashboard.shortSuccess';
         setTradeResult({ success: true, message: `${t(actionKey)} ${formatCurrency(result.newBalance || 0)}` });
         // Refresh metrics
         const m = await getPortfolioMetrics(portfolio.id);
@@ -597,11 +598,17 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
   const handleRemoveSymbol = useCallback(async (symbol: string) => {
     if (!authState.isAuthenticated) return;
     
+    // Clear quick trade state if removing the symbol that has its dropdown open
+    if (quickTradeSymbol === symbol) {
+      setQuickTradeSymbol(null);
+      setTradeResult(null);
+    }
+    
     const success = await removeCustomSymbolFromServer(symbol);
     if (success) {
       setWatchlistItems(prev => prev.filter(item => item.symbol !== symbol));
     }
-  }, [authState.isAuthenticated]);
+  }, [authState.isAuthenticated, quickTradeSymbol]);
 
   // Sort and filter items
   const displayItems = useMemo(() => {
