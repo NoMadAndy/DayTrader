@@ -827,7 +827,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                   </div>
                 )}
 
-                {/* Trade Button (only for authenticated users) */}
+                {/* Trade Button (only for authenticated users, hidden on mobile - available in expandable context) */}
                 {authState.isAuthenticated && !item.isLoading && !item.error && (
                   <button
                     onClick={(e) => {
@@ -835,7 +835,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                       // Navigate to trading page with symbol as URL param
                       navigate(`/trading?symbol=${item.symbol}`);
                     }}
-                    className="p-1.5 bg-green-600/20 hover:bg-green-600/40 rounded text-green-400 transition-colors"
+                    className="hidden sm:block p-1.5 bg-green-600/20 hover:bg-green-600/40 rounded text-green-400 transition-colors"
                     title="Handeln"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
