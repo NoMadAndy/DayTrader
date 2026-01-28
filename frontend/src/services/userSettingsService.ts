@@ -58,6 +58,53 @@ export const DEFAULT_SIGNAL_SOURCE_SETTINGS: SignalSourceSettings = {
   customWeights: null,
 };
 
+/**
+ * Watchlist settings for extended signal loading
+ */
+export interface WatchlistSettings {
+  // Load all signal sources (News, ML, RL) for watchlist items
+  extendedSignals: boolean;
+  // Cache duration in minutes for watchlist signals
+  cacheDurationMinutes: number;
+  // Auto-refresh interval in seconds (0 = disabled)
+  autoRefreshSeconds: number;
+}
+
+export const DEFAULT_WATCHLIST_SETTINGS: WatchlistSettings = {
+  extendedSignals: false,
+  cacheDurationMinutes: 15,
+  autoRefreshSeconds: 60,
+};
+
+const WATCHLIST_SETTINGS_KEY = 'daytrader_watchlist_settings';
+
+/**
+ * Get watchlist settings from localStorage
+ */
+export function getWatchlistSettings(): WatchlistSettings {
+  try {
+    const stored = localStorage.getItem(WATCHLIST_SETTINGS_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return { ...DEFAULT_WATCHLIST_SETTINGS, ...parsed };
+    }
+  } catch {
+    console.warn('Failed to load watchlist settings');
+  }
+  return { ...DEFAULT_WATCHLIST_SETTINGS };
+}
+
+/**
+ * Save watchlist settings to localStorage
+ */
+export function saveWatchlistSettings(settings: WatchlistSettings): void {
+  try {
+    localStorage.setItem(WATCHLIST_SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    console.warn('Failed to save watchlist settings');
+  }
+}
+
 const SIGNAL_SETTINGS_KEY = 'daytrader_signal_sources';
 
 /**

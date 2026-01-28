@@ -5,7 +5,7 @@
  * combining news sentiment, technical indicators, ML predictions, and RL agents.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { 
   calculateCombinedTradingSignals, 
   getSignalDisplay, 
@@ -44,6 +44,48 @@ interface TradingSignalPanelProps {
   rlSignals?: RLSignalInput[];
   // Signal-Quellen-Konfiguration
   signalConfig?: SignalSourceConfig;
+  // Callback für Konfigurationsänderungen
+  onConfigChange?: (config: SignalSourceConfig) => void;
+  // Zeigt ob RL Service verfügbar ist
+  rlServiceAvailable?: boolean;
+  // Zeigt ob ML Service verfügbar ist
+  mlServiceAvailable?: boolean;
+}
+
+// Source Toggle Button Component
+function SourceToggle({ 
+  icon, 
+  label, 
+  enabled, 
+  available = true,
+  onChange 
+}: { 
+  icon: string; 
+  label: string; 
+  enabled: boolean; 
+  available?: boolean;
+  onChange: () => void;
+}) {
+  return (
+    <button
+      onClick={onChange}
+      disabled={!available}
+      className={`
+        flex items-center gap-1 px-2 py-1 rounded text-xs transition-all
+        ${!available 
+          ? 'bg-slate-700/30 text-gray-600 cursor-not-allowed' 
+          : enabled 
+            ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50 hover:bg-blue-500/30' 
+            : 'bg-slate-700/50 text-gray-500 border border-slate-600/50 hover:bg-slate-600/50'
+        }
+      `}
+      title={!available ? `${label} nicht verfügbar` : enabled ? `${label} deaktivieren` : `${label} aktivieren`}
+    >
+      <span>{icon}</span>
+      <span className="hidden sm:inline">{label}</span>
+      {enabled && available && <span className="text-green-400">✓</span>}
+    </button>
+  );
 }
 
 function SignalCard({ 
@@ -174,8 +216,13 @@ export function TradingSignalPanel({
   mlPredictions,
   currentPrice,
   rlSignals,
-  signalConfig
+  signalConfig,
+  onConfigChange,
+  rlServiceAvailable = false,
+  mlServiceAvailable = true,
 }: TradingSignalPanelProps) {
+  const [showSourceToggles, setShowSourceToggles] = useState(false);
+  
   const signals = useMemo(() => {
     const input: CombinedSignalInput = {
       newsItems,
@@ -188,6 +235,13 @@ export function TradingSignalPanel({
     };
     return calculateCombinedTradingSignals(input);
   }, [newsItems, forecast, stockData, mlPredictions, currentPrice, rlSignals, signalConfig]);
+
+  // Handle source toggle
+  const handleToggleSource = (source: 'enableSentiment' | 'enableTechnical' | 'enableMLPrediction' | 'enableRLAgents') => {
+    if (!signalConfig || !onConfigChange) return;
+    const updated = { ...signalConfig, [source]: !signalConfig[source] };
+    onConfigChange(updated);
+  };
 
   // Show panel if we have any data source (considering signal config)
   const hasAnyData = newsItems.length > 0 || forecast || (mlPredictions && mlPredictions.length > 0) || (rlSignals && rlSignals.length > 0);
@@ -216,6 +270,19 @@ export function TradingSignalPanel({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
           </svg>
           <h3 className="font-semibold text-white">Trading-Signale für {symbol}</h3>
+          {/* Settings Toggle Button */}
+          {onConfigChange && signalConfig && (
+            <button
+              onClick={() => setShowSourceToggles(!showSourceToggles)}
+              className={`ml-2 p-1 rounded transition-colors ${showSourceToggles ? 'bg-blue-500/20 text-blue-400' : 'text-gray-500 hover:text-gray-300'}`}
+              title="Datenquellen ein-/ausblenden"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-3 text-xs">
           <span className={biasDisplay.color}>
@@ -227,6 +294,48 @@ export function TradingSignalPanel({
           </span>
         </div>
       </div>
+
+      {/* Source Toggles - Collapsible */}
+      {showSourceToggles && signalConfig && onConfigChange && (
+        <div className="mb-4 p-3 bg-slate-700/30 rounded-lg border border-slate-600/50">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-gray-400 font-medium">Datenquellen aktivieren/deaktivieren:</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <SourceToggle
+              icon="📰"
+              label="News"
+              enabled={signalConfig.enableSentiment}
+              available={newsItems.length > 0}
+              onChange={() => handleToggleSource('enableSentiment')}
+            />
+            <SourceToggle
+              icon="📊"
+              label="Technisch"
+              enabled={signalConfig.enableTechnical}
+              available={!!stockData && stockData.length > 0}
+              onChange={() => handleToggleSource('enableTechnical')}
+            />
+            <SourceToggle
+              icon="🤖"
+              label="ML-Prognose"
+              enabled={signalConfig.enableMLPrediction}
+              available={mlServiceAvailable}
+              onChange={() => handleToggleSource('enableMLPrediction')}
+            />
+            <SourceToggle
+              icon="🎯"
+              label="RL-Agent"
+              enabled={signalConfig.enableRLAgents}
+              available={rlServiceAvailable}
+              onChange={() => handleToggleSource('enableRLAgents')}
+            />
+          </div>
+          <p className="mt-2 text-xs text-gray-500">
+            Klicke auf eine Quelle, um sie ein- oder auszuschalten. Nicht verfügbare Quellen sind ausgegraut.
+          </p>
+        </div>
+      )}
 
       {/* Signal Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

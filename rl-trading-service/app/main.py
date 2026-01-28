@@ -578,6 +578,39 @@ async def get_signal(request: SignalRequest):
     if "error" in result and result.get("confidence", 0) == 0:
         raise HTTPException(status_code=404, detail=result["error"])
     
+    
+    return result
+
+
+@app.post("/signal/explain")
+async def get_signal_with_explanation(request: SignalRequest):
+    """
+    Get a trading signal with detailed, data-based explanation.
+    
+    This endpoint provides HONEST explanations - no hallucinations:
+    - What market data the model actually observed
+    - Which features had the strongest influence (measured via perturbation)
+    - The probability distribution across all actions
+    - The agent's training configuration and optimization goals
+    
+    Requires at least 100 data points for accurate signals.
+    """
+    if len(request.data) < 100:
+        raise HTTPException(
+            status_code=400,
+            detail="At least 100 data points required for signal generation"
+        )
+    
+    # Prepare data
+    df_data = [d.model_dump() for d in request.data]
+    df = prepare_data_for_training(df_data)
+    
+    # Get signal with explanation
+    result = trainer.get_signal_with_explanation(request.agent_name, df)
+    
+    if "error" in result and result.get("confidence", 0) == 0:
+        raise HTTPException(status_code=404, detail=result["error"])
+    
     return result
 
 

@@ -3,14 +3,15 @@
  * 
  * Displays trading signals from trained RL agents as "advisors"
  * for the current stock. Shows consensus from multiple agents.
+ * Includes detailed explanations for each agent's decision.
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { 
   rlTradingService,
   type AgentStatus,
-  type TradingSignal,
   type MultiSignalResponse,
+  type SignalExplanation,
 } from '../services/rlTradingService';
 import type { OHLCV } from '../types/stock';
 
@@ -31,6 +32,11 @@ export default function RLAdvisorPanel({
   const [signals, setSignals] = useState<MultiSignalResponse | null>(null);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  
+  // State für Erklärungen
+  const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
+  const [explanation, setExplanation] = useState<SignalExplanation | null>(null);
+  const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
 
   // Check service and load agents on mount
   useEffect(() => {
@@ -88,6 +94,29 @@ export default function RLAdvisorPanel({
         : [...prev, agentName]
     );
   };
+
+  // Erklärung für einen Agenten laden
+  const loadExplanation = useCallback(async (agentName: string) => {
+    if (expandedAgent === agentName) {
+      // Schließen wenn bereits offen
+      setExpandedAgent(null);
+      setExplanation(null);
+      return;
+    }
+    
+    setExpandedAgent(agentName);
+    setIsLoadingExplanation(true);
+    setExplanation(null);
+    
+    try {
+      const result = await rlTradingService.getSignalWithExplanation(agentName, historicalData);
+      setExplanation(result);
+    } catch (err) {
+      console.error('Failed to load explanation:', err);
+    } finally {
+      setIsLoadingExplanation(false);
+    }
+  }, [expandedAgent, historicalData]);
 
   const getSignalColor = (signal: string): string => {
     switch (signal) {
@@ -226,38 +255,153 @@ export default function RLAdvisorPanel({
       {/* Individual Agent Signals */}
       {signals && Object.entries(signals.signals).length > 0 && (
         <div className="mt-3 space-y-1">
-          <div className="text-xs text-slate-400 mb-1">Individual Signals</div>
+          <div className="text-xs text-slate-400 mb-1">
+            Individual Signals 
+            <span className="text-slate-500 ml-1">(klicken für Details)</span>
+          </div>
           {Object.entries(signals.signals).map(([agentName, signal]) => (
-            <div key={agentName} className="flex justify-between items-center text-xs bg-slate-700/50 rounded px-2 py-1">
-              <div className="flex items-center gap-2">
-                <span>{getSignalIcon(signal.signal)}</span>
-                <span className="text-slate-300">{agentName}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={getSignalColor(signal.signal)}>
-                  {signal.signal}
-                </span>
-                {/* Strength indicator */}
-                <div className="flex gap-0.5">
-                  {[1, 2, 3].map(i => (
-                    <div
-                      key={i}
-                      className={`w-1 h-2 rounded ${
-                        i <= getStrengthBars(signal.strength)
-                          ? signal.signal === 'buy' 
-                            ? 'bg-green-400' 
-                            : signal.signal === 'sell' 
-                            ? 'bg-red-400' 
-                            : 'bg-slate-500'
-                          : 'bg-slate-600'
-                      }`}
-                    />
-                  ))}
+            <div key={agentName}>
+              <button
+                onClick={() => loadExplanation(agentName)}
+                className={`w-full flex justify-between items-center text-xs rounded px-2 py-1.5 transition-colors ${
+                  expandedAgent === agentName 
+                    ? 'bg-slate-600/70 border border-slate-500' 
+                    : 'bg-slate-700/50 hover:bg-slate-600/50'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span>{getSignalIcon(signal.signal)}</span>
+                  <span className="text-slate-300">{agentName}</span>
+                  {expandedAgent === agentName && (
+                    <span className="text-blue-400 text-[10px]">▼</span>
+                  )}
                 </div>
-                <span className="text-slate-500 w-10 text-right">
-                  {(signal.confidence * 100).toFixed(0)}%
-                </span>
-              </div>
+                <div className="flex items-center gap-2">
+                  <span className={getSignalColor(signal.signal)}>
+                    {signal.signal}
+                  </span>
+                  {/* Strength indicator */}
+                  <div className="flex gap-0.5">
+                    {[1, 2, 3].map(i => (
+                      <div
+                        key={i}
+                        className={`w-1 h-2 rounded ${
+                          i <= getStrengthBars(signal.strength)
+                            ? signal.signal === 'buy' 
+                              ? 'bg-green-400' 
+                              : signal.signal === 'sell' 
+                              ? 'bg-red-400' 
+                              : 'bg-slate-500'
+                            : 'bg-slate-600'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-slate-500 w-10 text-right">
+                    {(signal.confidence * 100).toFixed(0)}%
+                  </span>
+                </div>
+              </button>
+              
+              {/* Explanation Panel */}
+              {expandedAgent === agentName && (
+                <div className="mt-1 p-3 bg-slate-700/30 rounded border border-slate-600/50 text-xs">
+                  {isLoadingExplanation ? (
+                    <div className="flex items-center justify-center py-4">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
+                      <span className="ml-2 text-slate-400">Analysiere Entscheidung...</span>
+                    </div>
+                  ) : explanation ? (
+                    <div className="space-y-3">
+                      {/* Wahrscheinlichkeitsbalken */}
+                      <div>
+                        <div className="text-slate-400 mb-1 font-medium">Wahrscheinlichkeitsverteilung</div>
+                        <div className="flex gap-1 h-4 rounded overflow-hidden">
+                          <div 
+                            className="bg-green-500/80 transition-all" 
+                            style={{ width: `${explanation.probability_summary.buy_total * 100}%` }}
+                            title={`Kaufen: ${(explanation.probability_summary.buy_total * 100).toFixed(1)}%`}
+                          />
+                          <div 
+                            className="bg-slate-500/80 transition-all" 
+                            style={{ width: `${explanation.probability_summary.hold * 100}%` }}
+                            title={`Halten: ${(explanation.probability_summary.hold * 100).toFixed(1)}%`}
+                          />
+                          <div 
+                            className="bg-red-500/80 transition-all" 
+                            style={{ width: `${explanation.probability_summary.sell_total * 100}%` }}
+                            title={`Verkaufen: ${(explanation.probability_summary.sell_total * 100).toFixed(1)}%`}
+                          />
+                        </div>
+                        <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
+                          <span className="text-green-400">Kaufen {(explanation.probability_summary.buy_total * 100).toFixed(0)}%</span>
+                          <span>Halten {(explanation.probability_summary.hold * 100).toFixed(0)}%</span>
+                          <span className="text-red-400">Verkaufen {(explanation.probability_summary.sell_total * 100).toFixed(0)}%</span>
+                        </div>
+                      </div>
+                      
+                      {/* Top Einflussfaktoren */}
+                      {explanation.feature_importance && Object.keys(explanation.feature_importance).length > 0 && (
+                        <div>
+                          <div className="text-slate-400 mb-1 font-medium">Top Einflussfaktoren</div>
+                          <div className="space-y-1">
+                            {Object.entries(explanation.feature_importance).slice(0, 5).map(([feature, impact]) => (
+                              <div key={feature} className="flex items-center gap-2">
+                                <div className="w-20 truncate text-slate-300" title={feature}>{feature}</div>
+                                <div className="flex-1 h-2 bg-slate-600 rounded overflow-hidden">
+                                  <div 
+                                    className="h-full bg-blue-500/80" 
+                                    style={{ width: `${Math.min(impact * 10, 100)}%` }}
+                                  />
+                                </div>
+                                <div className="w-12 text-right text-slate-400">{impact.toFixed(1)}%</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Marktindikatoren */}
+                      {explanation.market_state && Object.keys(explanation.market_state).length > 0 && (
+                        <div>
+                          <div className="text-slate-400 mb-1 font-medium">Aktuelle Marktdaten</div>
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                            {Object.entries(explanation.market_state).slice(0, 6).map(([indicator, value]) => (
+                              <div key={indicator} className="flex justify-between">
+                                <span className="text-slate-500 truncate" title={indicator}>{indicator}:</span>
+                                <span className="text-slate-300 ml-1">
+                                  {typeof value === 'number' ? value.toFixed(2) : value}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Agent-Konfiguration */}
+                      {explanation.agent_config && (
+                        <div className="pt-2 border-t border-slate-600/50">
+                          <div className="text-slate-400 mb-1 font-medium">Agent-Profil</div>
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px]">
+                            <div><span className="text-slate-500">Stil:</span> <span className="text-slate-300">{explanation.agent_config.trading_style}</span></div>
+                            <div><span className="text-slate-500">Risiko:</span> <span className="text-slate-300">{explanation.agent_config.risk_profile}</span></div>
+                            <div><span className="text-slate-500">Haltedauer:</span> <span className="text-slate-300">{explanation.agent_config.holding_period}</span></div>
+                            <div><span className="text-slate-500">Broker:</span> <span className="text-slate-300">{explanation.agent_config.broker_profile}</span></div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Disclaimer */}
+                      <div className="text-[10px] text-slate-500 pt-2 border-t border-slate-600/50">
+                        ⚠️ Diese Erklärung basiert auf gemessenen Feature-Einflüssen. Die genaue interne Logik 
+                        des neuronalen Netzwerks ist nicht vollständig interpretierbar.
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-slate-500 text-center py-2">Keine Erklärung verfügbar</p>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

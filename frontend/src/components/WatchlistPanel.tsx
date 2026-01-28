@@ -17,9 +17,11 @@ import {
   calculateCombinedTradingSignals, 
   getSignalDisplay,
   type TradingSignalSummary,
-  type CombinedSignalInput
+  type CombinedSignalInput,
+  type SignalContribution
 } from '../utils/tradingSignals';
 import { generateForecast } from '../utils/forecast';
+import { analyzeSentiment } from '../utils/sentimentAnalysis';
 import { 
   getAuthState, 
   subscribeToAuth, 
@@ -28,9 +30,20 @@ import {
 import { 
   getCustomSymbols, 
   addCustomSymbolToServer, 
-  removeCustomSymbolFromServer 
+  removeCustomSymbolFromServer,
+  getWatchlistSettings,
+  getSignalSourceSettings
 } from '../services/userSettingsService';
 import { fetchCompanyInfo, type CompanyInfo } from '../services/companyInfoService';
+import { mlService } from '../services/mlService';
+import { rlTradingService } from '../services/rlTradingService';
+import { 
+  getCachedSignals, 
+  setCachedSignals, 
+  isCacheValid,
+  type CachedWatchlistSignals 
+} from '../services/watchlistCacheService';
+import type { NewsItem } from '../services/types';
 
 // Helper function to format market cap
 function formatMarketCap(value: number): string {
@@ -53,6 +66,12 @@ interface WatchlistItem extends WatchlistStock {
   companyInfo?: CompanyInfo;
   isLoading: boolean;
   error?: string;
+  // Extended signal sources
+  signalSources?: {
+    hasNews: boolean;
+    hasML: boolean;
+    hasRL: boolean;
+  };
 }
 
 interface WatchlistPanelProps {
@@ -73,11 +92,42 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
   const [sortBy, setSortBy] = useState<'name' | 'score'>('name');
   const [filterPeriod, setFilterPeriod] = useState<'hourly' | 'daily' | 'weekly' | 'longTerm'>('daily');
   const [isLoadingSymbols, setIsLoadingSymbols] = useState(false);
+  
+  // Watchlist settings for extended signals
+  const [extendedSignalsEnabled, setExtendedSignalsEnabled] = useState(false);
 
   // Subscribe to auth state changes
   useEffect(() => {
     const unsubscribe = subscribeToAuth(setAuthState);
     return () => unsubscribe();
+  }, []);
+  
+  // Load extended signals setting and listen for storage changes (cross-tab sync)
+  useEffect(() => {
+    const loadSettings = () => {
+      const settings = getWatchlistSettings();
+      setExtendedSignalsEnabled(settings.extendedSignals);
+    };
+    
+    // Load on mount
+    loadSettings();
+    
+    // Listen for storage changes (when settings change in another tab or component)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'daytrader_watchlist_settings') {
+        loadSettings();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also check periodically in case settings changed in same tab
+    const interval = setInterval(loadSettings, 5000);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(interval);
+    };
   }, []);
 
   // Load watchlist based on auth state
@@ -110,8 +160,52 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
   }, [loadWatchlist, authState.isAuthenticated]);
 
   // Fetch data for a single symbol
-  const fetchSymbolData = useCallback(async (symbol: string): Promise<Partial<WatchlistItem>> => {
+  const fetchSymbolData = useCallback(async (symbol: string, useExtendedSignals: boolean = false): Promise<Partial<WatchlistItem>> => {
     try {
+      const watchlistSettings = getWatchlistSettings();
+      const signalSourceSettings = getSignalSourceSettings();
+      const extendedEnabled = useExtendedSignals || watchlistSettings.extendedSignals;
+      
+      // In extended mode, enable ALL signal sources regardless of individual settings
+      // This is the whole point of "extended" mode - get all available data
+      const effectiveSettings = extendedEnabled ? {
+        enableSentiment: true,
+        enableMLPrediction: true,
+        enableRLAgents: true,
+        selectedRLAgents: signalSourceSettings.selectedRLAgents,
+      } : signalSourceSettings;
+      
+      // Check cache first if extended signals are enabled
+      if (extendedEnabled) {
+        const cached = await getCachedSignals(symbol);
+        if (cached && isCacheValid(cached)) {
+          // We still need fresh price and company info, but can use cached signals
+          const [stockData, companyInfo] = await Promise.all([
+            dataService.fetchStockData(symbol),
+            fetchCompanyInfo(symbol)
+          ]);
+          
+          if (stockData && stockData.data.length > 0) {
+            const currentPrice = stockData.data[stockData.data.length - 1].close;
+            const previousPrice = stockData.data.length > 1 
+              ? stockData.data[stockData.data.length - 2].close 
+              : currentPrice;
+            const priceChange = ((currentPrice - previousPrice) / previousPrice) * 100;
+            
+            return {
+              currentPrice,
+              priceEUR: companyInfo?.priceEUR,
+              priceChange,
+              signals: cached.signals as unknown as TradingSignalSummary,
+              companyInfo: companyInfo ?? undefined,
+              signalSources: cached.sources,
+              isLoading: false,
+              error: undefined,
+            };
+          }
+        }
+      }
+      
       // Fetch stock data and company info in parallel
       const [stockData, companyInfo] = await Promise.all([
         dataService.fetchStockData(symbol),
@@ -131,7 +225,10 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
       // Generate forecast for technical indicators
       const forecast = generateForecast(stockData.data);
       
-      // Calculate trading signals (ohne News und ML für Watchlist-Übersicht)
+      // Initialize signal sources tracking
+      const signalSources = { hasNews: false, hasML: false, hasRL: false };
+      
+      // Prepare signal input
       const signalInput: CombinedSignalInput = {
         newsItems: [],
         forecast,
@@ -139,7 +236,121 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
         currentPrice,
       };
       
+      // Fetch extended signals if enabled
+      if (extendedEnabled) {
+        const extendedPromises: Promise<void>[] = [];
+        
+        // News signals (always in extended mode)
+        console.log(`[Watchlist] News enabled: ${effectiveSettings.enableSentiment}`);
+        if (effectiveSettings.enableSentiment) {
+          extendedPromises.push(
+            dataService.fetchNews(symbol).then((news: NewsItem[]) => {
+              console.log(`[Watchlist] Got ${news?.length || 0} news for ${symbol}`);
+              if (news && news.length > 0) {
+                // Analyze sentiment for each news item
+                signalInput.newsItems = news.map(n => {
+                  // Use analyzeSentiment to compute the sentiment from headline and summary
+                  const text = `${n.headline} ${n.summary || ''}`;
+                  const sentimentResult = analyzeSentiment(text);
+                  console.log(`[Watchlist] News "${n.headline.substring(0, 30)}..." -> sentiment: ${sentimentResult.score}`);
+                  return {
+                    sentimentResult,
+                    datetime: n.datetime || Date.now(),
+                  };
+                });
+                signalSources.hasNews = true;
+                console.log(`[Watchlist] hasNews set to true for ${symbol}`);
+              }
+            }).catch((err) => {
+              console.error(`[Watchlist] News error for ${symbol}:`, err);
+            })
+          );
+        }
+        
+        // ML signals (always in extended mode)
+        if (effectiveSettings.enableMLPrediction) {
+          extendedPromises.push(
+            mlService.predict(symbol, stockData?.data).then(prediction => {
+              if (prediction && prediction.predictions) {
+                signalInput.mlPredictions = prediction.predictions;
+                signalSources.hasML = true;
+              }
+            }).catch(() => { /* ignore */ })
+          );
+        }
+        
+        // RL signals (always in extended mode when we have stock data)
+        console.log(`[Watchlist] RL enabled: ${effectiveSettings.enableRLAgents}, stockData: ${!!stockData}`);
+        if (effectiveSettings.enableRLAgents && stockData) {
+          extendedPromises.push(
+            (async () => {
+              try {
+                // Use selected agents or get all trained agents
+                let agentsToUse = effectiveSettings.selectedRLAgents;
+                console.log(`[Watchlist] Selected RL agents: ${agentsToUse.length}`);
+                
+                if (agentsToUse.length === 0) {
+                  // Auto-select all trained agents
+                  console.log(`[Watchlist] Fetching all agents for ${symbol}...`);
+                  const allAgents = await rlTradingService.listAgents();
+                  console.log(`[Watchlist] Got ${allAgents.length} agents, trained: ${allAgents.filter(a => a.is_trained).length}`);
+                  agentsToUse = allAgents
+                    .filter(a => a.is_trained)
+                    .map(a => a.name);
+                }
+                
+                if (agentsToUse.length === 0) {
+                  console.log(`[Watchlist] No trained agents available`);
+                  return;
+                }
+                
+                console.log(`[Watchlist] Getting multi-signals for ${symbol} with ${agentsToUse.length} agents`);
+                const result = await rlTradingService.getMultiSignals(agentsToUse, stockData.data);
+                console.log(`[Watchlist] RL result for ${symbol}:`, result);
+                if (result && result.signals) {
+                  // Convert Record<string, TradingSignal> to array
+                  const signalsArray = Object.entries(result.signals);
+                  console.log(`[Watchlist] Got ${signalsArray.length} RL signals for ${symbol}`);
+                  if (signalsArray.length > 0) {
+                    signalInput.rlSignals = signalsArray.map(([agentName, signal]) => ({
+                      signal: signal.signal as 'buy' | 'sell' | 'hold',
+                      confidence: signal.confidence,
+                      action_probabilities: {
+                        buy: signal.action_probabilities?.buy ?? 0.33,
+                        sell: signal.action_probabilities?.sell ?? 0.33,
+                        hold: signal.action_probabilities?.hold ?? 0.34,
+                      },
+                      agent_name: agentName,
+                      agent_style: signal.agent_style,
+                      holding_period: signal.holding_period,
+                    }));
+                    signalSources.hasRL = true;
+                  }
+                }
+              } catch (error) {
+                console.error(`[Watchlist] RL error for ${symbol}:`, error);
+              }
+            })()
+          );
+        }
+        
+        // Wait for all extended fetches (with timeout)
+        // Increase timeout to 15s since RL signals can take longer
+        console.log(`[Watchlist] Waiting for ${extendedPromises.length} extended promises for ${symbol}...`);
+        await Promise.race([
+          Promise.all(extendedPromises),
+          new Promise(resolve => setTimeout(resolve, 15000)) // 15s timeout
+        ]);
+        console.log(`[Watchlist] Extended signals done for ${symbol}: News=${signalSources.hasNews}, ML=${signalSources.hasML}, RL=${signalSources.hasRL}`);
+      }
+      
       const signals = calculateCombinedTradingSignals(signalInput);
+      
+      // Cache the computed signals if extended mode is enabled
+      if (extendedEnabled && (signalSources.hasNews || signalSources.hasML || signalSources.hasRL)) {
+        const ttlSeconds = watchlistSettings.cacheDurationMinutes * 60;
+        setCachedSignals(symbol, signals as unknown as CachedWatchlistSignals['signals'], signalSources, ttlSeconds);
+      }
 
       return {
         currentPrice,
@@ -147,6 +358,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
         priceChange,
         signals,
         companyInfo: companyInfo ?? undefined,
+        signalSources: extendedEnabled ? signalSources : undefined,
         isLoading: false,
         error: undefined,
       };
@@ -240,6 +452,26 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
 
   // Auto-refresh prices every 2 seconds (lightweight, UI-friendly)
   useSimpleAutoRefresh(refreshPricesOnly, { interval: 2000, enabled: watchlistItems.length > 0 });
+
+  // Auto-refresh extended signals based on user settings
+  useEffect(() => {
+    const watchlistSettings = getWatchlistSettings();
+    
+    // Only set up interval if extended signals AND auto-refresh are enabled
+    if (!watchlistSettings.extendedSignals || watchlistSettings.autoRefreshSeconds === 0) {
+      return;
+    }
+    
+    const intervalMs = watchlistSettings.autoRefreshSeconds * 1000;
+    console.log(`[Watchlist] Extended signals auto-refresh every ${watchlistSettings.autoRefreshSeconds}s`);
+    
+    const interval = setInterval(() => {
+      console.log('[Watchlist] Auto-refreshing extended signals...');
+      refreshWatchlist();
+    }, intervalMs);
+    
+    return () => clearInterval(interval);
+  }, [refreshWatchlist, extendedSignalsEnabled]);
 
   // Add new symbol (only for authenticated users)
   const handleAddSymbol = useCallback(async () => {
@@ -341,6 +573,47 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
     );
   };
 
+  // Signal Source Mini Badges - zeigt die einzelnen Quellen kompakt an
+  const SignalSourceBadges = ({ contributions }: { contributions?: SignalContribution[] }) => {
+    if (!contributions || contributions.length === 0) return null;
+    
+    const getSourceInfo = (source: string) => {
+      switch (source) {
+        case 'technical': return { icon: '📊', label: 'Tech', color: 'text-blue-400' };
+        case 'sentiment': return { icon: '📰', label: 'News', color: 'text-yellow-400' };
+        case 'ml': return { icon: '🤖', label: 'ML', color: 'text-purple-400' };
+        case 'rl': return { icon: '🎯', label: 'RL', color: 'text-green-400' };
+        default: return { icon: '•', label: source, color: 'text-gray-400' };
+      }
+    };
+    
+    const getScoreColor = (score: number) => {
+      if (score > 30) return 'text-green-400';
+      if (score > 10) return 'text-green-300';
+      if (score < -30) return 'text-red-400';
+      if (score < -10) return 'text-red-300';
+      return 'text-gray-400';
+    };
+    
+    return (
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {contributions.map((contrib, idx) => {
+          const info = getSourceInfo(contrib.source);
+          return (
+            <span 
+              key={idx}
+              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-700/50 text-[10px] ${getScoreColor(contrib.score)}`}
+              title={`${info.label}: ${contrib.description} (Score: ${contrib.score.toFixed(0)})`}
+            >
+              <span className={info.color}>{info.icon}</span>
+              <span className="font-medium">{contrib.score > 0 ? '+' : ''}{contrib.score.toFixed(0)}</span>
+            </span>
+          );
+        })}
+      </div>
+    );
+  };
+
   const periodLabels: Record<string, string> = {
     hourly: '1h',
     daily: '1d',
@@ -356,6 +629,14 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
           <span>📋</span>
           <span className="hidden sm:inline">Watchlist</span>
           <span className="text-gray-400 font-normal">({watchlistItems.length})</span>
+          {extendedSignalsEnabled && (
+            <span 
+              className="text-[10px] px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded-full"
+              title="Erweiterte Signale aktiv (News, ML, RL)"
+            >
+              ✨ Extended
+            </span>
+          )}
         </h3>
         <button
           onClick={refreshWatchlist}
@@ -484,7 +765,15 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
 
                 {/* Signal Badge - compact on mobile */}
                 {!item.isLoading && !item.error && (
-                  <SignalBadge signal={item.signals} small />
+                  <div className="flex flex-col items-end gap-0.5">
+                    <SignalBadge signal={item.signals} small />
+                    {/* Mobile: Mini source indicators */}
+                    <div className="sm:hidden">
+                      <SignalSourceBadges 
+                        contributions={item.signals?.contributions?.[filterPeriod]} 
+                      />
+                    </div>
+                  </div>
                 )}
 
                 {/* Trade Button (only for authenticated users) */}
@@ -524,25 +813,36 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
 
             {/* Signal Details Row - hidden on very small screens */}
             {!item.isLoading && !item.error && item.signals && (
-              <div className="mt-2 pt-2 border-t border-slate-700/50 hidden sm:flex items-center gap-1.5 text-[10px] sm:text-xs">
-                <span className="text-gray-500">Signale:</span>
-                {(['hourly', 'daily', 'weekly', 'longTerm'] as const).map(period => {
-                  const periodSignal = item.signals?.[period];
-                  const display = periodSignal ? getSignalDisplay(periodSignal.signal) : null;
-                  return (
-                    <span
-                      key={period}
-                      className={`px-1 sm:px-1.5 py-0.5 rounded ${
-                        period === filterPeriod ? 'ring-1 ring-blue-500' : ''
-                      } ${display?.bgColor || 'bg-slate-700'}`}
-                      title={`${periodLabels[period]}: ${periodSignal?.reasoning || 'N/A'}`}
-                    >
-                      <span className={display?.color || 'text-gray-400'}>
-                        {periodLabels[period]}: {display?.emoji || '—'}
+              <div className="mt-2 pt-2 border-t border-slate-700/50 hidden sm:block">
+                {/* Period Signals */}
+                <div className="flex items-center gap-1.5 text-[10px] sm:text-xs mb-2">
+                  <span className="text-gray-500">Signale:</span>
+                  {(['hourly', 'daily', 'weekly', 'longTerm'] as const).map(period => {
+                    const periodSignal = item.signals?.[period];
+                    const display = periodSignal ? getSignalDisplay(periodSignal.signal) : null;
+                    return (
+                      <span
+                        key={period}
+                        className={`px-1 sm:px-1.5 py-0.5 rounded ${
+                          period === filterPeriod ? 'ring-1 ring-blue-500' : ''
+                        } ${display?.bgColor || 'bg-slate-700'}`}
+                        title={`${periodLabels[period]}: ${periodSignal?.reasoning || 'N/A'}`}
+                      >
+                        <span className={display?.color || 'text-gray-400'}>
+                          {periodLabels[period]}: {display?.emoji || '—'}
+                        </span>
                       </span>
-                    </span>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+                
+                {/* Signal Source Breakdown - Desktop: prominent display */}
+                {item.signals.contributions?.[filterPeriod] && item.signals.contributions[filterPeriod].length > 0 && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-gray-500 text-[10px]">Quellen:</span>
+                    <SignalSourceBadges contributions={item.signals.contributions[filterPeriod]} />
+                  </div>
+                )}
               </div>
             )}
 
@@ -664,12 +964,18 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
 
       {/* Legend - compact */}
       <div className="text-[10px] sm:text-xs text-gray-500 pt-2 border-t border-slate-700 flex-shrink-0">
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 mb-1">
           <span className="flex items-center gap-0.5"><span>🚀</span> Stark Kauf</span>
           <span className="flex items-center gap-0.5"><span>📈</span> Kauf</span>
           <span className="flex items-center gap-0.5"><span>➡️</span> Halten</span>
           <span className="flex items-center gap-0.5"><span>📉</span> Verkauf</span>
           <span className="flex items-center gap-0.5"><span>⚠️</span> Stark Verk.</span>
+        </div>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-gray-600">
+          <span title="Technische Indikatoren (RSI, MACD, Bollinger)">📊 Tech</span>
+          <span title="News Sentiment">📰 News</span>
+          <span title="ML-Vorhersage (LSTM)">🤖 ML</span>
+          <span title="RL-Agenten">🎯 RL</span>
         </div>
       </div>
     </div>

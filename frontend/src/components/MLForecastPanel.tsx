@@ -125,7 +125,39 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
     setIsLoading(true);
     setError(null);
     
-    const result = await mlService.predict(symbol, stockData);
+    // First, get model info to check required sequence length
+    const modelInfo = await mlService.getModelInfo(symbol);
+    const sequenceLength = modelInfo?.metadata?.sequence_length;
+    const requiredLength = typeof sequenceLength === 'number' ? sequenceLength : 60;
+    
+    let dataToUse: OHLCV[] = stockData;
+    
+    // If we don't have enough data, fetch more
+    if (stockData.length < requiredLength) {
+      console.log(`[ML Predict] Need ${requiredLength} data points, have ${stockData.length}. Fetching more...`);
+      try {
+        const dataService = new DataService();
+        // Request extra days to account for weekends/holidays
+        const daysToFetch = Math.ceil(requiredLength * 1.5);
+        const fetchedData = await dataService.fetchStockData(symbol, daysToFetch);
+        
+        if (fetchedData?.data && fetchedData.data.length >= requiredLength) {
+          dataToUse = fetchedData.data;
+          console.log(`[ML Predict] Fetched ${dataToUse.length} data points`);
+        } else {
+          setError(`Nicht genug Daten: ${fetchedData?.data?.length || 0}/${requiredLength} verfügbar`);
+          setIsLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.error('[ML Predict] Failed to fetch additional data:', err);
+        setError(`Nicht genug Daten für Vorhersage (${stockData.length}/${requiredLength})`);
+        setIsLoading(false);
+        return;
+      }
+    }
+    
+    const result = await mlService.predict(symbol, dataToUse);
     
     if (result) {
       // Validate that the prediction is for the correct symbol

@@ -5,6 +5,108 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.5] - 2026-01-28
+
+### Fixed
+- **RL-Signale in Watchlist Extended-Modus** - RL-Agenten-Signale werden jetzt korrekt geladen
+  - Extended-Modus aktiviert jetzt ALLE Signalquellen (News, ML, RL) unabhängig von Einzeleinstellungen
+  - Timeout für Signal-Laden auf 15 Sekunden erhöht
+  - Debug-Logging hinzugefügt für bessere Fehlerbehebung
+
+## [1.12.4] - 2026-01-27
+
+### Added
+- **📋 Erweiterte Watchlist-Signale** - News, ML & RL Signale optional in der Watchlist laden
+  - **Neue Einstellungssektion**: "Watchlist-Einstellungen" in den Signalquellen-Einstellungen
+  - **Toggle "Erweiterte Signale"**: Aktiviert das Laden von News-Sentiment, ML-Prognosen und RL-Signalen für alle Watchlist-Symbole
+  - **Konfigurierbare Cache-Dauer**: 5-60 Minuten (Standard: 15 Min), um API-Aufrufe zu reduzieren
+  - **Auto-Refresh Intervall**: 0-300 Sekunden einstellbar
+  - **Server-seitiges Caching**: PostgreSQL-basierter Cache für berechnete Signale
+    - Neue Backend-Endpoints: `/api/watchlist/signals/:symbol` (GET/POST/DELETE)
+    - Batch-Endpoint: `/api/watchlist/signals/batch` für effizientes Laden mehrerer Symbole
+    - TTL-basierter Cache mit konfigurierbarer Ablaufzeit
+  - **Visual Indicator**: "✨ Extended" Badge in der Watchlist-Überschrift zeigt aktivierten Modus
+  - **Graceful Fallback**: Bei Timeout oder Fehlern werden nur verfügbare Daten angezeigt
+
+### Changed
+- **WatchlistPanel**: Zeigt jetzt alle aktivierten Signalquellen wenn "Erweiterte Signale" aktiv ist
+- **SignalSourceBadges**: Zeigt News 📰, ML 🤖 und RL 🎯 Badges wenn entsprechende Daten vorhanden sind
+
+## [1.12.3] - 2026-01-27
+
+### Added
+- **📚 Umfassendes Info-Handbuch** - Komplett überarbeitete Hilfe-Seite
+  - **Übersichtliche Einleitung**: Was macht die App? 4 Kernfunktionen einfach erklärt
+  - **Trading-Signale verstehen**: 5-Stufen-Signal-Skala mit farbcodierten Karten
+  - **Zeiträume erklärt**: Unterschiede zwischen 1h/1d/1w/Long mit Gewichtungs-Übersicht
+  - **News Sentiment Analyse**: FinBERT-Funktionsweise mit Beispiel-Output
+  - **Technische Indikatoren**: RSI, MACD, Bollinger, SMA/EMA mit visuellen Skalen
+  - **ML-Vorhersage (LSTM)**: Schritt-für-Schritt wie das Modell funktioniert
+  - **RL-Agenten**: Was ist Reinforcement Learning + alle 6 vortrainierten Agenten
+  - **Watchlist-Features**: Signalquellen und Zeitraum-Filter erklärt
+  - **Backtesting**: Metriken einfach erklärt (Sharpe Ratio, Drawdown, Win Rate)
+  - **Paper Trading**: Virtuelles Portfolio und Leaderboard
+  - **Glossar**: 8 wichtige Trading-Begriffe mit Farbcodierung
+  - Alle Sektionen einklappbar für bessere Übersicht
+  - Mobile-optimiertes Design
+
+## [1.12.2] - 2026-01-27
+
+### Added
+- **📊 Datenquellen-Toggles im Dashboard** - Signal-Quellen direkt im Trading Signal Panel ein-/ausschalten
+  - Neues Zahnrad-Icon im Trading Signal Panel Header
+  - Aufklappbare Toggle-Leiste mit vier Quellen: News 📰, Technisch 📊, ML-Prognose 🤖, RL-Agent 🎯
+  - Nicht verfügbare Quellen werden ausgegraut angezeigt
+  - Änderungen werden sofort angewendet und persistent gespeichert
+  - Kein Wechsel zur Einstellungsseite mehr nötig
+
+- **🔍 RL-Agent Erklärbarkeit (Explainability)** - Neuer `/signal/explain` API-Endpoint
+  - Erklärt **ehrlich und datenbasiert** warum ein RL-Agent seine Entscheidung getroffen hat
+  - Keine Halluzinationen - nur tatsächliche Daten und gemessene Feature-Einflüsse
+  - Liefert:
+    - **Wahrscheinlichkeitsverteilung**: Wie wahrscheinlich waren Buy/Sell/Hold
+    - **Feature Importance**: Welche technischen Indikatoren den größten Einfluss hatten (via Perturbation-Analyse)
+    - **Marktindikatoren**: Aktuelle Werte von RSI, MACD, ADX, etc.
+    - **Agent-Kontext**: Risikoprofil, Trading-Stil, Ziel-Haltedauer
+    - **Disclaimer**: Ehrlicher Hinweis zu den Grenzen der Interpretierbarkeit
+
+- **🎯 Interaktive Agent-Erklärungen im RLAdvisorPanel**
+  - Klick auf einen Agenten zeigt ausklappbares Detail-Panel
+  - **Wahrscheinlichkeitsbalken**: Visuelle Darstellung Buy/Hold/Sell
+
+- **📋 Signal-Quellen in der Watchlist**
+  - **Desktop**: Neue "Quellen"-Zeile zeigt alle Signalquellen mit Score (📊 Tech, 📰 News, 🤖 ML, 🎯 RL)
+  - **Mobile**: Kompakte Mini-Indikatoren neben dem Signal-Badge (↑↑/↑/→/↓/↓↓)
+  - Farbcodierung: Grün = bullish, Rot = bearish, Grau = neutral
+  - Tooltip zeigt Details bei Hover
+  - Erweiterte Legende erklärt die Quellen-Icons
+  - **Top-Einflussfaktoren**: Balkendiagramm zeigt welche Features die Entscheidung am meisten beeinflusst haben
+  - **Aktuelle Marktdaten**: Die konkreten Werte von RSI, MACD, ADX etc.
+  - **Agent-Profil**: Trading-Stil, Risikoprofil, Haltedauer, Broker-Profil
+
+### Fixed
+- **RL-Signale im Trading Signal Panel** - "Keine gültigen RL-Signale" behoben
+  - Root Cause: RL Service gibt detaillierte Action-Wahrscheinlichkeiten zurück (`buy_small`, `buy_medium`, `buy_large`, `sell_small`, `sell_medium`, `sell_all`, `hold`), aber Frontend erwartete aggregierte Werte (`buy`, `sell`, `hold`)
+  - Fix: DashboardPage.tsx aggregiert jetzt die detaillierten Wahrscheinlichkeiten korrekt:
+    - `buy` = `buy_small` + `buy_medium` + `buy_large`
+    - `sell` = `sell_small` + `sell_medium` + `sell_all`
+    - `hold` = `hold`
+  - RL-Agenten-Signale werden jetzt korrekt im Trading Signal Panel angezeigt
+
+- **RL-Signale wechseln nicht mehr zufällig alle paar Sekunden**
+  - Root Cause 1: RL-Model verwendete `deterministic=False` bei der Inferenz, was bei jedem Aufruf unterschiedliche Aktionen basierend auf Wahrscheinlichkeiten lieferte
+  - Root Cause 2: Environment startete bei jedem `reset()` an einer zufälligen Position in den Daten
+  - Root Cause 3: Frontend lud RL-Signale bei jeder `stockData`-Referenzänderung neu (auch wenn Daten identisch waren)
+  - Fix 1: `trainer.py` verwendet jetzt `deterministic=True` für konsistente Signale
+  - Fix 2: Neuer `inference_mode` in `TradingEnvironment` - startet immer am Ende der Daten für aktuelle Markt-Signale
+  - Fix 3: `DashboardPage.tsx` verwendet Fingerprint-Vergleich und lädt RL-Signale nur bei echten Datenänderungen neu
+  - **Ergebnis**: Mehrere API-Aufrufe mit identischen Daten liefern jetzt exakt dieselben Signale
+
+- **RL-Agent Toggle kann wieder eingeschaltet werden**
+  - Bug: RL Toggle konnte deaktiviert, aber nicht wieder aktiviert werden
+  - Root Cause: `available`-Prop hing von geladenen RL-Signalen ab (`rlSignals.length > 0`). Beim Deaktivieren wurden Signale geleert → Toggle wurde als "nicht verfügbar" markiert
+  - Fix: `available` hängt jetzt nur vom Service-Status ab (`rlServiceAvailable`), nicht von den aktuell geladenen Daten
+
 ## [1.12.1] - 2026-01-27
 
 ### Fixed

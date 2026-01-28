@@ -138,6 +138,30 @@ export interface TradingSignal {
   error?: string;
 }
 
+export interface SignalExplanation extends TradingSignal {
+  /** Detaillierte textuelle Erklärung der Entscheidung */
+  explanation: string;
+  /** Feature-Wichtigkeit (wie stark jedes Feature die Entscheidung beeinflusst) */
+  feature_importance: Record<string, number>;
+  /** Aktuelle Marktindikatoren */
+  market_state: Record<string, number>;
+  /** Zusammenfassung der Wahrscheinlichkeiten */
+  probability_summary: {
+    buy_total: number;
+    sell_total: number;
+    hold: number;
+  };
+  /** Agent-Konfiguration */
+  agent_config: {
+    risk_profile: string;
+    trading_style: string;
+    holding_period: string;
+    broker_profile: string;
+    stop_loss_percent?: number;
+    take_profit_percent?: number;
+  };
+}
+
 export interface MultiSignalResponse {
   signals: Record<string, TradingSignal>;
   consensus: {
@@ -407,6 +431,27 @@ class RLTradingService {
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.detail || 'Failed to get quick signal');
+    }
+    return response.json();
+  }
+
+  /**
+   * Get trading signal with detailed explanation
+   * Provides feature importance, market state, and textual explanation
+   */
+  async getSignalWithExplanation(agentName: string, data: OHLCV[]): Promise<SignalExplanation> {
+    const response = await fetch(`${RL_API_BASE}/signal/explain`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agent_name: agentName,
+        data: convertToBackendFormat(data),
+      }),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to get signal explanation');
     }
     return response.json();
   }

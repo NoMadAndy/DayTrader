@@ -51,8 +51,21 @@ export {
   addCustomSymbolToServer,
   removeCustomSymbolFromServer,
   syncLocalSymbolsToServer,
+  getWatchlistSettings,
+  saveWatchlistSettings,
+  DEFAULT_WATCHLIST_SETTINGS,
 } from './userSettingsService';
-export type { UserSettings, CustomSymbol } from './userSettingsService';
+export type { UserSettings, CustomSymbol, WatchlistSettings } from './userSettingsService';
+
+// Watchlist Cache Service
+export {
+  getCachedSignals,
+  setCachedSignals,
+  getBatchCachedSignals,
+  clearCachedSignals,
+  isCacheValid,
+} from './watchlistCacheService';
+export type { CachedWatchlistSignals } from './watchlistCacheService';
 
 // Best Symbol Service
 export {

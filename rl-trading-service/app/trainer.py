@@ -186,9 +186,16 @@ class TradingAgentTrainer:
         self,
         df: pd.DataFrame,
         config: AgentConfig,
+        inference_mode: bool = False,
     ) -> TradingEnvironment:
-        """Create a trading environment with given data and config"""
-        return TradingEnvironment(df=df, config=config)
+        """Create a trading environment with given data and config
+        
+        Args:
+            df: DataFrame with OHLCV data and indicators
+            config: Agent configuration
+            inference_mode: If True, environment starts at end of data for signal inference
+        """
+        return TradingEnvironment(df=df, config=config, inference_mode=inference_mode)
     
     def prepare_training_data(
         self,
@@ -505,8 +512,8 @@ class TradingAgentTrainer:
                 config = AgentConfig(name=agent_name)
         
         try:
-            # Create environment for inference
-            env = self.create_environment(df, config)
+            # Create environment for inference (inference_mode=True starts at end of data)
+            env = self.create_environment(df, config, inference_mode=True)
             vec_env = DummyVecEnv([lambda: env])
             
             # Load normalization stats if available
@@ -516,11 +523,11 @@ class TradingAgentTrainer:
                 vec_env.training = False
                 vec_env.norm_reward = False
             
-            # Get current observation
+            # Get current observation (at end of data due to inference_mode)
             obs = vec_env.reset()
             
-            # Get action probabilities
-            action, _ = model.predict(obs, deterministic=False)
+            # Get action probabilities (deterministic=True for consistent signals)
+            action, _ = model.predict(obs, deterministic=True)
             
             # Get action distribution for confidence
             with torch.no_grad():
@@ -562,6 +569,318 @@ class TradingAgentTrainer:
             
         except Exception as e:
             logger.error(f"Error getting signal from {agent_name}: {e}")
+            return {
+                "error": str(e),
+                "signal": "hold",
+                "confidence": 0,
+            }
+    
+    def get_signal_with_explanation(
+        self,
+        agent_name: str,
+        df: pd.DataFrame,
+        config: Optional[AgentConfig] = None,
+    ) -> Dict[str, Any]:
+        """
+        Get trading signal with detailed, data-based explanation.
+        
+        This provides HONEST explanations based on actual data - no hallucinations.
+        We explain:
+        1. What market data the model observed
+        2. Which features had the strongest influence on the decision
+        3. The probability distribution across all possible actions
+        4. The agent's configuration and what it's optimized for
+        
+        Args:
+            agent_name: Name of the agent to use
+            df: DataFrame with current market data and indicators
+            config: Agent config (uses saved config if not provided)
+            
+        Returns:
+            Signal with comprehensive explanation
+        """
+        model = self.load_agent(agent_name)
+        if model is None:
+            return {
+                "error": f"Agent not found: {agent_name}",
+                "signal": "hold",
+                "confidence": 0,
+            }
+        
+        if config is None:
+            config = self._configs.get(agent_name)
+            if config is None:
+                config = AgentConfig(name=agent_name)
+        
+        try:
+            # Create environment for inference
+            env = self.create_environment(df, config, inference_mode=True)
+            vec_env = DummyVecEnv([lambda: env])
+            
+            # Load normalization
+            norm_path = self.model_dir / agent_name / "vec_normalize.pkl"
+            if norm_path.exists():
+                vec_env = VecNormalize.load(str(norm_path), vec_env)
+                vec_env.training = False
+                vec_env.norm_reward = False
+            
+            # Get observation
+            obs = vec_env.reset()
+            
+            # Get action and probabilities
+            action, _ = model.predict(obs, deterministic=True)
+            
+            with torch.no_grad():
+                obs_tensor = torch.tensor(obs).to(self.device)
+                distribution = model.policy.get_distribution(obs_tensor)
+                action_probs = distribution.distribution.probs.cpu().numpy()[0]
+            
+            action_names = ['hold', 'buy_small', 'buy_medium', 'buy_large', 
+                           'sell_small', 'sell_medium', 'sell_all']
+            action_idx = int(action[0])
+            chosen_action = action_names[action_idx]
+            
+            # === FEATURE IMPORTANCE via Gradient-based sensitivity ===
+            # We'll use a simpler approach: measure how much the action probabilities change
+            # when we significantly perturb each feature in the UNNORMALIZED space
+            feature_importance = {}
+            base_prob = float(action_probs[action_idx])
+            
+            # Get feature info from environment
+            feature_cols = env.feature_columns
+            portfolio_features = ['cash_ratio', 'position_ratio', 'unrealized_pnl', 
+                                 'holding_time_ratio', 'current_drawdown']
+            
+            # Create a fresh environment without normalization for perturbation testing
+            test_env = self.create_environment(df, config, inference_mode=True)
+            test_vec_env = DummyVecEnv([lambda: test_env])
+            
+            # Get the raw unnormalized observation
+            raw_obs = test_vec_env.reset()
+            
+            window_size = env.window_size
+            n_features = len(feature_cols)
+            obs_size = raw_obs.shape[1]
+            market_features_end = obs_size - 5
+            
+            # Test perturbations on raw (unnormalized) observations
+            # We'll apply the normalization manually after perturbation
+            norm_path = self.model_dir / agent_name / "vec_normalize.pkl"
+            
+            for i, feature_name in enumerate(feature_cols):
+                feature_idx = (window_size - 1) * n_features + i
+                if feature_idx < market_features_end:
+                    # Create perturbed raw observation
+                    perturbed_raw = raw_obs.copy()
+                    original_val = raw_obs[0, feature_idx]
+                    
+                    # Use significant perturbation (double or halve the value)
+                    if abs(original_val) > 0.001:
+                        perturbed_raw[0, feature_idx] = original_val * 2.0
+                    else:
+                        perturbed_raw[0, feature_idx] = 0.1
+                    
+                    # Normalize the perturbed observation if we have normalization stats
+                    if norm_path.exists():
+                        # Load fresh normalizer and normalize the perturbed obs
+                        test_norm_env = VecNormalize.load(str(norm_path), DummyVecEnv([lambda: test_env]))
+                        test_norm_env.training = False
+                        test_norm_env.norm_reward = False
+                        # Manually normalize
+                        perturbed_normalized = test_norm_env.normalize_obs(perturbed_raw)
+                    else:
+                        perturbed_normalized = perturbed_raw
+                    
+                    with torch.no_grad():
+                        perturbed_tensor = torch.tensor(perturbed_normalized, dtype=torch.float32).to(self.device)
+                        perturbed_dist = model.policy.get_distribution(perturbed_tensor)
+                        perturbed_probs = perturbed_dist.distribution.probs.cpu().numpy()[0]
+                    
+                    # Calculate impact as change in probability
+                    impact = abs(float(perturbed_probs[action_idx]) - base_prob)
+                    feature_importance[feature_name] = round(impact * 100, 2)
+            
+            # Portfolio features importance
+            for i, feature_name in enumerate(portfolio_features):
+                feature_idx = market_features_end + i
+                if feature_idx < obs_size:
+                    perturbed_raw = raw_obs.copy()
+                    original_val = raw_obs[0, feature_idx]
+                    
+                    if abs(original_val) > 0.001:
+                        perturbed_raw[0, feature_idx] = original_val * 2.0
+                    else:
+                        perturbed_raw[0, feature_idx] = 0.5
+                    
+                    if norm_path.exists():
+                        test_norm_env = VecNormalize.load(str(norm_path), DummyVecEnv([lambda: test_env]))
+                        test_norm_env.training = False
+                        test_norm_env.norm_reward = False
+                        perturbed_normalized = test_norm_env.normalize_obs(perturbed_raw)
+                    else:
+                        perturbed_normalized = perturbed_raw
+                    
+                    with torch.no_grad():
+                        perturbed_tensor = torch.tensor(perturbed_normalized, dtype=torch.float32).to(self.device)
+                        perturbed_dist = model.policy.get_distribution(perturbed_tensor)
+                        perturbed_probs = perturbed_dist.distribution.probs.cpu().numpy()[0]
+                    
+                    impact = abs(float(perturbed_probs[action_idx]) - base_prob)
+                    feature_importance[feature_name] = round(impact * 100, 2)
+            
+            # Sort by importance
+            sorted_importance = dict(sorted(feature_importance.items(), 
+                                           key=lambda x: x[1], reverse=True))
+            top_factors = dict(list(sorted_importance.items())[:10])
+            
+            # === EXTRACT CURRENT MARKET STATE ===
+            current_row = df.iloc[-1]
+            market_state = {}
+            
+            # Key indicators
+            indicator_mapping = {
+                'close': 'Aktueller Kurs',
+                'rsi': 'RSI (Relative Strength Index)',
+                'macd': 'MACD',
+                'macd_signal': 'MACD Signal',
+                'bb_pct': 'Bollinger Band Position (%)',
+                'atr_pct': 'ATR (Volatilität %)',
+                'adx': 'ADX (Trendstärke)',
+                'stoch_k': 'Stochastic %K',
+                'mfi': 'Money Flow Index',
+                'trend_strength': 'Trendstärke',
+                'volatility': 'Volatilität',
+            }
+            
+            for col, label in indicator_mapping.items():
+                if col in current_row.index and not pd.isna(current_row[col]):
+                    value = float(current_row[col])
+                    market_state[label] = round(value, 4) if col not in ['close'] else round(value, 2)
+            
+            # === GENERATE EXPLANATION ===
+            # Determine signal direction
+            if action_idx in [1, 2, 3]:
+                signal = "buy"
+                strength = ["weak", "moderate", "strong"][action_idx - 1]
+            elif action_idx in [4, 5, 6]:
+                signal = "sell"
+                strength = ["weak", "moderate", "strong"][action_idx - 4]
+            else:
+                signal = "hold"
+                strength = "neutral"
+            
+            confidence = float(action_probs[action_idx])
+            
+            # Build textual explanation based on actual data
+            explanation_parts = []
+            
+            # 1. Decision overview
+            buy_prob = sum(action_probs[1:4])
+            sell_prob = sum(action_probs[4:7])
+            hold_prob = action_probs[0]
+            
+            explanation_parts.append(
+                f"Der Agent '{agent_name}' (Stil: {config.trading_style}, "
+                f"Haltedauer: {config.holding_period}) hat sich für '{chosen_action}' entschieden."
+            )
+            
+            # 2. Probability breakdown
+            explanation_parts.append(
+                f"\n\nWahrscheinlichkeitsverteilung:\n"
+                f"- Kaufen (gesamt): {buy_prob*100:.1f}%\n"
+                f"- Verkaufen (gesamt): {sell_prob*100:.1f}%\n"
+                f"- Halten: {hold_prob*100:.1f}%"
+            )
+            
+            # 3. Top influencing factors
+            if top_factors:
+                factors_text = "\n\nTop-Einflussfaktoren (Impact auf Entscheidung):\n"
+                for factor, impact in list(top_factors.items())[:5]:
+                    factors_text += f"- {factor}: {impact}% Einfluss\n"
+                explanation_parts.append(factors_text)
+            
+            # 4. Key market indicators
+            key_indicators = []
+            if 'RSI (Relative Strength Index)' in market_state:
+                rsi = market_state['RSI (Relative Strength Index)']
+                if rsi > 70:
+                    key_indicators.append(f"RSI bei {rsi:.0f} (überkauft)")
+                elif rsi < 30:
+                    key_indicators.append(f"RSI bei {rsi:.0f} (überverkauft)")
+                else:
+                    key_indicators.append(f"RSI bei {rsi:.0f} (neutral)")
+            
+            if 'MACD' in market_state and 'MACD Signal' in market_state:
+                macd = market_state['MACD']
+                signal_line = market_state['MACD Signal']
+                if macd > signal_line:
+                    key_indicators.append("MACD über Signal-Linie (bullish)")
+                else:
+                    key_indicators.append("MACD unter Signal-Linie (bearish)")
+            
+            if 'ADX (Trendstärke)' in market_state:
+                adx = market_state['ADX (Trendstärke)']
+                if adx > 25:
+                    key_indicators.append(f"Starker Trend (ADX: {adx:.0f})")
+                else:
+                    key_indicators.append(f"Schwacher/Kein Trend (ADX: {adx:.0f})")
+            
+            if key_indicators:
+                explanation_parts.append("\n\nMarktindikatoren:\n- " + "\n- ".join(key_indicators))
+            
+            # 5. Agent context
+            explanation_parts.append(
+                f"\n\nAgent-Kontext:\n"
+                f"- Risikoprofil: {config.risk_profile}\n"
+                f"- Trading-Stil: {config.trading_style}\n"
+                f"- Ziel-Haltedauer: {config.holding_period}\n"
+                f"- Broker-Profil: {config.broker_profile}"
+            )
+            
+            # 6. Disclaimer
+            explanation_parts.append(
+                "\n\n⚠️ Hinweis: Diese Erklärung basiert auf den tatsächlichen Eingabedaten "
+                "und gemessenen Feature-Einflüssen. Das neuronale Netzwerk trifft Entscheidungen "
+                "basierend auf Mustern, die es während des Trainings gelernt hat - die genaue "
+                "interne Logik ist nicht vollständig interpretierbar."
+            )
+            
+            full_explanation = "".join(explanation_parts)
+            
+            return {
+                "signal": signal,
+                "action": chosen_action,
+                "strength": strength,
+                "confidence": confidence,
+                "action_probabilities": {
+                    name: float(prob) 
+                    for name, prob in zip(action_names, action_probs)
+                },
+                "agent_name": agent_name,
+                "agent_style": config.trading_style,
+                "holding_period": config.holding_period,
+                "explanation": full_explanation,
+                "feature_importance": top_factors,
+                "market_state": market_state,
+                "probability_summary": {
+                    "buy_total": float(buy_prob),
+                    "sell_total": float(sell_prob),
+                    "hold": float(hold_prob),
+                },
+                "agent_config": {
+                    "risk_profile": config.risk_profile,
+                    "trading_style": config.trading_style,
+                    "holding_period": config.holding_period,
+                    "broker_profile": config.broker_profile,
+                    "stop_loss_percent": config.stop_loss_percent,
+                    "take_profit_percent": config.take_profit_percent,
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting explained signal from {agent_name}: {e}")
+            import traceback
+            traceback.print_exc()
             return {
                 "error": str(e),
                 "signal": "hold",

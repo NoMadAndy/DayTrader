@@ -577,7 +577,9 @@ class StockPredictor:
         if not os.path.exists(path):
             return False
         
-        save_dict = torch.load(path, map_location=self.device)
+        # weights_only=False needed because we save sklearn scalers
+        # This is safe because we only load our own saved models
+        save_dict = torch.load(path, map_location=self.device, weights_only=False)
         
         self.scaler_X = save_dict['scaler_X']
         self.scaler_y = save_dict['scaler_y']

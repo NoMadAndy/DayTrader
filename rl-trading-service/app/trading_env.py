@@ -84,6 +84,7 @@ class TradingEnvironment(gym.Env):
         df: pd.DataFrame,
         config: AgentConfig,
         render_mode: Optional[str] = None,
+        inference_mode: bool = False,
     ):
         """
         Initialize the trading environment.
@@ -92,12 +93,14 @@ class TradingEnvironment(gym.Env):
             df: DataFrame with OHLCV data and technical indicators
             config: Agent configuration
             render_mode: How to render the environment
+            inference_mode: If True, start at end of data for signal inference (no random start)
         """
         super().__init__()
         
         self.df = df.copy()
         self.config = config
         self.render_mode = render_mode
+        self.inference_mode = inference_mode
         
         # Validate DataFrame columns
         self._validate_dataframe()
@@ -223,18 +226,23 @@ class TradingEnvironment(gym.Env):
         min_start = self.window_size
         max_start = len(self.df) - self.window_size - 100  # Leave room for at least 100 steps
         
-        # Check if random start should be used (default: True)
-        use_random_start = True
-        if options is not None and 'random_start' in options:
-            use_random_start = options.get('random_start', True)
-        
-        if use_random_start and max_start > min_start:
-            # Random start position for varied training/evaluation
-            # np.random.seed is set externally in trainer for reproducibility
-            self.current_step = np.random.randint(min_start, max_start)
+        # Inference mode: always start at the end of data for current signal
+        if self.inference_mode:
+            # Start at the last valid position to get signal for current market state
+            self.current_step = len(self.df) - 1
         else:
-            # Fixed start (for reproducibility when needed)
-            self.current_step = min_start
+            # Check if random start should be used (default: True for training)
+            use_random_start = True
+            if options is not None and 'random_start' in options:
+                use_random_start = options.get('random_start', True)
+            
+            if use_random_start and max_start > min_start:
+                # Random start position for varied training/evaluation
+                # np.random.seed is set externally in trainer for reproducibility
+                self.current_step = np.random.randint(min_start, max_start)
+            else:
+                # Fixed start (for reproducibility when needed)
+                self.current_step = min_start
         
         # Portfolio state
         self.cash = self.initial_balance

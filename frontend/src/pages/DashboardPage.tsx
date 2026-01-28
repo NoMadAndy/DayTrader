@@ -6,14 +6,14 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, NewsPanel, TradingSignalPanel, CompanyInfoPanel, type NewsItemWithSentiment } from '../components';
+import { StockChart, ForecastPanel, MLForecastPanel, StockSelector, IndicatorControls, NewsPanel, TradingSignalPanel, CompanyInfoPanel, RLAdvisorPanel, type NewsItemWithSentiment } from '../components';
 import { type DataTimestamps } from '../components/StockSelector';
 import { useStockData, useSimpleAutoRefresh } from '../hooks';
 import { generateForecast } from '../utils/forecast';
 import { getAuthState } from '../services/authService';
 import { getOrCreatePortfolio, executeMarketOrder, getPortfolioMetrics } from '../services/tradingService';
 import { useSettings } from '../contexts/SettingsContext';
-import { getSignalSourceSettings } from '../services/userSettingsService';
+import { getSignalSourceSettings, saveSignalSourceSettings } from '../services/userSettingsService';
 import { rlTradingService } from '../services/rlTradingService';
 import type { RLSignalInput, SignalSourceConfig } from '../utils/tradingSignals';
 import type { Portfolio, PortfolioMetrics, OrderSide, ProductType } from '../types/trading';
@@ -158,6 +158,27 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
     const settings = getSignalSourceSettings();
     return settings.selectedRLAgents || [];
   });
+  const [rlServiceAvailable, setRlServiceAvailable] = useState(false);
+
+  // Handler for signal config changes from TradingSignalPanel
+  const handleSignalConfigChange = useCallback((newConfig: SignalSourceConfig) => {
+    setSignalConfig(newConfig);
+    // Persist to localStorage
+    const currentSettings = getSignalSourceSettings();
+    saveSignalSourceSettings({
+      ...currentSettings,
+      ...newConfig,
+    });
+  }, []);
+
+  // Check RL service availability on mount
+  useEffect(() => {
+    const checkRLService = async () => {
+      const available = await rlTradingService.isAvailable();
+      setRlServiceAvailable(available);
+    };
+    checkRLService();
+  }, []);
 
   // Data freshness timestamps
   const [dataTimestamps, setDataTimestamps] = useState<DataTimestamps>({
@@ -222,17 +243,32 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
     };
   }, []);
 
+  // Track last stock data fingerprint to avoid unnecessary RL signal reloads
+  const lastRLDataFingerprintRef = useRef<string | null>(null);
+
   // Load RL signals when enabled and data is available
+  // Only reload when data actually changes (not on every stockData reference change)
   useEffect(() => {
     const loadRLSignals = async () => {
       if (!signalConfig.enableRLAgents || selectedRLAgents.length === 0) {
         setRlSignals([]);
+        lastRLDataFingerprintRef.current = null;
         return;
       }
       
       if (!stockData || stockData.data.length < 100) {
         return;
       }
+
+      // Create fingerprint to detect actual data changes
+      const lastPoint = stockData.data[stockData.data.length - 1];
+      const dataFingerprint = `${stockData.symbol}-${stockData.data.length}-${lastPoint?.time}`;
+      
+      // Skip if data hasn't actually changed
+      if (lastRLDataFingerprintRef.current === dataFingerprint) {
+        return;
+      }
+      lastRLDataFingerprintRef.current = dataFingerprint;
       
       try {
         // First, validate that selected agents actually exist
@@ -254,14 +290,25 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
         if (response && response.signals) {
           const signals: RLSignalInput[] = Object.entries(response.signals)
             .filter(([_, signal]) => !signal.error)
-            .map(([agentName, signal]) => ({
-              signal: signal.signal,
-              confidence: signal.confidence,
-              action_probabilities: signal.action_probabilities as { buy: number; sell: number; hold: number },
-              agent_name: agentName,
-              agent_style: signal.agent_style,
-              holding_period: signal.holding_period,
-            }));
+            .map(([agentName, signal]) => {
+              // Aggregate detailed action probabilities into buy/sell/hold
+              // RL service returns: hold, buy_small, buy_medium, buy_large, sell_small, sell_medium, sell_all
+              const probs = signal.action_probabilities;
+              const aggregatedProbs = {
+                buy: (probs.buy_small || 0) + (probs.buy_medium || 0) + (probs.buy_large || 0),
+                sell: (probs.sell_small || 0) + (probs.sell_medium || 0) + (probs.sell_all || 0),
+                hold: probs.hold || 0,
+              };
+              
+              return {
+                signal: signal.signal,
+                confidence: signal.confidence,
+                action_probabilities: aggregatedProbs,
+                agent_name: agentName,
+                agent_style: signal.agent_style,
+                holding_period: signal.holding_period,
+              };
+            });
           setRlSignals(signals);
         }
       } catch (err) {
@@ -605,6 +652,9 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
         currentPrice={currentPrice}
         rlSignals={rlSignals.length > 0 ? rlSignals : undefined}
         signalConfig={signalConfig}
+        onConfigChange={handleSignalConfigChange}
+        rlServiceAvailable={rlServiceAvailable}
+        mlServiceAvailable={true}
       />
 
       {/* AI Forecast and News Row */}
@@ -618,6 +668,13 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
             onPredictionsChange={handleMLPredictionsChange}
             onRefreshRegister={handleMLRefreshRegister}
           />
+          {/* RL Advisor Panel - Shows agent explanations */}
+          {rlServiceAvailable && stockData?.data && stockData.data.length >= 100 && (
+            <RLAdvisorPanel 
+              symbol={selectedSymbol}
+              historicalData={stockData.data}
+            />
+          )}
         </div>
 
         {/* News Panel */}

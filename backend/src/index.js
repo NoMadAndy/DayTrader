@@ -2078,6 +2078,27 @@ app.post('/api/rl/signal', express.json({ limit: '10mb' }), async (req, res) => 
 });
 
 /**
+ * Proxy RL Trading Service - get signal with explanation
+ */
+app.post('/api/rl/signal/explain', express.json({ limit: '10mb' }), async (req, res) => {
+  try {
+    const response = await fetch(`${RL_SERVICE_URL}/signal/explain`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('RL Trading Service explain error:', error);
+    res.status(503).json({ 
+      error: 'RL Trading Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
+/**
  * Proxy RL Trading Service - get signals from multiple agents
  */
 app.post('/api/rl/signals/multi', express.json({ limit: '10mb' }), async (req, res) => {
@@ -2130,6 +2151,116 @@ app.get('/api/rl/options/:optionType', async (req, res) => {
       error: 'RL Trading Service unavailable',
       message: error.message 
     });
+  }
+});
+
+// ============================================================================
+// Watchlist Signal Cache Endpoints
+// ============================================================================
+
+const WATCHLIST_SIGNAL_CACHE_TTL = 900; // 15 minutes
+
+/**
+ * Get cached trading signals for a symbol (extended signals with all sources)
+ * GET /api/watchlist/signals/:symbol
+ * Returns cached signal data including news sentiment, ML predictions, RL signals
+ */
+app.get('/api/watchlist/signals/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  const cacheKey = `watchlist:signals:${symbol}`;
+  
+  try {
+    // Check cache first
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      return res.json({ ...cached.data, fromCache: true, cachedAt: cached.cachedAt });
+    }
+    
+    // Not in cache - return empty so frontend knows to fetch fresh data
+    res.json({ cached: false, symbol });
+  } catch (error) {
+    console.error('Watchlist signal cache error:', error);
+    res.status(500).json({ error: 'Cache lookup failed' });
+  }
+});
+
+/**
+ * Store computed trading signals in cache
+ * POST /api/watchlist/signals/:symbol
+ * Body: { signals, newsArticles, mlPrediction, rlSignals }
+ */
+app.post('/api/watchlist/signals/:symbol', express.json({ limit: '1mb' }), async (req, res) => {
+  const { symbol } = req.params;
+  const { signals, newsArticles, mlPrediction, rlSignals, ttlMinutes } = req.body;
+  const cacheKey = `watchlist:signals:${symbol}`;
+  
+  // Custom TTL or default
+  const ttlSeconds = ttlMinutes ? ttlMinutes * 60 : WATCHLIST_SIGNAL_CACHE_TTL;
+  
+  try {
+    await stockCache.setCache(
+      cacheKey,
+      'watchlist_signals',
+      symbol,
+      { signals, newsArticles, mlPrediction, rlSignals, updatedAt: new Date().toISOString() },
+      'aggregated',
+      ttlSeconds
+    );
+    
+    res.json({ success: true, ttlSeconds, cacheKey });
+  } catch (error) {
+    console.error('Watchlist signal cache store error:', error);
+    res.status(500).json({ error: 'Cache store failed' });
+  }
+});
+
+/**
+ * Batch get cached signals for multiple symbols
+ * POST /api/watchlist/signals/batch
+ * Body: { symbols: string[] }
+ */
+app.post('/api/watchlist/signals/batch', express.json(), async (req, res) => {
+  const { symbols } = req.body;
+  
+  if (!symbols || !Array.isArray(symbols)) {
+    return res.status(400).json({ error: 'symbols array required' });
+  }
+  
+  try {
+    const results = {};
+    
+    // Fetch all symbols in parallel
+    await Promise.all(symbols.map(async (symbol) => {
+      const cacheKey = `watchlist:signals:${symbol}`;
+      const cached = await stockCache.getCached(cacheKey);
+      
+      if (cached) {
+        results[symbol] = { ...cached.data, fromCache: true, cachedAt: cached.cachedAt };
+      } else {
+        results[symbol] = { cached: false, symbol };
+      }
+    }));
+    
+    res.json({ results, requestedAt: new Date().toISOString() });
+  } catch (error) {
+    console.error('Watchlist batch cache error:', error);
+    res.status(500).json({ error: 'Batch cache lookup failed' });
+  }
+});
+
+/**
+ * Clear cached signals for a symbol
+ * DELETE /api/watchlist/signals/:symbol
+ */
+app.delete('/api/watchlist/signals/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  
+  try {
+    await stockCache.clearSymbolCache(symbol);
+    res.json({ success: true, symbol });
+  } catch (error) {
+    console.error('Watchlist signal cache clear error:', error);
+    res.status(500).json({ error: 'Cache clear failed' });
   }
 });
 

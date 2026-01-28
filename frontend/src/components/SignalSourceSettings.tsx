@@ -9,8 +9,12 @@ import { useState, useEffect } from 'react';
 import { 
   getSignalSourceSettings, 
   saveSignalSourceSettings,
+  getWatchlistSettings,
+  saveWatchlistSettings,
   type SignalSourceSettings,
-  DEFAULT_SIGNAL_SOURCE_SETTINGS 
+  type WatchlistSettings,
+  DEFAULT_SIGNAL_SOURCE_SETTINGS,
+  DEFAULT_WATCHLIST_SETTINGS
 } from '../services/userSettingsService';
 import { rlTradingService, type AgentStatus } from '../services/rlTradingService';
 
@@ -20,10 +24,12 @@ interface SignalSourceSettingsProps {
 
 export function SignalSourceSettingsPanel({ onSettingsChange }: SignalSourceSettingsProps) {
   const [settings, setSettings] = useState<SignalSourceSettings>(DEFAULT_SIGNAL_SOURCE_SETTINGS);
+  const [watchlistSettings, setWatchlistSettings] = useState<WatchlistSettings>(DEFAULT_WATCHLIST_SETTINGS);
   const [availableAgents, setAvailableAgents] = useState<AgentStatus[]>([]);
   const [rlServiceAvailable, setRlServiceAvailable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
+  const [watchlistSaved, setWatchlistSaved] = useState(false);
 
   // Load settings and check RL service
   useEffect(() => {
@@ -33,6 +39,10 @@ export function SignalSourceSettingsPanel({ onSettingsChange }: SignalSourceSett
       // Load saved settings
       const savedSettings = getSignalSourceSettings();
       setSettings(savedSettings);
+      
+      // Load watchlist settings
+      const savedWatchlistSettings = getWatchlistSettings();
+      setWatchlistSettings(savedWatchlistSettings);
       
       // Check RL service availability
       const isAvailable = await rlTradingService.isAvailable();
@@ -304,6 +314,130 @@ export function SignalSourceSettingsPanel({ onSettingsChange }: SignalSourceSett
           </p>
         </div>
       )}
+
+      {/* Watchlist-Einstellungen */}
+      <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
+        <div className="flex items-center justify-between mb-4">
+          <h4 className="font-medium text-white flex items-center gap-2">
+            <span>📋</span>
+            Watchlist-Einstellungen
+          </h4>
+          {watchlistSaved && (
+            <span className="text-xs text-green-400 flex items-center gap-1">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              Gespeichert
+            </span>
+          )}
+        </div>
+
+        {/* Extended Signals Toggle */}
+        <div className={`p-3 rounded-lg border transition-colors mb-4 ${
+          watchlistSettings.extendedSignals
+            ? 'bg-purple-500/10 border-purple-500/50'
+            : 'bg-slate-700/50 border-slate-600/50'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <h5 className="font-medium text-white">Erweiterte Signale</h5>
+              <p className="text-xs text-gray-400">
+                News, ML & RL Signale in der Watchlist laden
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={watchlistSettings.extendedSignals}
+                onChange={() => {
+                  const newSettings = { ...watchlistSettings, extendedSignals: !watchlistSettings.extendedSignals };
+                  setWatchlistSettings(newSettings);
+                  saveWatchlistSettings(newSettings);
+                  setWatchlistSaved(true);
+                  setTimeout(() => setWatchlistSaved(false), 2000);
+                }}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 rounded-full peer bg-slate-600 peer-checked:bg-purple-500
+                peer-focus:ring-2 peer-focus:ring-purple-500/50 
+                after:content-[''] after:absolute after:top-0.5 after:left-[2px] 
+                after:bg-white after:rounded-full after:h-5 after:w-5 
+                after:transition-all peer-checked:after:translate-x-full"
+              />
+            </label>
+          </div>
+        </div>
+
+        {/* Cache & Refresh Settings (nur wenn erweiterte Signale aktiv) */}
+        {watchlistSettings.extendedSignals && (
+          <div className="space-y-4">
+            {/* Cache Duration */}
+            <div>
+              <label className="text-sm text-gray-300 block mb-2">
+                Cache-Dauer (Minuten)
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min="5"
+                  max="60"
+                  step="5"
+                  value={watchlistSettings.cacheDurationMinutes}
+                  onChange={(e) => {
+                    const newSettings = { ...watchlistSettings, cacheDurationMinutes: parseInt(e.target.value) };
+                    setWatchlistSettings(newSettings);
+                    saveWatchlistSettings(newSettings);
+                    setWatchlistSaved(true);
+                    setTimeout(() => setWatchlistSaved(false), 2000);
+                  }}
+                  className="flex-1 h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                />
+                <span className="text-sm text-white min-w-[3rem] text-right">
+                  {watchlistSettings.cacheDurationMinutes} min
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Wie lange Signale gecacht werden, bevor sie neu geladen werden
+              </p>
+            </div>
+
+            {/* Auto-Refresh */}
+            <div>
+              <label className="text-sm text-gray-300 block mb-2">
+                Auto-Refresh (Sekunden)
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min="0"
+                  max="300"
+                  step="30"
+                  value={watchlistSettings.autoRefreshSeconds}
+                  onChange={(e) => {
+                    const newSettings = { ...watchlistSettings, autoRefreshSeconds: parseInt(e.target.value) };
+                    setWatchlistSettings(newSettings);
+                    saveWatchlistSettings(newSettings);
+                    setWatchlistSaved(true);
+                    setTimeout(() => setWatchlistSaved(false), 2000);
+                  }}
+                  className="flex-1 h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                />
+                <span className="text-sm text-white min-w-[3rem] text-right">
+                  {watchlistSettings.autoRefreshSeconds === 0 ? 'Aus' : `${watchlistSettings.autoRefreshSeconds}s`}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                0 = Kein Auto-Refresh (nur manuell)
+              </p>
+            </div>
+
+            {/* Info about caching */}
+            <div className="p-2 bg-slate-900/50 rounded text-xs text-gray-400">
+              <span className="text-purple-400">💡</span> Signale werden serverseitig gecacht, um die API-Quote zu schonen und Ladezeiten zu verkürzen.
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Info-Box */}
       <div className="p-4 bg-slate-900/50 rounded-lg border border-slate-700/50">
