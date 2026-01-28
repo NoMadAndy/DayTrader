@@ -91,7 +91,7 @@ export const DEFAULT_SIGNAL_CONFIG: SignalSourceConfig = {
   enableSentiment: true,
   enableTechnical: true,
   enableMLPrediction: true,
-  enableRLAgents: false,
+  enableRLAgents: true,  // RL Agents enabled by default
   customWeights: null,
 };
 

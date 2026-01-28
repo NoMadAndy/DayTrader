@@ -225,12 +225,22 @@ export function TradingPortfolioPage() {
     return () => clearInterval(interval);
   }, [selectedSymbol, dataService]);
   
+  // Keep a ref to openPositions for use in interval callback
+  const openPositionsRef = useRef(openPositions);
+  useEffect(() => {
+    openPositionsRef.current = openPositions;
+  }, [openPositions]);
+  
   // Fetch prices for all positions and check triggers periodically
   useEffect(() => {
     if (!authState.isAuthenticated || openPositions.length === 0) return;
     
-    async function checkPositionTriggers() {
-      const symbols = [...new Set(openPositions.map(p => p.symbol))];
+    async function checkPositionTriggersCallback() {
+      // Use ref to get current positions to avoid stale closure
+      const currentPositions = openPositionsRef.current;
+      if (currentPositions.length === 0) return;
+      
+      const symbols = [...new Set(currentPositions.map(p => p.symbol))];
       const prices: Record<string, number> = {};
       
       for (const symbol of symbols) {
@@ -286,8 +296,8 @@ export function TradingPortfolioPage() {
       }
     }
     
-    checkPositionTriggers();
-    const interval = setInterval(checkPositionTriggers, 60000);
+    checkPositionTriggersCallback();
+    const interval = setInterval(checkPositionTriggersCallback, 60000);
     return () => clearInterval(interval);
   }, [authState.isAuthenticated, openPositions.length, dataService, loadPortfolioData]);
   

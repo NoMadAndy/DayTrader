@@ -245,6 +245,17 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
 
   // Track last stock data fingerprint to avoid unnecessary RL signal reloads
   const lastRLDataFingerprintRef = useRef<string | null>(null);
+  // Track current symbol for race condition prevention
+  const currentSymbolRef = useRef<string>(selectedSymbol);
+  
+  // Keep symbol ref updated
+  useEffect(() => {
+    currentSymbolRef.current = selectedSymbol;
+    // Clear stale data when symbol changes
+    setRlSignals([]);
+    setMlPredictions(null);
+    lastRLDataFingerprintRef.current = null;
+  }, [selectedSymbol]);
 
   // Load RL signals when enabled and data is available
   // Only reload when data actually changes (not on every stockData reference change)
@@ -263,6 +274,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
       // Create fingerprint to detect actual data changes
       const lastPoint = stockData.data[stockData.data.length - 1];
       const dataFingerprint = `${stockData.symbol}-${stockData.data.length}-${lastPoint?.time}`;
+      const requestSymbol = stockData.symbol; // Capture for race condition check
       
       // Skip if data hasn't actually changed
       if (lastRLDataFingerprintRef.current === dataFingerprint) {
@@ -286,6 +298,12 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
           validAgents,
           stockData.data
         );
+        
+        // Race condition check: Ensure symbol hasn't changed during async call
+        if (currentSymbolRef.current !== requestSymbol) {
+          console.log(`[Dashboard] Symbol changed during RL fetch (${requestSymbol} -> ${currentSymbolRef.current}), discarding stale results`);
+          return;
+        }
         
         if (response && response.signals) {
           const signals: RLSignalInput[] = Object.entries(response.signals)
@@ -321,7 +339,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
   }, [signalConfig.enableRLAgents, selectedRLAgents, stockData]);
 
   // Track last news data to detect actual changes
-  const lastNewsCountRef = useRef<number>(0);
+  const lastNewsFingerprintRef = useRef<string | null>(null);
   
   // Track last ML predictions to detect actual changes  
   const lastMLPredictionRef = useRef<string | null>(null);
@@ -352,15 +370,18 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
   const handleSentimentChange = useCallback((items: NewsItemWithSentiment[]) => {
     setNewsWithSentiment(items);
     if (items.length > 0) {
-      // Only update timestamp when news count changes or first item changes
-      const newsFingerprint = `${items.length}-${items[0]?.headline?.substring(0, 20)}`;
-      if (lastNewsCountRef.current !== items.length || newsFingerprint !== lastNewsCountRef.current.toString()) {
-        lastNewsCountRef.current = items.length;
+      // Only update timestamp when news actually changes (count or first headline)
+      const newsFingerprint = `${items.length}-${items[0]?.headline?.substring(0, 30) || ''}`;
+      if (lastNewsFingerprintRef.current !== newsFingerprint) {
+        lastNewsFingerprintRef.current = newsFingerprint;
         setDataTimestamps(prev => ({
           ...prev,
           news: new Date(),
         }));
       }
+    } else {
+      // Clear fingerprint when no news
+      lastNewsFingerprintRef.current = null;
     }
   }, []);
 

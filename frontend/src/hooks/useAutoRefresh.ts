@@ -191,6 +191,14 @@ export function useAutoRefresh(config: AutoRefreshConfig): [AutoRefreshState, Au
     return adjustedInterval;
   }, [dataService, preferredSource, config]);
   
+  // Use refs to avoid stale closures in interval callbacks
+  const isPausedRef = useRef(state.isPaused);
+  useEffect(() => {
+    isPausedRef.current = state.isPaused;
+  }, [state.isPaused]);
+  
+  const currentIntervalRef = useRef<number>(60000);
+  
   // Set up refresh interval
   const setupInterval = useCallback(async () => {
     if (intervalRef.current) {
@@ -198,19 +206,21 @@ export function useAutoRefresh(config: AutoRefreshConfig): [AutoRefreshState, Au
       intervalRef.current = null;
     }
     
-    if (!enabledRef.current || state.isPaused) return;
+    if (!enabledRef.current || isPausedRef.current) return;
     
     // Initial fetch
     const interval = await fetchQuotes() || 60000;
+    currentIntervalRef.current = interval;
     
     // Set up recurring fetch
     intervalRef.current = setInterval(async () => {
-      if (!enabledRef.current || state.isPaused) return;
+      if (!enabledRef.current || isPausedRef.current) return;
       
       const newInterval = await fetchQuotes();
       
       // If interval changed significantly, reset the timer
-      if (newInterval && Math.abs(newInterval - interval) > 5000) {
+      if (newInterval && Math.abs(newInterval - currentIntervalRef.current) > 5000) {
+        currentIntervalRef.current = newInterval;
         setupInterval();
       }
     }, interval);

@@ -1595,9 +1595,9 @@ export async function cancelOrder(orderId, userId) {
   try {
     await client.query('BEGIN');
     
-    // Get order
+    // Get order with portfolio's broker_profile for accurate fee calculation
     const orderResult = await client.query(
-      `SELECT o.*, p.id as portfolio_id FROM orders o
+      `SELECT o.*, p.id as portfolio_id, p.broker_profile FROM orders o
        JOIN portfolios p ON o.portfolio_id = p.id
        WHERE o.id = $1 AND o.user_id = $2 AND o.status = 'pending'`,
       [orderId, userId]
@@ -1608,14 +1608,16 @@ export async function cancelOrder(orderId, userId) {
     }
     
     const order = orderResult.rows[0];
+    const brokerProfile = order.broker_profile || 'standard';
     
-    // Calculate reserved cash to return
+    // Calculate reserved cash to return (must use same brokerProfile as when order was created)
     const fees = calculateFees({
       productType: order.product_type,
       side: order.side,
       quantity: parseFloat(order.quantity),
       price: order.limit_price || order.stop_price,
       leverage: parseFloat(order.leverage),
+      brokerProfile,
     });
     
     const reservedCash = order.side === 'buy' 
@@ -1725,6 +1727,20 @@ export async function checkPendingOrders(priceUpdates) {
       }
       
       if (shouldExecute) {
+        // Mark order as 'executing' first to prevent race conditions (double execution)
+        const lockResult = await client.query(
+          `UPDATE orders SET status = 'executing'
+           WHERE id = $1 AND status = 'pending'
+           RETURNING id`,
+          [order.id]
+        );
+        
+        // If lock failed, order was already picked up by another process
+        if (lockResult.rows.length === 0) {
+          console.log(`Order ${order.id} already being executed, skipping`);
+          continue;
+        }
+        
         // Execute the order as a market order at current price
         const result = await executeMarketOrder({
           userId: order.user_id,
@@ -1741,13 +1757,21 @@ export async function checkPendingOrders(priceUpdates) {
         });
         
         if (result.success) {
-          // Update original pending order status
+          // Update original pending order status to filled
           await client.query(
             `UPDATE orders SET status = 'filled', filled_at = CURRENT_TIMESTAMP, filled_price = $2
              WHERE id = $1`,
             [order.id, currentPrice]
           );
           executedOrders.push({ orderId: order.id, ...result });
+        } else {
+          // Execution failed, revert order back to pending
+          await client.query(
+            `UPDATE orders SET status = 'pending', error_message = $2
+             WHERE id = $1`,
+            [order.id, result.error || 'Execution failed']
+          );
+          console.error(`Order ${order.id} execution failed:`, result.error);
         }
       }
     }

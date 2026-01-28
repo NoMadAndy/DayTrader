@@ -5,9 +5,10 @@
  * Settings are persisted to localStorage and synced with backend when authenticated.
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { getAuthState, subscribeToAuth } from '../services/authService';
 import { getUserSettings, updateUserSettings } from '../services/userSettingsService';
+import { getEurUsdRate } from '../services/companyInfoService';
 
 export type Language = 'de' | 'en';
 export type Currency = 'USD' | 'EUR';
@@ -34,8 +35,11 @@ const DEFAULT_SETTINGS: Settings = {
   currency: 'USD',
 };
 
-// USD to EUR conversion rate (approximate)
-const EUR_RATE = 0.92;
+// USD to EUR conversion rate - default fallback, will be updated dynamically
+const DEFAULT_EUR_RATE = 0.92;
+
+// Shared dynamic EUR rate (updated from API)
+let currentEurRate = DEFAULT_EUR_RATE;
 
 const SettingsContext = createContext<SettingsContextType | null>(null);
 
@@ -82,14 +86,31 @@ export function formatCurrencyValue(value: number, forceCurrency?: Currency): st
   const settings = loadStoredSettings();
   const currency = forceCurrency || settings.currency;
   
-  // Convert USD to EUR if needed
-  const convertedValue = currency === 'EUR' ? value * EUR_RATE : value;
+  // Convert USD to EUR if needed (using dynamically fetched rate)
+  const convertedValue = currency === 'EUR' ? value * currentEurRate : value;
   
   const locale = currency === 'EUR' ? 'de-DE' : 'en-US';
   return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency,
   }).format(convertedValue);
+}
+
+/**
+ * Update the EUR rate from external source
+ * Called by SettingsProvider on mount and periodically
+ */
+export function updateEurRate(rate: number): void {
+  if (rate > 0 && rate < 10) { // Sanity check
+    currentEurRate = rate;
+  }
+}
+
+/**
+ * Get current EUR rate (for display purposes)
+ */
+export function getCurrentEurRate(): number {
+  return currentEurRate;
 }
 
 // Translations
@@ -864,6 +885,30 @@ const translations: Record<Language, Record<string, string>> = {
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings>(loadStoredSettings);
+  const eurRateRef = useRef<number>(DEFAULT_EUR_RATE);
+
+  // Fetch and update EUR rate on mount and every 5 minutes
+  useEffect(() => {
+    const fetchEurRate = async () => {
+      try {
+        const rate = await getEurUsdRate();
+        if (rate > 0) {
+          eurRateRef.current = rate;
+          updateEurRate(rate); // Update global rate for formatCurrencyValue
+          console.log(`[Settings] EUR rate updated: ${rate}`);
+        }
+      } catch (e) {
+        console.warn('Failed to fetch EUR rate:', e);
+      }
+    };
+
+    // Fetch immediately
+    fetchEurRate();
+
+    // Refresh every 5 minutes
+    const interval = setInterval(fetchEurRate, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Load settings from server when authenticated
   useEffect(() => {
@@ -928,8 +973,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const formatCurrencyValue = useCallback((value: number): string => {
     const { currency } = settings;
     
-    // Convert USD to EUR if needed
-    const convertedValue = currency === 'EUR' ? value * EUR_RATE : value;
+    // Convert USD to EUR if needed (using dynamically fetched rate)
+    const convertedValue = currency === 'EUR' ? value * eurRateRef.current : value;
     
     const locale = currency === 'EUR' ? 'de-DE' : 'en-US';
     return new Intl.NumberFormat(locale, {

@@ -1043,13 +1043,19 @@ app.get('/api/finnhub/metrics/:symbol', async (req, res) => {
 /**
  * Proxy Finnhub company news
  * GET /api/finnhub/news/:symbol
- * Query: from, to (dates YYYY-MM-DD)
+ * Query: from, to (dates YYYY-MM-DD) - defaults to last 7 days if not provided
  * Header: X-Finnhub-Token
  */
 app.get('/api/finnhub/news/:symbol', async (req, res) => {
   const { symbol } = req.params;
-  const { from, to } = req.query;
   const apiKey = req.headers['x-finnhub-token'];
+  
+  // Default to last 7 days if from/to not provided
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const from = req.query.from || sevenDaysAgo.toISOString().split('T')[0];
+  const to = req.query.to || now.toISOString().split('T')[0];
+  
   const cacheKey = `finnhub:news:${symbol.toUpperCase()}:${from}:${to}`;
   
   if (process.env.DATABASE_URL) {
@@ -2187,22 +2193,22 @@ app.get('/api/watchlist/signals/:symbol', async (req, res) => {
 /**
  * Store computed trading signals in cache
  * POST /api/watchlist/signals/:symbol
- * Body: { signals, newsArticles, mlPrediction, rlSignals }
+ * Body: { signals, sources, ttlSeconds } - sources contains {hasNews, hasML, hasRL}
  */
 app.post('/api/watchlist/signals/:symbol', express.json({ limit: '1mb' }), async (req, res) => {
   const { symbol } = req.params;
-  const { signals, newsArticles, mlPrediction, rlSignals, ttlMinutes } = req.body;
+  const { signals, sources, ttlSeconds: requestTTL } = req.body;
   const cacheKey = `watchlist:signals:${symbol}`;
   
-  // Custom TTL or default
-  const ttlSeconds = ttlMinutes ? ttlMinutes * 60 : WATCHLIST_SIGNAL_CACHE_TTL;
+  // Custom TTL or default (15 minutes)
+  const ttlSeconds = requestTTL || WATCHLIST_SIGNAL_CACHE_TTL;
   
   try {
     await stockCache.setCache(
       cacheKey,
       'watchlist_signals',
       symbol,
-      { signals, newsArticles, mlPrediction, rlSignals, updatedAt: new Date().toISOString() },
+      { signals, sources, updatedAt: new Date().toISOString() },
       'aggregated',
       ttlSeconds
     );

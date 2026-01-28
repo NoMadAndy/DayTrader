@@ -53,8 +53,8 @@ export const DEFAULT_SIGNAL_SOURCE_SETTINGS: SignalSourceSettings = {
   enableSentiment: true,
   enableTechnical: true,
   enableMLPrediction: true,
-  enableRLAgents: false,
-  selectedRLAgents: [],
+  enableRLAgents: true,  // RL Agents enabled by default
+  selectedRLAgents: [],  // Empty = use all trained agents
   customWeights: null,
 };
 

@@ -5,6 +5,74 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.8] - 2026-01-28
+
+### Fixed
+- **RL-Agenten werden jetzt in der Watchlist korrekt geladen** - Signale von trainierten RL-Agenten fließen nun in die kombinierten Trading-Signale ein
+  - Aktiviert `enableRLAgents: true` in der Signal-Konfiguration
+  - Korrigiert `action_probabilities` Mapping für RL-Service Response (buy_small/medium/large → buy)
+  - Verbesserte Cache-Validierung: Cache wird nur verwendet wenn er erweiterte Quellen (ML/RL/News) enthält
+  - Erhöht Timeout für Signal-Promises auf 15s mit individuellen Timeouts
+- **News werden jetzt für alle Aktien in der Watchlist geladen** - Finnhub News-Anfragen werden nicht mehr durch Frontend Rate-Limit blockiert
+  - Entfernt `checkAndRecordRequest` für News (Backend cached bereits 5 Minuten)
+  - NewsAPI nur als Fallback wenn weniger als 3 News von Finnhub vorhanden
+  - Backend verwendet Default-Datumswerte wenn from/to nicht übergeben werden
+
+### Changed
+- **Watchlist Trading-Signale immer aktiv** - Signale werden jetzt IMMER beim Laden der Watchlist berechnet
+  - Entfernt Abhängigkeit vom "Extended Signals" Modus
+  - Alle Signalquellen (Tech, News, ML, RL) werden automatisch geladen
+  - Progressive Fortschrittsanzeige während des Ladens (0-100%)
+  
+### Improved
+- **Verbesserte Signal-Darstellung in der Watchlist**
+  - Prominente Score-Anzeige im Signal-Badge (+32, -15, etc.)
+  - Klare Signal-Quellen-Badges: 📊Tech, 📰News, 🤖ML, 🎯RL mit jeweiligem Score
+  - Signal-Legende für Datenquellen (Tech/News/ML/RL) im Header
+  
+### Added
+- **Mobile-optimierte Watchlist-Ansicht**
+  - Tap-to-expand Funktionalität auf Mobilgeräten
+  - Kompakte Standard-Ansicht mit expandierbaren Details
+  - Schnellaktionen (Handeln/Entfernen) im erweiterten Bereich
+  - Alle Zeitperioden (1h/1d/1w/LT) als klickbare Buttons mit Score
+  
+### Fixed (earlier)
+- **Watchlist lädt Signale erst beim Klick** - Behoben: Signale werden jetzt automatisch beim Öffnen geladen
+
+## [1.12.7] - 2026-01-28
+
+### Fixed
+- **cancelOrder falsche Gebührenberechnung** (Backend) - brokerProfile wird jetzt korrekt aus der Datenbank gelesen
+  - Verhindert falsche Rückerstattungsbeträge beim Stornieren von pending Orders
+  - Behebt Cash-Diskrepanzen im Portfolio nach Order-Stornierung
+- **checkPendingOrders Race Condition** (Backend) - Doppelausführung von Orders verhindert
+  - Orders werden jetzt mit Status 'executing' gesperrt bevor sie ausgeführt werden
+  - Bei Fehlschlag wird Order zurück auf 'pending' gesetzt mit Fehlermeldung
+  - Verhindert doppelte Trades bei gleichzeitigen Preischecks
+- **useAutoRefresh Stale Interval** (Frontend) - Verwendet jetzt Refs für isPaused und interval
+  - Verhindert veraltete Werte in setInterval-Callbacks
+  - Intervall-Änderungen werden korrekt erkannt und angewendet
+- **TradingPortfolioPage Stale Positions** (Frontend) - openPositions nutzt jetzt Ref-Pattern
+  - Trigger-Check verwendet immer aktuelle Positionsliste
+  - Behebt Problem wo neue Positionen nicht sofort im Preischeck enthalten waren
+
+## [1.12.6] - 2026-01-28
+
+### Fixed
+- **Stale Closure in WatchlistPanel** - Watchlist-Preisrefresh nutzt jetzt Refs statt veraltete Closures
+  - Symbole werden nun korrekt aktualisiert auch nach Hinzufügen/Entfernen von Einträgen
+- **News-Fingerprint Logik** - Korrigierter Vergleich für News-Änderungserkennung
+  - Verwendet jetzt konsistenten String-Fingerprint statt gemischte Typen
+  - Vermeidet unnötige Timestamp-Updates bei jedem Render
+- **Race Condition bei RL-Signalen** - Verhindert veraltete Signale bei schnellem Symbol-Wechsel
+  - Symbol-Check nach async Response hinzugefügt
+  - Automatisches Leeren von ML/RL-Daten bei Symbol-Wechsel
+- **EUR/USD Wechselkurs dynamisch** - Kurs wird jetzt live vom API geladen
+  - Automatische Aktualisierung alle 5 Minuten
+  - Fallback auf 0.92 bei API-Fehler
+  - `formatCurrencyValue()` nutzt jetzt den echten Kurs statt festen Wert
+
 ## [1.12.5] - 2026-01-28
 
 ### Fixed

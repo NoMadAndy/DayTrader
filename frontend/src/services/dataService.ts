@@ -296,21 +296,21 @@ export class DataService {
       const allNews: NewsItem[] = [];
 
       // Try Finnhub news first (FinnhubProvider always has fetchNews method)
+      // Don't check rate limit here - backend caches news for 5 minutes
+      // so the actual API calls are already rate-limited server-side
       const finnhub = this.providers.get('finnhub');
       if (finnhub?.isConfigured() && finnhub instanceof FinnhubProvider) {
-        if (this.checkAndRecordRequest('finnhub', `news:${symbol}`)) {
-          try {
-            const finnhubNews = await finnhub.fetchNews(symbol);
-            allNews.push(...finnhubNews);
-          } catch (error) {
-            console.warn('Finnhub news fetch failed:', error);
-          }
+        try {
+          const finnhubNews = await finnhub.fetchNews(symbol);
+          allNews.push(...finnhubNews);
+        } catch (error) {
+          console.warn('Finnhub news fetch failed:', error);
         }
       }
 
-      // Try NewsAPI
-      if (this.newsProvider?.isConfigured()) {
-        // NewsAPI doesn't have strict limits, but still track
+      // Try NewsAPI only if we don't have enough news from Finnhub
+      // (NewsAPI is rate-limited at 100 requests/day, so be conservative)
+      if (allNews.length < 3 && this.newsProvider?.isConfigured()) {
         try {
           const newsApiNews = await this.newsProvider.fetchStockNews(
             symbol, 
