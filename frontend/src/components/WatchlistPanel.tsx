@@ -618,25 +618,45 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
     }
   }, [authState.isAuthenticated, quickTradeSymbol]);
 
-  // Helper: Calculate filtered score based on selected sources
-  const getFilteredScore = useCallback((signals?: TradingSignalSummary) => {
+  // Helper: Check if a source is enabled in filters
+  const isSourceEnabled = useCallback((source: string): boolean => {
+    const sourceMap: Record<string, boolean> = {
+      technical: sourceFilters.technical,
+      sentiment: sourceFilters.sentiment,
+      ml: sourceFilters.ml,
+      rl: sourceFilters.rl,
+    };
+    return sourceMap[source] ?? true;
+  }, [sourceFilters]);
+
+  // Helper: Determine signal display based on score
+  const getSignalDisplayFromScore = useCallback((score: number) => {
+    if (score >= 50) return getSignalDisplay('STRONG_BUY');
+    if (score >= 20) return getSignalDisplay('BUY');
+    if (score > -20) return getSignalDisplay('HOLD');
+    if (score > -50) return getSignalDisplay('SELL');
+    return getSignalDisplay('STRONG_SELL');
+  }, []);
+
+  // Helper: Calculate filtered score based on selected sources for a specific period
+  const getFilteredScoreForPeriod = useCallback((signals: TradingSignalSummary | undefined, period: 'hourly' | 'daily' | 'weekly' | 'longTerm'): number => {
     if (!signals) return 0;
-    const contributions = signals.contributions?.[filterPeriod];
-    if (!contributions || contributions.length === 0) return signals[filterPeriod]?.score ?? 0;
+    const contributions = signals.contributions?.[period];
+    if (!contributions || contributions.length === 0) return signals[period]?.score ?? 0;
     
     let filteredScore = 0;
     contributions.forEach(c => {
-      if (
-        (c.source === 'technical' && sourceFilters.technical) ||
-        (c.source === 'sentiment' && sourceFilters.sentiment) ||
-        (c.source === 'ml' && sourceFilters.ml) ||
-        (c.source === 'rl' && sourceFilters.rl)
-      ) {
+      if (isSourceEnabled(c.source)) {
         filteredScore += c.score;
       }
     });
     return filteredScore;
-  }, [filterPeriod, sourceFilters]);
+  }, [isSourceEnabled]);
+
+  // Helper: Calculate filtered score for current period
+  const getFilteredScore = useCallback((signals?: TradingSignalSummary) => {
+    return getFilteredScoreForPeriod(signals, filterPeriod);
+  }, [filterPeriod, getFilteredScoreForPeriod]);
 
   // Sort and filter items
   const displayItems = useMemo(() => {
@@ -661,19 +681,12 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
     
     const periodSignal = signal[filterPeriod];
     const filteredScore = Math.round(getFilteredScore(signal));
-    
-    // Determine signal level based on filtered score
-    let adjustedDisplay;
-    if (filteredScore >= 50) adjustedDisplay = getSignalDisplay('STRONG_BUY');
-    else if (filteredScore >= 20) adjustedDisplay = getSignalDisplay('BUY');
-    else if (filteredScore > -20) adjustedDisplay = getSignalDisplay('HOLD');
-    else if (filteredScore > -50) adjustedDisplay = getSignalDisplay('SELL');
-    else adjustedDisplay = getSignalDisplay('STRONG_SELL');
+    const adjustedDisplay = getSignalDisplayFromScore(filteredScore);
     
     return (
       <span 
         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded ${adjustedDisplay.bgColor} ${adjustedDisplay.color} ${small ? 'text-xs' : 'text-sm'}`}
-        title={periodSignal.reasoning}
+        title={periodSignal?.reasoning || ''}
       >
         <span className="text-base">{adjustedDisplay.emoji}</span>
         <span className="font-bold">{filteredScore > 0 ? '+' : ''}{filteredScore}</span>
@@ -686,13 +699,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
     if (!contributions || contributions.length === 0) return null;
     
     // Filter contributions based on sourceFilters
-    const filteredContributions = contributions.filter(c => {
-      if (c.source === 'technical') return sourceFilters.technical;
-      if (c.source === 'sentiment') return sourceFilters.sentiment;
-      if (c.source === 'ml') return sourceFilters.ml;
-      if (c.source === 'rl') return sourceFilters.rl;
-      return true;
-    });
+    const filteredContributions = contributions.filter(c => isSourceEnabled(c.source));
     
     if (filteredContributions.length === 0) return null;
     
@@ -1192,32 +1199,9 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                 <div className="flex items-center gap-1.5 text-[10px] sm:text-xs">
                   <span className="text-gray-500 text-[10px]">Perioden:</span>
                   {(['hourly', 'daily', 'weekly', 'longTerm'] as const).map(period => {
-                    // Calculate filtered score for this period
-                    const contributions = item.signals?.contributions?.[period];
-                    let periodScore = 0;
-                    if (contributions && contributions.length > 0) {
-                      contributions.forEach(c => {
-                        if (
-                          (c.source === 'technical' && sourceFilters.technical) ||
-                          (c.source === 'sentiment' && sourceFilters.sentiment) ||
-                          (c.source === 'ml' && sourceFilters.ml) ||
-                          (c.source === 'rl' && sourceFilters.rl)
-                        ) {
-                          periodScore += c.score;
-                        }
-                      });
-                    } else {
-                      periodScore = item.signals?.[period]?.score ?? 0;
-                    }
-                    const score = Math.round(periodScore);
-                    
-                    // Determine display based on filtered score
-                    let display;
-                    if (score >= 50) display = getSignalDisplay('STRONG_BUY');
-                    else if (score >= 20) display = getSignalDisplay('BUY');
-                    else if (score > -20) display = getSignalDisplay('HOLD');
-                    else if (score > -50) display = getSignalDisplay('SELL');
-                    else display = getSignalDisplay('STRONG_SELL');
+                    // Use the shared helper function for filtered score calculation
+                    const score = Math.round(getFilteredScoreForPeriod(item.signals, period));
+                    const display = getSignalDisplayFromScore(score);
                     
                     return (
                       <button
@@ -1388,11 +1372,11 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
       {/* Legend - compact signal explanation only */}
       <div className="text-[10px] sm:text-xs text-gray-500 pt-2 border-t border-slate-700 flex-shrink-0">
         <div className="flex flex-wrap gap-x-3 gap-y-1">
-          <span className="flex items-center gap-0.5"><span>🚀</span> Stark Kauf (+50)</span>
-          <span className="flex items-center gap-0.5"><span>📈</span> Kauf (+20)</span>
-          <span className="flex items-center gap-0.5"><span>➡️</span> Halten</span>
-          <span className="flex items-center gap-0.5"><span>📉</span> Verkauf (-20)</span>
-          <span className="flex items-center gap-0.5"><span>⚠️</span> Stark Verk. (-50)</span>
+          <span className="flex items-center gap-0.5"><span>🚀</span> Stark Kauf (≥50)</span>
+          <span className="flex items-center gap-0.5"><span>📈</span> Kauf (≥20)</span>
+          <span className="flex items-center gap-0.5"><span>➡️</span> Halten (±19)</span>
+          <span className="flex items-center gap-0.5"><span>📉</span> Verkauf (≤-20)</span>
+          <span className="flex items-center gap-0.5"><span>⚠️</span> Stark Verk. (≤-50)</span>
         </div>
       </div>
     </div>
