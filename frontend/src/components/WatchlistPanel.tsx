@@ -93,8 +93,16 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
   const [newSymbol, setNewSymbol] = useState('');
   const [newName, setNewName] = useState('');
   const [addError, setAddError] = useState('');
-  const [sortBy, setSortBy] = useState<'name' | 'score'>('name');
+  const [sortBy, setSortBy] = useState<'name' | 'score'>('score');  // Default to score sorting
   const [filterPeriod, setFilterPeriod] = useState<'hourly' | 'daily' | 'weekly' | 'longTerm'>('daily');
+  
+  // Source filter state for inline toggling
+  const [sourceFilters, setSourceFilters] = useState({
+    technical: true,
+    sentiment: true,
+    ml: true,
+    rl: true,
+  });
   const [isLoadingSymbols, setIsLoadingSymbols] = useState(false);
   
   // Track loading progress for signals
@@ -610,14 +618,54 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
     }
   }, [authState.isAuthenticated, quickTradeSymbol]);
 
+  // Helper: Check if a source is enabled in filters
+  const isSourceEnabled = useCallback((source: string): boolean => {
+    const sourceMap: Record<string, boolean> = {
+      technical: sourceFilters.technical,
+      sentiment: sourceFilters.sentiment,
+      ml: sourceFilters.ml,
+      rl: sourceFilters.rl,
+    };
+    return sourceMap[source] ?? true;
+  }, [sourceFilters]);
+
+  // Helper: Determine signal display based on score
+  const getSignalDisplayFromScore = useCallback((score: number) => {
+    if (score >= 50) return getSignalDisplay('STRONG_BUY');
+    if (score >= 20) return getSignalDisplay('BUY');
+    if (score > -20) return getSignalDisplay('HOLD');
+    if (score > -50) return getSignalDisplay('SELL');
+    return getSignalDisplay('STRONG_SELL');
+  }, []);
+
+  // Helper: Calculate filtered score based on selected sources for a specific period
+  const getFilteredScoreForPeriod = useCallback((signals: TradingSignalSummary | undefined, period: 'hourly' | 'daily' | 'weekly' | 'longTerm'): number => {
+    if (!signals) return 0;
+    const contributions = signals.contributions?.[period];
+    if (!contributions || contributions.length === 0) return signals[period]?.score ?? 0;
+    
+    let filteredScore = 0;
+    contributions.forEach(c => {
+      if (isSourceEnabled(c.source)) {
+        filteredScore += c.score;
+      }
+    });
+    return filteredScore;
+  }, [isSourceEnabled]);
+
+  // Helper: Calculate filtered score for current period
+  const getFilteredScore = useCallback((signals?: TradingSignalSummary) => {
+    return getFilteredScoreForPeriod(signals, filterPeriod);
+  }, [filterPeriod, getFilteredScoreForPeriod]);
+
   // Sort and filter items
   const displayItems = useMemo(() => {
-    let items = [...watchlistItems];
+    const items = [...watchlistItems];
     
     if (sortBy === 'score') {
       items.sort((a, b) => {
-        const scoreA = a.signals?.[filterPeriod]?.score ?? 0;
-        const scoreB = b.signals?.[filterPeriod]?.score ?? 0;
+        const scoreA = getFilteredScore(a.signals);
+        const scoreB = getFilteredScore(b.signals);
         return scoreB - scoreA; // Highest score first
       });
     } else {
@@ -625,30 +673,35 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
     }
     
     return items;
-  }, [watchlistItems, sortBy, filterPeriod]);
+  }, [watchlistItems, sortBy, getFilteredScore]);
 
-  // Signal badge component - shows cumulative signal with score
+  // Signal badge component - shows cumulative signal with filtered score
   const SignalBadge = ({ signal, small = false }: { signal?: TradingSignalSummary; period?: string; small?: boolean }) => {
     if (!signal) return <span className="text-gray-500 text-xs">—</span>;
     
     const periodSignal = signal[filterPeriod];
-    const display = getSignalDisplay(periodSignal.signal);
-    const score = Math.round(periodSignal.score);
+    const filteredScore = Math.round(getFilteredScore(signal));
+    const adjustedDisplay = getSignalDisplayFromScore(filteredScore);
     
     return (
       <span 
-        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded ${display.bgColor} ${display.color} ${small ? 'text-xs' : 'text-sm'}`}
-        title={periodSignal.reasoning}
+        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded ${adjustedDisplay.bgColor} ${adjustedDisplay.color} ${small ? 'text-xs' : 'text-sm'}`}
+        title={periodSignal?.reasoning || ''}
       >
-        <span className="text-base">{display.emoji}</span>
-        <span className="font-bold">{score > 0 ? '+' : ''}{score}</span>
+        <span className="text-base">{adjustedDisplay.emoji}</span>
+        <span className="font-bold">{filteredScore > 0 ? '+' : ''}{filteredScore}</span>
       </span>
     );
   };
 
-  // Signal Source Mini Badges - zeigt die einzelnen Quellen kompakt an
+  // Signal Source Mini Badges - zeigt die einzelnen Quellen kompakt an (filtered)
   const SignalSourceBadges = ({ contributions, compact = false }: { contributions?: SignalContribution[]; compact?: boolean }) => {
     if (!contributions || contributions.length === 0) return null;
+    
+    // Filter contributions based on sourceFilters
+    const filteredContributions = contributions.filter(c => isSourceEnabled(c.source));
+    
+    if (filteredContributions.length === 0) return null;
     
     const getSourceInfo = (source: string) => {
       switch (source) {
@@ -672,7 +725,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
       // Ultra-compact view for mobile: just dots with colors
       return (
         <div className="flex items-center gap-0.5">
-          {contributions.map((contrib, idx) => {
+          {filteredContributions.map((contrib, idx) => {
             const info = getSourceInfo(contrib.source);
             return (
               <span 
@@ -688,7 +741,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
     
     return (
       <div className="flex items-center gap-1 flex-wrap">
-        {contributions.map((contrib, idx) => {
+        {filteredContributions.map((contrib, idx) => {
           const info = getSourceInfo(contrib.source);
           return (
             <span 
@@ -797,12 +850,57 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
           </button>
         </div>
         
-        {/* Source Legend - hidden on mobile */}
-        <div className="hidden sm:flex items-center gap-2 ml-auto text-[10px] text-gray-500">
-          <span className="flex items-center gap-0.5"><span className="w-2 h-2 rounded-full bg-blue-400" /> Tech</span>
-          <span className="flex items-center gap-0.5"><span className="w-2 h-2 rounded-full bg-yellow-400" /> News</span>
-          <span className="flex items-center gap-0.5"><span className="w-2 h-2 rounded-full bg-purple-400" /> ML</span>
-          <span className="flex items-center gap-0.5"><span className="w-2 h-2 rounded-full bg-green-400" /> RL</span>
+        {/* Source Filters - Interactive toggles to filter signals by source */}
+        <div className="flex items-center gap-1 sm:gap-1.5 ml-auto">
+          <span className="text-[10px] text-gray-500 hidden sm:inline mr-1">Quellen:</span>
+          <button
+            onClick={() => setSourceFilters(f => ({ ...f, technical: !f.technical }))}
+            className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] sm:text-xs transition-all border ${
+              sourceFilters.technical 
+                ? 'bg-blue-500/20 border-blue-500/50 text-blue-400' 
+                : 'bg-slate-800/50 border-slate-700 text-gray-500 opacity-50'
+            }`}
+            title="Technische Analyse (RSI, MACD, Bollinger)"
+          >
+            <span className="w-2 h-2 rounded-full bg-blue-400" />
+            <span className="hidden sm:inline">Tech</span>
+          </button>
+          <button
+            onClick={() => setSourceFilters(f => ({ ...f, sentiment: !f.sentiment }))}
+            className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] sm:text-xs transition-all border ${
+              sourceFilters.sentiment 
+                ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400' 
+                : 'bg-slate-800/50 border-slate-700 text-gray-500 opacity-50'
+            }`}
+            title="News Sentiment"
+          >
+            <span className="w-2 h-2 rounded-full bg-yellow-400" />
+            <span className="hidden sm:inline">News</span>
+          </button>
+          <button
+            onClick={() => setSourceFilters(f => ({ ...f, ml: !f.ml }))}
+            className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] sm:text-xs transition-all border ${
+              sourceFilters.ml 
+                ? 'bg-purple-500/20 border-purple-500/50 text-purple-400' 
+                : 'bg-slate-800/50 border-slate-700 text-gray-500 opacity-50'
+            }`}
+            title="ML-Vorhersage (LSTM)"
+          >
+            <span className="w-2 h-2 rounded-full bg-purple-400" />
+            <span className="hidden sm:inline">ML</span>
+          </button>
+          <button
+            onClick={() => setSourceFilters(f => ({ ...f, rl: !f.rl }))}
+            className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] sm:text-xs transition-all border ${
+              sourceFilters.rl 
+                ? 'bg-green-500/20 border-green-500/50 text-green-400' 
+                : 'bg-slate-800/50 border-slate-700 text-gray-500 opacity-50'
+            }`}
+            title="RL-Agenten"
+          >
+            <span className="w-2 h-2 rounded-full bg-green-400" />
+            <span className="hidden sm:inline">RL</span>
+          </button>
         </div>
       </div>
 
@@ -1090,13 +1188,21 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
               <div className={`border-t border-slate-700/50 px-2.5 sm:px-3 pb-2.5 sm:pb-3 pt-2 ${
                 isExpanded ? 'block' : 'hidden sm:block'
               }`}>
-                {/* Period Signals */}
-                <div className="flex items-center gap-1.5 text-[10px] sm:text-xs mb-2">
-                  <span className="text-gray-500">Signale:</span>
+                {/* Signal Source Breakdown - shown prominently at the top */}
+                {item.signals.contributions?.[filterPeriod] && item.signals.contributions[filterPeriod].length > 0 && (
+                  <div className="mb-2">
+                    <SignalSourceBadges contributions={item.signals.contributions[filterPeriod]} />
+                  </div>
+                )}
+                
+                {/* Period Signals - compact inline view */}
+                <div className="flex items-center gap-1.5 text-[10px] sm:text-xs">
+                  <span className="text-gray-500 text-[10px]">Perioden:</span>
                   {(['hourly', 'daily', 'weekly', 'longTerm'] as const).map(period => {
-                    const periodSignal = item.signals?.[period];
-                    const display = periodSignal ? getSignalDisplay(periodSignal.signal) : null;
-                    const score = periodSignal ? Math.round(periodSignal.score) : 0;
+                    // Use the shared helper function for filtered score calculation
+                    const score = Math.round(getFilteredScoreForPeriod(item.signals, period));
+                    const display = getSignalDisplayFromScore(score);
+                    
                     return (
                       <button
                         key={period}
@@ -1107,24 +1213,16 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                         className={`px-1 sm:px-1.5 py-0.5 rounded transition-all ${
                           period === filterPeriod ? 'ring-1 ring-blue-500' : ''
                         } ${display?.bgColor || 'bg-slate-700'}`}
-                        title={`${periodLabels[period]}: ${periodSignal?.reasoning || 'N/A'}`}
+                        title={`${periodLabels[period]}: Score ${score > 0 ? '+' : ''}${score}`}
                       >
                         <span className={`${display?.color || 'text-gray-400'} flex items-center gap-0.5`}>
-                          <span>{display?.emoji || '—'}</span>
+                          <span className="text-[10px]">{periodLabels[period]}</span>
                           <span className="font-medium">{score > 0 ? '+' : ''}{score}</span>
                         </span>
                       </button>
                     );
                   })}
                 </div>
-                
-                {/* Signal Source Breakdown */}
-                {item.signals.contributions?.[filterPeriod] && item.signals.contributions[filterPeriod].length > 0 && (
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-gray-500 text-[10px]">Quellen:</span>
-                    <SignalSourceBadges contributions={item.signals.contributions[filterPeriod]} />
-                  </div>
-                )}
                 
                 {/* Mobile-only: Quick action buttons */}
                 {authState.isAuthenticated && (
@@ -1271,20 +1369,14 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
         </div>
       )}
 
-      {/* Legend - compact */}
+      {/* Legend - compact signal explanation only */}
       <div className="text-[10px] sm:text-xs text-gray-500 pt-2 border-t border-slate-700 flex-shrink-0">
-        <div className="flex flex-wrap gap-x-3 gap-y-1 mb-1">
-          <span className="flex items-center gap-0.5"><span>🚀</span> Stark Kauf</span>
-          <span className="flex items-center gap-0.5"><span>📈</span> Kauf</span>
-          <span className="flex items-center gap-0.5"><span>➡️</span> Halten</span>
-          <span className="flex items-center gap-0.5"><span>📉</span> Verkauf</span>
-          <span className="flex items-center gap-0.5"><span>⚠️</span> Stark Verk.</span>
-        </div>
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-gray-600">
-          <span title="Technische Indikatoren (RSI, MACD, Bollinger)">📊 Tech</span>
-          <span title="News Sentiment">📰 News</span>
-          <span title="ML-Vorhersage (LSTM)">🤖 ML</span>
-          <span title="RL-Agenten">🎯 RL</span>
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          <span className="flex items-center gap-0.5"><span>🚀</span> Stark Kauf (≥50)</span>
+          <span className="flex items-center gap-0.5"><span>📈</span> Kauf (≥20)</span>
+          <span className="flex items-center gap-0.5"><span>➡️</span> Halten (±19)</span>
+          <span className="flex items-center gap-0.5"><span>📉</span> Verkauf (≤-20)</span>
+          <span className="flex items-center gap-0.5"><span>⚠️</span> Stark Verk. (≤-50)</span>
         </div>
       </div>
     </div>

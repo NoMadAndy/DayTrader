@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Watchlist Layout Redesign** - Übersichtlichere Darstellung mit optimaler Platznutzung
+  - Standard-Sortierung ist jetzt nach Score (höchster zuerst) statt alphabetisch
+  - Interaktive Quellen-Filter (Tech, News, ML, RL) direkt im Header anklickbar
+  - Scores aktualisieren sich dynamisch basierend auf ausgewählten Quellen
+  - Signal-Quellen werden prominenter angezeigt
+  - Verbesserte Legende mit klaren Score-Schwellenwerten (≥50, ≥20, ±19, ≤-20, ≤-50)
+
 ## [1.12.10] - 2026-01-28
 
 ### Changed
