@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.10] - 2026-01-28
+
+### Changed
+- **Desktop Watchlist: Redesign des Handeln-Buttons** - Der kleine Icon-Button rechts wurde durch einen prominenten "Handeln" Button ersetzt
+  - Neuer Button mit 💹 Emoji und "Handeln" Text für bessere Erkennbarkeit
+  - Klick öffnet Dropdown mit Quick-Trade-Funktionalität (wie auf dem Dashboard)
+  - Dropdown enthält: Portfolio-Guthaben, Buy/Short Toggle, Produkttyp-Auswahl (Aktie/CFD), Menge, Vorschau und Ausführen-Button
+  - Link zur vollständigen Trading-Seite im Dropdown
+  - Konsistentes Verhalten mit dem Dashboard Quick-Trade
+
 ## [1.12.9] - 2026-01-28
 
 ### Fixed
