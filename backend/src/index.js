@@ -50,6 +50,8 @@ app.use(compression());
 app.use(cors({
   origin: process.env.CORS_ORIGIN || '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Finnhub-Token', 'X-AlphaVantage-Key', 'X-TwelveData-Key'],
+  credentials: true,
 }));
 app.use(express.json());
 
@@ -397,21 +399,27 @@ app.get('/api/stream/stats', (req, res) => {
  */
 app.post('/api/auth/register', express.json(), async (req, res) => {
   if (!process.env.DATABASE_URL) {
+    console.log('Registration attempt failed: Database not configured');
     return res.status(503).json({ error: 'Database not configured' });
   }
   
   const { email, password, username } = req.body;
   
+  console.log(`Registration attempt for email: ${email?.substring(0, 3)}***`);
+  
   if (!email || !password) {
+    console.log('Registration failed: Missing required fields');
     return res.status(400).json({ error: 'Email and password are required' });
   }
   
   const result = await registerUser(email, password, username);
   
   if (!result.success) {
+    console.log(`Registration failed for ${email}: ${result.error}`);
     return res.status(400).json({ error: result.error });
   }
   
+  console.log(`Registration successful for email: ${email?.substring(0, 3)}***`);
   res.status(201).json({ user: result.user });
 });
 
@@ -422,12 +430,16 @@ app.post('/api/auth/register', express.json(), async (req, res) => {
  */
 app.post('/api/auth/login', express.json(), async (req, res) => {
   if (!process.env.DATABASE_URL) {
+    console.log('Login attempt failed: Database not configured');
     return res.status(503).json({ error: 'Database not configured' });
   }
   
   const { email, password } = req.body;
   
+  console.log(`Login attempt for email: ${email?.substring(0, 3)}***`);
+  
   if (!email || !password) {
+    console.log('Login failed: Missing required fields');
     return res.status(400).json({ error: 'Email and password are required' });
   }
   
@@ -437,9 +449,11 @@ app.post('/api/auth/login', express.json(), async (req, res) => {
   const result = await loginUser(email, password, userAgent, ipAddress);
   
   if (!result.success) {
+    console.log(`Login failed for ${email}: ${result.error}`);
     return res.status(401).json({ error: result.error });
   }
   
+  console.log(`Login successful for email: ${email?.substring(0, 3)}***`);
   res.json({ token: result.token, user: result.user });
 });
 

@@ -62,11 +62,13 @@ export async function registerUser(email, password, username = null) {
   // Validate email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
+    console.log(`Registration validation failed: Invalid email format for ${email}`);
     return { success: false, error: 'Invalid email format' };
   }
 
   // Validate password strength
   if (password.length < 8) {
+    console.log(`Registration validation failed: Password too short for ${email}`);
     return { success: false, error: 'Password must be at least 8 characters' };
   }
 
@@ -74,6 +76,7 @@ export async function registerUser(email, password, username = null) {
     // Check if user already exists
     const existing = await query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
     if (existing.rows.length > 0) {
+      console.log(`Registration failed: Email already exists - ${email}`);
       return { success: false, error: 'Email already registered' };
     }
 
@@ -94,6 +97,7 @@ export async function registerUser(email, password, username = null) {
       [user.id]
     );
 
+    console.log(`User registered successfully: ${email} (ID: ${user.id})`);
     return {
       success: true,
       user: {
@@ -104,8 +108,17 @@ export async function registerUser(email, password, username = null) {
       },
     };
   } catch (e) {
-    console.error('Registration error:', e);
-    return { success: false, error: 'Registration failed' };
+    console.error('Registration database error:', e.message);
+    console.error('Stack trace:', e.stack);
+    if (e.code === '23505') {
+      // PostgreSQL unique violation
+      return { success: false, error: 'Email already registered' };
+    }
+    if (e.code === '42P01') {
+      // PostgreSQL table does not exist
+      return { success: false, error: 'Database not properly initialized' };
+    }
+    return { success: false, error: `Registration failed: ${e.message}` };
   }
 }
 
@@ -126,6 +139,7 @@ export async function loginUser(email, password, userAgent = null, ipAddress = n
     );
 
     if (result.rows.length === 0) {
+      console.log(`Login failed: User not found - ${email}`);
       return { success: false, error: 'Invalid email or password' };
     }
 
@@ -133,12 +147,14 @@ export async function loginUser(email, password, userAgent = null, ipAddress = n
 
     // Check if user is active
     if (!user.is_active) {
+      console.log(`Login failed: Account deactivated - ${email}`);
       return { success: false, error: 'Account is deactivated' };
     }
 
     // Verify password
     const valid = await verifyPassword(password, user.password_hash);
     if (!valid) {
+      console.log(`Login failed: Invalid password - ${email}`);
       return { success: false, error: 'Invalid email or password' };
     }
 
@@ -159,6 +175,7 @@ export async function loginUser(email, password, userAgent = null, ipAddress = n
       [user.id]
     );
 
+    console.log(`Login successful: ${email} (ID: ${user.id})`);
     return {
       success: true,
       token,
@@ -169,8 +186,13 @@ export async function loginUser(email, password, userAgent = null, ipAddress = n
       },
     };
   } catch (e) {
-    console.error('Login error:', e);
-    return { success: false, error: 'Login failed' };
+    console.error('Login database error:', e.message);
+    console.error('Stack trace:', e.stack);
+    if (e.code === '42P01') {
+      // PostgreSQL table does not exist
+      return { success: false, error: 'Database not properly initialized' };
+    }
+    return { success: false, error: `Login failed: ${e.message}` };
   }
 }
 
