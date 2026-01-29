@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **mediastack and NewsData.io Provider Integration** - Added two new news providers for expanded coverage
+  - **mediastack Provider**: Multi-language news API with simple REST interface
+    - `/api/mediastack/news` - Backend proxy endpoint with 5-minute caching
+    - `mediastackProvider.ts` - Frontend TypeScript service
+    - Supports keyword filtering and multi-language support
+    - Free tier: ~100 calls/month
+  - **NewsData.io Provider**: Multi-source news aggregator with comprehensive filtering
+    - `/api/newsdata/news` - Backend proxy endpoint with 5-minute caching
+    - `newsdataProvider.ts` - Frontend TypeScript service
+    - Category filters and multi-language support
+    - Free tier: ~200 requests/day
+  - **Configuration Updates**: Added API key fields in both ApiConfigPanel and SettingsPage
+    - New input fields with links to free API key registration
+    - Integration into DataService for parallel news fetching
+    - Added to available news sources list
+    - API keys persist in localStorage and sync with server when authenticated
+  - **Environment Variables**: Added VITE_MEDIASTACK_API_KEY and VITE_NEWSDATA_API_KEY to .env.example
 - **New Provider Configuration in Settings Page** - Extended API Keys tab with new provider options
   - Organized into "Market Data APIs" and "News APIs" sections with visual indicators
   - Marketaux API Key field with description (sentiment analysis, multi-language support)

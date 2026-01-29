@@ -206,7 +206,7 @@ For a comprehensive list of additional financial news and data providers that ca
 📚 **[docs/DATA_PROVIDERS.md](docs/DATA_PROVIDERS.md)**
 
 This documentation covers:
-- Finance-specific News APIs with free tiers (Marketaux, FMP, Tiingo, etc.)
+- Finance-specific News APIs with free tiers (Marketaux, FMP, Tiingo, mediastack, NewsData.io)
 - General News APIs with business/finance filters
 - German RSS feeds (Börse Frankfurt, BaFin, Bundesbank, ECB/EZB, BMF)
 - Open data sources (GDELT)
