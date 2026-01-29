@@ -166,8 +166,7 @@ export async function register(email: string, password: string, username?: strin
     return { success: true, user: data.user };
   } catch (e) {
     console.error('Registration network error:', e);
-    const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-    if (errorMessage.includes('fetch')) {
+    if (e instanceof TypeError || (e instanceof Error && (e.name === 'NetworkError' || e.name === 'TypeError'))) {
       return { success: false, error: 'Cannot reach server. Please check your connection and try again.' };
     }
     return { success: false, error: 'Network error. Please try again.' };
@@ -209,8 +208,7 @@ export async function login(email: string, password: string): Promise<AuthResult
     return { success: true, user: data.user, token: data.token };
   } catch (e) {
     console.error('Login network error:', e);
-    const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-    if (errorMessage.includes('fetch')) {
+    if (e instanceof TypeError || (e instanceof Error && (e.name === 'NetworkError' || e.name === 'TypeError'))) {
       return { success: false, error: 'Cannot reach server. Please check your connection and try again.' };
     }
     return { success: false, error: 'Network error. Please try again.' };

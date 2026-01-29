@@ -118,7 +118,7 @@ export async function registerUser(email, password, username = null) {
       // PostgreSQL table does not exist
       return { success: false, error: 'Database not properly initialized' };
     }
-    return { success: false, error: `Registration failed: ${e.message}` };
+    return { success: false, error: 'Registration failed. Please try again later.' };
   }
 }
 
@@ -192,7 +192,7 @@ export async function loginUser(email, password, userAgent = null, ipAddress = n
       // PostgreSQL table does not exist
       return { success: false, error: 'Database not properly initialized' };
     }
-    return { success: false, error: `Login failed: ${e.message}` };
+    return { success: false, error: 'Login failed. Please try again later.' };
   }
 }
 
