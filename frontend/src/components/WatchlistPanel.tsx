@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DEFAULT_STOCKS } from '../utils/defaultStocks';
 import { useDataService, useSimpleAutoRefresh } from '../hooks';
+import { WatchlistTableView } from './WatchlistTableView';
 import { 
   calculateCombinedTradingSignals, 
   getSignalDisplay,
@@ -639,10 +640,11 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
   }, []);
 
   // Helper: Calculate filtered score based on selected sources for a specific period
-  const getFilteredScoreForPeriod = useCallback((signals: TradingSignalSummary | undefined, period: 'hourly' | 'daily' | 'weekly' | 'longTerm'): number => {
+  const getFilteredScoreForPeriod = useCallback((signals: TradingSignalSummary | undefined, period: string): number => {
     if (!signals) return 0;
-    const contributions = signals.contributions?.[period];
-    if (!contributions || contributions.length === 0) return signals[period]?.score ?? 0;
+    const p = period as 'hourly' | 'daily' | 'weekly' | 'longTerm';
+    const contributions = signals.contributions?.[p];
+    if (!contributions || contributions.length === 0) return signals[p]?.score ?? 0;
     
     let filteredScore = 0;
     contributions.forEach(c => {
@@ -905,7 +907,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
       </div>
 
       {/* Watchlist Items */}
-      <div className="space-y-2 flex-1 overflow-y-auto pr-1 -mr-1">
+      <div className="flex-1 overflow-y-auto pr-1 -mr-1">
         {isLoadingSymbols ? (
           <div className="text-center py-8 text-gray-400">
             <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2" />
@@ -925,13 +927,32 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
               </>
             )}
           </div>
-        ) : displayItems.map(item => {
-          const isExpanded = expandedSymbol === item.symbol;
-          
-          return (
-          <div 
-            key={item.symbol}
-            className={`bg-slate-800/50 rounded-lg border transition-all ${
+        ) : (
+          <>
+            {/* Desktop: Table View */}
+            <WatchlistTableView
+              items={displayItems}
+              currentSymbol={currentSymbol}
+              filterPeriod={filterPeriod}
+              onSelectSymbol={onSelectSymbol}
+              onRemoveSymbol={handleRemoveSymbol}
+              onSetFilterPeriod={setFilterPeriod}
+              getFilteredScoreForPeriod={getFilteredScoreForPeriod}
+              getSignalDisplayFromScore={getSignalDisplayFromScore}
+              SignalBadge={SignalBadge}
+              SignalSourceBadges={SignalSourceBadges}
+              isAuthenticated={authState.isAuthenticated}
+            />
+            
+            {/* Mobile: Card View */}
+            <div className="lg:hidden space-y-2">
+              {displayItems.map(item => {
+                const isExpanded = expandedSymbol === item.symbol;
+                
+                return (
+                <div 
+                  key={item.symbol}
+                  className={`bg-slate-800/50 rounded-lg border transition-all ${
               currentSymbol === item.symbol 
                 ? 'border-blue-500/50 bg-blue-500/10' 
                 : 'border-slate-700/50 hover:border-slate-600'
@@ -1294,6 +1315,9 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
           </div>
           );
         })}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Add Symbol Form - only for authenticated users */}
