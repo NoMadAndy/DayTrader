@@ -18,6 +18,8 @@ export interface DataProviderConfigs {
   marketaux: DataProviderConfig;
   fmp: DataProviderConfig;
   tiingo: DataProviderConfig;
+  mediastack: DataProviderConfig;
+  newsdata: DataProviderConfig;
   rssFeeds: DataProviderConfig; // No API key required
 }
 
@@ -75,4 +77,4 @@ export interface StockSearchResult {
 
 export type DataSourceType = 'finnhub' | 'alphaVantage' | 'twelveData' | 'yahoo';
 
-export type NewsSourceType = 'finnhub' | 'newsApi' | 'marketaux' | 'fmp' | 'tiingo' | 'rss';
+export type NewsSourceType = 'finnhub' | 'newsApi' | 'marketaux' | 'fmp' | 'tiingo' | 'mediastack' | 'newsdata' | 'rss';

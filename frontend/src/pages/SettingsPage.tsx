@@ -27,6 +27,8 @@ interface ApiConfig {
   marketauxApiKey: string;
   fmpApiKey: string;
   tiingoApiKey: string;
+  mediastackApiKey: string;
+  newsdataApiKey: string;
   enableRssFeeds: boolean;
 }
 
@@ -39,6 +41,8 @@ function loadStoredConfig(): ApiConfig {
     marketauxApiKey: '',
     fmpApiKey: '',
     tiingoApiKey: '',
+    mediastackApiKey: '',
+    newsdataApiKey: '',
     enableRssFeeds: true, // RSS feeds enabled by default (no API key required)
   };
   
@@ -106,6 +110,8 @@ export function SettingsPage() {
               marketauxApiKey: settings.apiKeys.marketaux || '',
               fmpApiKey: settings.apiKeys.fmp || '',
               tiingoApiKey: settings.apiKeys.tiingo || '',
+              mediastackApiKey: settings.apiKeys.mediastack || '',
+              newsdataApiKey: settings.apiKeys.newsdata || '',
               enableRssFeeds: enableRss,
             };
             setLocalConfig(serverConfig);
@@ -126,6 +132,8 @@ export function SettingsPage() {
       marketauxApiKey: config.marketauxApiKey || undefined,
       fmpApiKey: config.fmpApiKey || undefined,
       tiingoApiKey: config.tiingoApiKey || undefined,
+      mediastackApiKey: config.mediastackApiKey || undefined,
+      newsdataApiKey: config.newsdataApiKey || undefined,
       enableRssFeeds: config.enableRssFeeds,
       preferredSource: config.finnhubApiKey ? 'finnhub' : 
                        config.twelveDataApiKey ? 'twelveData' :
@@ -150,6 +158,8 @@ export function SettingsPage() {
           marketaux: localConfig.marketauxApiKey,
           fmp: localConfig.fmpApiKey,
           tiingo: localConfig.tiingoApiKey,
+          mediastack: localConfig.mediastackApiKey,
+          newsdata: localConfig.newsdataApiKey,
           enableRssFeeds: localConfig.enableRssFeeds ? 'true' : 'false',
         },
       });
@@ -165,6 +175,8 @@ export function SettingsPage() {
       marketauxApiKey: '',
       fmpApiKey: '',
       tiingoApiKey: '',
+      mediastackApiKey: '',
+      newsdataApiKey: '',
       enableRssFeeds: true,
     };
     setLocalConfig(empty);
@@ -529,6 +541,38 @@ export function SettingsPage() {
                       type="password"
                       value={localConfig.tiingoApiKey}
                       onChange={(e) => setLocalConfig(prev => ({ ...prev, tiingoApiKey: e.target.value }))}
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                      placeholder={t('settings.enterKey')}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">
+                      mediastack API Key
+                      <a href="https://mediastack.com/signup" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
+                        (Get free key - 100/month)
+                      </a>
+                    </label>
+                    <input
+                      type="password"
+                      value={localConfig.mediastackApiKey}
+                      onChange={(e) => setLocalConfig(prev => ({ ...prev, mediastackApiKey: e.target.value }))}
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                      placeholder={t('settings.enterKey')}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">
+                      NewsData.io API Key
+                      <a href="https://newsdata.io/register" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
+                        (Get free key - 200/day)
+                      </a>
+                    </label>
+                    <input
+                      type="password"
+                      value={localConfig.newsdataApiKey}
+                      onChange={(e) => setLocalConfig(prev => ({ ...prev, newsdataApiKey: e.target.value }))}
                       className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                       placeholder={t('settings.enterKey')}
                     />

@@ -28,6 +28,8 @@ import { NewsApiProvider } from './newsApiProvider';
 import { MarketauxProvider } from './marketauxProvider';
 import { FMPProvider } from './fmpProvider';
 import { TiingoProvider } from './tiingoProvider';
+import { MediastackProvider } from './mediastackProvider';
+import { NewsdataProvider } from './newsdataProvider';
 import { getRSSProvider, type RSSProvider } from './rssProvider';
 import { getRateLimiter, PROVIDER_RATE_LIMITS, type RateLimiter } from './rateLimiter';
 
@@ -68,6 +70,8 @@ export interface DataServiceConfig {
   marketauxApiKey?: string;
   fmpApiKey?: string;
   tiingoApiKey?: string;
+  mediastackApiKey?: string;
+  newsdataApiKey?: string;
   enableRssFeeds?: boolean;
   preferredSource?: DataSourceType;
   useCorsProxy?: boolean;
@@ -82,6 +86,8 @@ export class DataService {
   private marketauxProvider: MarketauxProvider | null = null;
   private fmpProvider: FMPProvider | null = null;
   private tiingoProvider: TiingoProvider | null = null;
+  private mediastackProvider: MediastackProvider | null = null;
+  private newsdataProvider: NewsdataProvider | null = null;
   private rssProvider: RSSProvider | null = null;
   private preferredSource: DataSourceType;
   private rateLimiter: RateLimiter;
@@ -128,6 +134,14 @@ export class DataService {
       this.tiingoProvider = new TiingoProvider(config.tiingoApiKey);
     }
 
+    if (config.mediastackApiKey) {
+      this.mediastackProvider = new MediastackProvider(config.mediastackApiKey);
+    }
+
+    if (config.newsdataApiKey) {
+      this.newsdataProvider = new NewsdataProvider(config.newsdataApiKey);
+    }
+
     // RSS feeds don't require API key
     if (config.enableRssFeeds !== false) {
       this.rssProvider = getRSSProvider(true);
@@ -170,6 +184,12 @@ export class DataService {
     }
     if (this.tiingoProvider?.isConfigured()) {
       sources.push('Tiingo');
+    }
+    if (this.mediastackProvider?.isConfigured()) {
+      sources.push('mediastack');
+    }
+    if (this.newsdataProvider?.isConfigured()) {
+      sources.push('NewsData.io');
     }
     if (this.rssProvider?.isConfigured()) {
       sources.push('RSS Feeds (DE)');
@@ -400,6 +420,24 @@ export class DataService {
           this.tiingoProvider.fetchStockNews(symbol)
             .then(news => { allNews.push(...news); })
             .catch(error => console.warn('Tiingo fetch failed:', error))
+        );
+      }
+
+      // Try mediastack (multi-language news)
+      if (this.mediastackProvider?.isConfigured()) {
+        newsPromises.push(
+          this.mediastackProvider.fetchStockNews(symbol)
+            .then(news => { allNews.push(...news); })
+            .catch(error => console.warn('mediastack fetch failed:', error))
+        );
+      }
+
+      // Try NewsData.io (multi-source aggregator)
+      if (this.newsdataProvider?.isConfigured()) {
+        newsPromises.push(
+          this.newsdataProvider.fetchStockNews(symbol)
+            .then(news => { allNews.push(...news); })
+            .catch(error => console.warn('NewsData.io fetch failed:', error))
         );
       }
 
