@@ -3576,6 +3576,166 @@ app.get('/api/tiingo/news', async (req, res) => {
   }
 });
 
+// ============================================================================
+// mediastack News API Proxy Endpoints
+// ============================================================================
+
+const MEDIASTACK_API_BASE = 'http://api.mediastack.com/v1';
+
+/**
+ * Proxy mediastack news endpoint
+ * GET /api/mediastack/news
+ * Query params: apiKey, keywords, language, limit
+ */
+app.get('/api/mediastack/news', async (req, res) => {
+  const { apiKey, keywords = '', language = 'en', limit = '20' } = req.query;
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'API key is required' });
+  }
+  
+  const cacheKey = `mediastack:news:${keywords || 'all'}:${language}`;
+  
+  try {
+    // Check cache first
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+    
+    const url = new URL(`${MEDIASTACK_API_BASE}/news`);
+    url.searchParams.set('access_key', apiKey);
+    url.searchParams.set('languages', language);
+    url.searchParams.set('limit', limit);
+    if (keywords) {
+      url.searchParams.set('keywords', keywords);
+    }
+    
+    const response = await fetch(url.toString(), {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'DayTrader/1.0'
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ 
+        error: 'mediastack API error',
+        message: data.error?.message || 'Unknown error'
+      });
+    }
+    
+    // Generate unique timestamp base for this batch
+    const batchTimestamp = Date.now();
+    
+    // Normalize to NewsItem format
+    const normalizedData = {
+      items: (data.data || []).map((item, index) => ({
+        id: `mediastack-${batchTimestamp}-${index}`,
+        headline: item.title || '',
+        summary: item.description || '',
+        source: item.source || 'mediastack',
+        url: item.url || '',
+        datetime: item.published_at ? new Date(item.published_at).getTime() : Date.now(),
+        image: item.image || undefined,
+        language: item.language || language,
+        category: item.category || undefined
+      })),
+      fetchedAt: new Date().toISOString()
+    };
+    
+    // Cache for 5 minutes
+    await stockCache.setCache(cacheKey, normalizedData, 300);
+    
+    res.json(normalizedData);
+  } catch (error) {
+    console.error('mediastack proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch from mediastack' });
+  }
+});
+
+// ============================================================================
+// NewsData.io News API Proxy Endpoints
+// ============================================================================
+
+const NEWSDATA_API_BASE = 'https://newsdata.io/api/1';
+
+/**
+ * Proxy NewsData.io news endpoint
+ * GET /api/newsdata/news
+ * Query params: apiKey, q, language, category
+ */
+app.get('/api/newsdata/news', async (req, res) => {
+  const { apiKey, q = '', language = 'en', category = 'business' } = req.query;
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'API key is required' });
+  }
+  
+  const cacheKey = `newsdata:news:${q || 'all'}:${language}:${category}`;
+  
+  try {
+    // Check cache first
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+    
+    const url = new URL(`${NEWSDATA_API_BASE}/news`);
+    url.searchParams.set('apikey', apiKey);
+    url.searchParams.set('language', language);
+    url.searchParams.set('category', category);
+    if (q) {
+      url.searchParams.set('q', q);
+    }
+    
+    const response = await fetch(url.toString(), {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'DayTrader/1.0'
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok || data.status === 'error') {
+      return res.status(response.status || 400).json({ 
+        error: 'NewsData.io API error',
+        message: data.message || 'Unknown error'
+      });
+    }
+    
+    // Generate unique timestamp base for this batch
+    const batchTimestamp = Date.now();
+    
+    // Normalize to NewsItem format
+    const normalizedData = {
+      items: (data.results || []).map((item, index) => ({
+        id: item.article_id || `newsdata-${batchTimestamp}-${index}`,
+        headline: item.title || '',
+        summary: item.description || item.content || '',
+        source: item.source_id || 'NewsData.io',
+        url: item.link || '',
+        datetime: item.pubDate ? new Date(item.pubDate).getTime() : Date.now(),
+        image: item.image_url || undefined,
+        language: item.language || language,
+        category: item.category?.[0] || category
+      })),
+      fetchedAt: new Date().toISOString()
+    };
+    
+    // Cache for 5 minutes
+    await stockCache.setCache(cacheKey, normalizedData, 300);
+    
+    res.json(normalizedData);
+  } catch (error) {
+    console.error('NewsData.io proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch from NewsData.io' });
+  }
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });

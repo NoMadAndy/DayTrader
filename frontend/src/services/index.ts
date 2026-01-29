@@ -13,6 +13,8 @@ export { NewsApiProvider } from './newsApiProvider';
 export { MarketauxProvider, createMarketauxProvider } from './marketauxProvider';
 export { FMPProvider, createFMPProvider } from './fmpProvider';
 export { TiingoProvider, createTiingoProvider } from './tiingoProvider';
+export { MediastackProvider, createMediastackProvider } from './mediastackProvider';
+export { NewsdataProvider, createNewsdataProvider } from './newsdataProvider';
 export { RSSProvider, getRSSProvider } from './rssProvider';
 export type { RSSFeedConfig, RSSNewsItem } from './rssProvider';
 export type { MarketauxNewsItem } from './marketauxProvider';

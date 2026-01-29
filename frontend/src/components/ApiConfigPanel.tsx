@@ -20,6 +20,8 @@ interface ApiConfig {
   marketauxApiKey: string;
   fmpApiKey: string;
   tiingoApiKey: string;
+  mediastackApiKey: string;
+  newsdataApiKey: string;
   enableRssFeeds: boolean;
 }
 
@@ -46,6 +48,8 @@ function loadStoredConfig(): ApiConfig {
     marketauxApiKey: '',
     fmpApiKey: '',
     tiingoApiKey: '',
+    mediastackApiKey: '',
+    newsdataApiKey: '',
     enableRssFeeds: true, // RSS feeds enabled by default (no API key required)
   };
   
@@ -63,6 +67,8 @@ function loadStoredConfig(): ApiConfig {
           marketauxApiKey: typeof parsedObj.marketauxApiKey === 'string' ? parsedObj.marketauxApiKey : '',
           fmpApiKey: typeof parsedObj.fmpApiKey === 'string' ? parsedObj.fmpApiKey : '',
           tiingoApiKey: typeof parsedObj.tiingoApiKey === 'string' ? parsedObj.tiingoApiKey : '',
+          mediastackApiKey: typeof parsedObj.mediastackApiKey === 'string' ? parsedObj.mediastackApiKey : '',
+          newsdataApiKey: typeof parsedObj.newsdataApiKey === 'string' ? parsedObj.newsdataApiKey : '',
           enableRssFeeds: parsedObj.enableRssFeeds !== false,
         };
       }
@@ -93,6 +99,8 @@ function getInitialConfig(): ApiConfig {
     marketauxApiKey: (import.meta.env.VITE_MARKETAUX_API_KEY as string) || '',
     fmpApiKey: (import.meta.env.VITE_FMP_API_KEY as string) || '',
     tiingoApiKey: (import.meta.env.VITE_TIINGO_API_KEY as string) || '',
+    mediastackApiKey: (import.meta.env.VITE_MEDIASTACK_API_KEY as string) || '',
+    newsdataApiKey: (import.meta.env.VITE_NEWSDATA_API_KEY as string) || '',
   };
   
   return {
@@ -103,6 +111,8 @@ function getInitialConfig(): ApiConfig {
     marketauxApiKey: envConfig.marketauxApiKey || stored.marketauxApiKey,
     fmpApiKey: envConfig.fmpApiKey || stored.fmpApiKey,
     tiingoApiKey: envConfig.tiingoApiKey || stored.tiingoApiKey,
+    mediastackApiKey: envConfig.mediastackApiKey || stored.mediastackApiKey,
+    newsdataApiKey: envConfig.newsdataApiKey || stored.newsdataApiKey,
     enableRssFeeds: stored.enableRssFeeds,
   };
 }
@@ -123,6 +133,8 @@ export function ApiConfigPanel() {
       marketauxApiKey: config.marketauxApiKey || undefined,
       fmpApiKey: config.fmpApiKey || undefined,
       tiingoApiKey: config.tiingoApiKey || undefined,
+      mediastackApiKey: config.mediastackApiKey || undefined,
+      newsdataApiKey: config.newsdataApiKey || undefined,
       enableRssFeeds: config.enableRssFeeds,
       preferredSource: config.finnhubApiKey ? 'finnhub' : 
                        config.twelveDataApiKey ? 'twelveData' :
@@ -140,7 +152,8 @@ export function ApiConfigPanel() {
       const hasAnyConfig = initial.finnhubApiKey || initial.alphaVantageApiKey || 
                           initial.twelveDataApiKey || initial.newsApiKey ||
                           initial.marketauxApiKey || initial.fmpApiKey || 
-                          initial.tiingoApiKey || initial.enableRssFeeds;
+                          initial.tiingoApiKey || initial.mediastackApiKey ||
+                          initial.newsdataApiKey || initial.enableRssFeeds;
       if (hasAnyConfig) {
         applyConfig(initial);
       }
@@ -163,6 +176,8 @@ export function ApiConfigPanel() {
       marketauxApiKey: '',
       fmpApiKey: '',
       tiingoApiKey: '',
+      mediastackApiKey: '',
+      newsdataApiKey: '',
       enableRssFeeds: true,
     };
     setLocalConfig(empty);
@@ -173,7 +188,8 @@ export function ApiConfigPanel() {
   const hasAnyKey = localConfig.finnhubApiKey || localConfig.alphaVantageApiKey || 
                     localConfig.twelveDataApiKey || localConfig.newsApiKey ||
                     localConfig.marketauxApiKey || localConfig.fmpApiKey ||
-                    localConfig.tiingoApiKey;
+                    localConfig.tiingoApiKey || localConfig.mediastackApiKey ||
+                    localConfig.newsdataApiKey;
 
   return (
     <div className="relative">
@@ -336,6 +352,38 @@ export function ApiConfigPanel() {
                     onChange={(e) => setLocalConfig(prev => ({ ...prev, tiingoApiKey: e.target.value }))}
                     className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
                     placeholder="Enter Tiingo API key"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">
+                    mediastack API Key
+                    <a href="https://mediastack.com/signup" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300 text-xs">
+                      (Get free key - 100/month)
+                    </a>
+                  </label>
+                  <input
+                    type="password"
+                    value={localConfig.mediastackApiKey}
+                    onChange={(e) => setLocalConfig(prev => ({ ...prev, mediastackApiKey: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+                    placeholder="Enter mediastack API key"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">
+                    NewsData.io API Key
+                    <a href="https://newsdata.io/register" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300 text-xs">
+                      (Get free key - 200/day)
+                    </a>
+                  </label>
+                  <input
+                    type="password"
+                    value={localConfig.newsdataApiKey}
+                    onChange={(e) => setLocalConfig(prev => ({ ...prev, newsdataApiKey: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+                    placeholder="Enter NewsData.io API key"
                   />
                 </div>
               </div>
