@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Watchlist Desktop Layout Redesign** - Kompakte Tabellenansicht für bessere Platzausnutzung auf Desktop
+  - Neue horizontale Tabellenansicht mit Spalten: Symbol, Kurs, Signal, Quellen, Perioden, Aktionen
+  - Company Info (KGV, Marktkapitalisierung, Dividende) inline dargestellt als Badges
+  - Alle Perioden (1h, 1d, 1w, Long) gleichzeitig sichtbar ohne Scrollen
+  - Signal-Quellen-Breakdown übersichtlicher angeordnet
+  - Bessere Nutzung des horizontalen Platzes auf großen Bildschirmen
+  - Mobile Ansicht bleibt als vertikales Karten-Layout erhalten (responsive)
 - **Watchlist Layout Redesign** - Übersichtlichere Darstellung mit optimaler Platznutzung
   - Standard-Sortierung ist jetzt nach Score (höchster zuerst) statt alphabetisch
   - Interaktive Quellen-Filter (Tech, News, ML, RL) direkt im Header anklickbar
