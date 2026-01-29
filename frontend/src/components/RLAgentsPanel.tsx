@@ -111,6 +111,30 @@ export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
     });
   };
   
+  // Helper to check if Transformer parameters are valid
+  const getTransformerValidation = () => {
+    if (!formConfig.use_transformer_policy) return { isValid: true, message: '' };
+    
+    const dModel = formConfig.transformer_d_model || 256;
+    const nHeads = formConfig.transformer_n_heads || 8;
+    
+    if (dModel % 2 !== 0) {
+      return { 
+        isValid: false, 
+        message: 'ℹ️ d_model must be even' 
+      };
+    }
+    
+    if (dModel % nHeads !== 0) {
+      return { 
+        isValid: false, 
+        message: `ℹ️ d_model (${dModel}) must be divisible by n_heads (${nHeads})` 
+      };
+    }
+    
+    return { isValid: true, message: '✓ Valid configuration' };
+  };
+  
   // Subscribe to auth state changes
   useEffect(() => {
     const unsubscribe = subscribeToAuth(setAuthState);
@@ -278,6 +302,28 @@ export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
     if (!formName.trim()) {
       setError('Agent name is required');
       return;
+    }
+    
+    // Validate Transformer architecture parameters
+    if (formConfig.use_transformer_policy) {
+      const dModel = formConfig.transformer_d_model || 256;
+      const nHeads = formConfig.transformer_n_heads || 8;
+      
+      // Check d_model is even
+      if (dModel % 2 !== 0) {
+        setError(`d_model must be even (got ${dModel}). Try 256, 128, or 512.`);
+        return;
+      }
+      
+      // Check d_model is divisible by n_heads
+      if (dModel % nHeads !== 0) {
+        const suggested = Math.ceil(dModel / nHeads) * nHeads;
+        setError(
+          `d_model (${dModel}) must be divisible by n_heads (${nHeads}). ` +
+          `Try setting d_model to ${suggested} or n_heads to ${Math.floor(dModel / Math.floor(dModel / nHeads))}.`
+        );
+        return;
+      }
     }
     
     setError(null);
@@ -852,6 +898,13 @@ export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
                     step="0.05"
                   />
                 </div>
+              </div>
+            )}
+            
+            {/* Validation message */}
+            {formConfig.use_transformer_policy && showTransformerOptions && (
+              <div className={`mt-2 text-xs ${getTransformerValidation().isValid ? 'text-green-400' : 'text-yellow-400'}`}>
+                {getTransformerValidation().message}
               </div>
             )}
           </div>

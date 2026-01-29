@@ -31,6 +31,13 @@ class PositionalEncoding(nn.Module):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
         
+        # Validate d_model is even for proper positional encoding
+        if d_model % 2 != 0:
+            raise ValueError(
+                f"d_model ({d_model}) must be even for positional encoding. "
+                "Try using an even number like 256, 128, or 512."
+            )
+        
         # Create positional encoding matrix
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
@@ -129,6 +136,13 @@ class TransformerBlock(nn.Module):
         dropout: float = 0.1
     ):
         super().__init__()
+        
+        # Validate d_model is divisible by n_heads
+        if d_model % n_heads != 0:
+            raise ValueError(
+                f"d_model ({d_model}) must be divisible by n_heads ({n_heads}). "
+                f"Try adjusting d_model to a multiple of {n_heads} (e.g., {(d_model // n_heads + 1) * n_heads})"
+            )
         
         self.attention = nn.MultiheadAttention(
             d_model, n_heads, dropout=dropout, batch_first=True
@@ -299,6 +313,14 @@ class TransformerTradingPolicy(nn.Module):
         n_actions: int = 7,
     ):
         super().__init__()
+        
+        # Validate architecture constraints
+        if d_model % 2 != 0:
+            raise ValueError(f"d_model must be even, got {d_model}")
+        if d_model % n_heads != 0:
+            raise ValueError(
+                f"d_model ({d_model}) must be divisible by n_heads ({n_heads})"
+            )
         
         self.input_dim = input_dim
         self.seq_len = seq_len
