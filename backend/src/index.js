@@ -20,6 +20,7 @@ import * as trading from './trading.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import Parser from 'rss-parser';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -3075,6 +3076,491 @@ app.delete('/api/trading/backtest/session/:id', authMiddleware, async (req, res)
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: 'Failed to delete backtest session' });
+  }
+});
+
+// ============================================================================
+// RSS Feed Endpoints (German News Sources)
+// ============================================================================
+
+// Initialize RSS Parser
+const rssParser = new Parser({
+  customFields: {
+    item: [
+      ['dc:creator', 'creator'],
+      ['dc:date', 'dcDate'],
+      ['pubDate', 'pubDate'],
+    ]
+  },
+  timeout: 10000, // 10 second timeout
+});
+
+// RSS Feed configurations
+const RSS_FEEDS = {
+  'boerse-frankfurt': {
+    name: 'Börse Frankfurt',
+    url: 'https://www.boerse-frankfurt.de/nachrichten/rss',
+    language: 'de',
+    category: 'market'
+  },
+  'bafin': {
+    name: 'BaFin',
+    url: 'https://www.bafin.de/SiteGlobals/Functions/RSSFeed/DE/RSSNewsfeed/Verbraucher/rssVerbraucher.xml',
+    language: 'de',
+    category: 'regulatory'
+  },
+  'ecb': {
+    name: 'European Central Bank',
+    url: 'https://www.ecb.europa.eu/rss/press.html',
+    language: 'en',
+    category: 'macro'
+  },
+  'bundesbank': {
+    name: 'Deutsche Bundesbank',
+    url: 'https://www.bundesbank.de/resource/feed/rss/de/aktuelles',
+    language: 'de',
+    category: 'macro'
+  }
+};
+
+// RSS Feed cache TTL (5 minutes)
+const RSS_CACHE_TTL = 5 * 60;
+
+/**
+ * Get available RSS feeds configuration
+ * GET /api/rss/feeds
+ */
+app.get('/api/rss/feeds', (req, res) => {
+  const feeds = Object.entries(RSS_FEEDS).map(([id, config]) => ({
+    id,
+    name: config.name,
+    language: config.language,
+    category: config.category
+  }));
+  res.json({ feeds });
+});
+
+/**
+ * Fetch news from a specific RSS feed
+ * GET /api/rss/feed/:feedId
+ */
+app.get('/api/rss/feed/:feedId', async (req, res) => {
+  const { feedId } = req.params;
+  const feedConfig = RSS_FEEDS[feedId];
+  
+  if (!feedConfig) {
+    return res.status(400).json({ error: 'Unknown feed ID', availableFeeds: Object.keys(RSS_FEEDS) });
+  }
+  
+  const cacheKey = `rss:${feedId}`;
+  
+  try {
+    // Check cache first
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      return res.json({ 
+        ...cached.data, 
+        _cached: true, 
+        _cachedAt: cached.cachedAt 
+      });
+    }
+    
+    // Fetch and parse RSS feed
+    const feed = await rssParser.parseURL(feedConfig.url);
+    
+    // Normalize feed items to NewsItem format
+    const items = (feed.items || []).slice(0, 20).map((item, index) => ({
+      id: `rss-${feedId}-${index}-${Date.now()}`,
+      headline: item.title || '',
+      summary: item.contentSnippet || item.content || '',
+      source: feedConfig.name,
+      url: item.link || '',
+      datetime: item.pubDate ? new Date(item.pubDate).getTime() : 
+               item.isoDate ? new Date(item.isoDate).getTime() : Date.now(),
+      image: item.enclosure?.url || undefined,
+      language: feedConfig.language,
+      category: feedConfig.category
+    }));
+    
+    const result = {
+      feedId,
+      feedName: feedConfig.name,
+      language: feedConfig.language,
+      category: feedConfig.category,
+      items,
+      fetchedAt: new Date().toISOString()
+    };
+    
+    // Cache the result
+    await stockCache.setCache(cacheKey, result, RSS_CACHE_TTL);
+    
+    res.json(result);
+  } catch (error) {
+    console.error(`RSS feed fetch error for ${feedId}:`, error.message);
+    res.status(500).json({ 
+      error: 'Failed to fetch RSS feed',
+      feedId,
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Fetch news from all RSS feeds
+ * GET /api/rss/all
+ */
+app.get('/api/rss/all', async (req, res) => {
+  const cacheKey = 'rss:all';
+  
+  try {
+    // Check cache first
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      return res.json({ 
+        ...cached.data, 
+        _cached: true, 
+        _cachedAt: cached.cachedAt 
+      });
+    }
+    
+    // Fetch all feeds in parallel
+    const feedPromises = Object.entries(RSS_FEEDS).map(async ([feedId, config]) => {
+      try {
+        const feed = await rssParser.parseURL(config.url);
+        return (feed.items || []).slice(0, 10).map((item, index) => ({
+          id: `rss-${feedId}-${index}-${Date.now()}`,
+          headline: item.title || '',
+          summary: item.contentSnippet || item.content || '',
+          source: config.name,
+          url: item.link || '',
+          datetime: item.pubDate ? new Date(item.pubDate).getTime() : 
+                   item.isoDate ? new Date(item.isoDate).getTime() : Date.now(),
+          image: item.enclosure?.url || undefined,
+          language: config.language,
+          category: config.category,
+          feedId
+        }));
+      } catch (error) {
+        console.error(`RSS fetch failed for ${feedId}:`, error.message);
+        return [];
+      }
+    });
+    
+    const allFeeds = await Promise.all(feedPromises);
+    const allItems = allFeeds.flat().sort((a, b) => b.datetime - a.datetime);
+    
+    const result = {
+      items: allItems.slice(0, 50),
+      feedCount: Object.keys(RSS_FEEDS).length,
+      fetchedAt: new Date().toISOString()
+    };
+    
+    // Cache the result
+    await stockCache.setCache(cacheKey, result, RSS_CACHE_TTL);
+    
+    res.json(result);
+  } catch (error) {
+    console.error('RSS all feeds fetch error:', error.message);
+    res.status(500).json({ error: 'Failed to fetch RSS feeds', message: error.message });
+  }
+});
+
+// ============================================================================
+// Marketaux API Proxy Endpoints
+// ============================================================================
+
+const MARKETAUX_API_BASE = 'https://api.marketaux.com/v1';
+
+/**
+ * Proxy Marketaux news endpoint
+ * GET /api/marketaux/news
+ * Query params: symbols, language, limit, apiKey
+ */
+app.get('/api/marketaux/news', async (req, res) => {
+  const { symbols, language = 'en', limit = '10', apiKey } = req.query;
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'API key is required' });
+  }
+  
+  const cacheKey = `marketaux:news:${symbols || 'all'}:${language}`;
+  
+  try {
+    // Check cache first
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+    
+    const url = new URL(`${MARKETAUX_API_BASE}/news/all`);
+    url.searchParams.set('api_token', apiKey);
+    url.searchParams.set('language', language);
+    url.searchParams.set('limit', limit);
+    if (symbols) {
+      url.searchParams.set('symbols', symbols);
+    }
+    
+    const response = await fetch(url.toString(), {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'DayTrader/1.0'
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ 
+        error: 'Marketaux API error',
+        message: data.error || response.statusText
+      });
+    }
+    
+    // Normalize to NewsItem format
+    const normalizedData = {
+      items: (data.data || []).map((item, index) => ({
+        id: item.uuid || `marketaux-${index}-${Date.now()}`,
+        headline: item.title || '',
+        summary: item.description || item.snippet || '',
+        source: item.source || 'Marketaux',
+        url: item.url || '',
+        datetime: item.published_at ? new Date(item.published_at).getTime() : Date.now(),
+        image: item.image_url || undefined,
+        related: item.entities?.map(e => e.symbol).filter(Boolean) || [],
+        sentiment: item.sentiment_score != null ? item.sentiment_score : undefined,
+        language: item.language || language
+      })),
+      meta: data.meta,
+      fetchedAt: new Date().toISOString()
+    };
+    
+    // Cache for 5 minutes
+    await stockCache.setCache(cacheKey, normalizedData, 300);
+    
+    res.json(normalizedData);
+  } catch (error) {
+    console.error('Marketaux proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch from Marketaux', message: error.message });
+  }
+});
+
+// ============================================================================
+// Financial Modeling Prep (FMP) API Proxy Endpoints
+// ============================================================================
+
+const FMP_API_BASE = 'https://financialmodelingprep.com/api/v3';
+
+/**
+ * Proxy FMP stock news endpoint
+ * GET /api/fmp/news/stock
+ * Query params: tickers, limit, apiKey
+ */
+app.get('/api/fmp/news/stock', async (req, res) => {
+  const { tickers, limit = '10', apiKey } = req.query;
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'API key is required' });
+  }
+  
+  const cacheKey = `fmp:stocknews:${tickers || 'all'}`;
+  
+  try {
+    // Check cache first
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+    
+    const url = new URL(`${FMP_API_BASE}/stock_news`);
+    url.searchParams.set('apikey', apiKey);
+    url.searchParams.set('limit', limit);
+    if (tickers) {
+      url.searchParams.set('tickers', tickers);
+    }
+    
+    const response = await fetch(url.toString(), {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'DayTrader/1.0'
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ 
+        error: 'FMP API error',
+        message: data.Error || response.statusText
+      });
+    }
+    
+    // Normalize to NewsItem format
+    const normalizedData = {
+      items: (data || []).map((item, index) => ({
+        id: `fmp-${index}-${Date.now()}`,
+        headline: item.title || '',
+        summary: item.text || '',
+        source: item.site || 'FMP',
+        url: item.url || '',
+        datetime: item.publishedDate ? new Date(item.publishedDate).getTime() : Date.now(),
+        image: item.image || undefined,
+        related: item.symbol ? [item.symbol] : [],
+        language: 'en'
+      })),
+      fetchedAt: new Date().toISOString()
+    };
+    
+    // Cache for 5 minutes
+    await stockCache.setCache(cacheKey, normalizedData, 300);
+    
+    res.json(normalizedData);
+  } catch (error) {
+    console.error('FMP proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch from FMP', message: error.message });
+  }
+});
+
+/**
+ * Proxy FMP general market news endpoint
+ * GET /api/fmp/news/general
+ * Query params: limit, apiKey
+ */
+app.get('/api/fmp/news/general', async (req, res) => {
+  const { limit = '20', apiKey } = req.query;
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'API key is required' });
+  }
+  
+  const cacheKey = `fmp:generalnews`;
+  
+  try {
+    // Check cache first
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+    
+    const url = new URL(`${FMP_API_BASE}/stock-market-news`);
+    url.searchParams.set('apikey', apiKey);
+    url.searchParams.set('limit', limit);
+    
+    const response = await fetch(url.toString(), {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'DayTrader/1.0'
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ 
+        error: 'FMP API error',
+        message: data.Error || response.statusText
+      });
+    }
+    
+    // Normalize to NewsItem format
+    const normalizedData = {
+      items: (data || []).map((item, index) => ({
+        id: `fmp-general-${index}-${Date.now()}`,
+        headline: item.title || '',
+        summary: item.text || '',
+        source: item.site || 'FMP',
+        url: item.url || '',
+        datetime: item.publishedDate ? new Date(item.publishedDate).getTime() : Date.now(),
+        image: item.image || undefined,
+        related: item.symbol ? [item.symbol] : [],
+        language: 'en'
+      })),
+      fetchedAt: new Date().toISOString()
+    };
+    
+    // Cache for 5 minutes
+    await stockCache.setCache(cacheKey, normalizedData, 300);
+    
+    res.json(normalizedData);
+  } catch (error) {
+    console.error('FMP general news proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch from FMP', message: error.message });
+  }
+});
+
+// ============================================================================
+// Tiingo News API Proxy Endpoints
+// ============================================================================
+
+const TIINGO_API_BASE = 'https://api.tiingo.com';
+
+/**
+ * Proxy Tiingo news endpoint
+ * GET /api/tiingo/news
+ * Query params: tickers, limit, apiKey
+ */
+app.get('/api/tiingo/news', async (req, res) => {
+  const { tickers, limit = '10', apiKey } = req.query;
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'API key is required' });
+  }
+  
+  const cacheKey = `tiingo:news:${tickers || 'all'}`;
+  
+  try {
+    // Check cache first
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) {
+      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+    }
+    
+    const url = new URL(`${TIINGO_API_BASE}/tiingo/news`);
+    url.searchParams.set('token', apiKey);
+    url.searchParams.set('limit', limit);
+    if (tickers) {
+      url.searchParams.set('tickers', tickers);
+    }
+    
+    const response = await fetch(url.toString(), {
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'DayTrader/1.0'
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ 
+        error: 'Tiingo API error',
+        message: data.detail || response.statusText
+      });
+    }
+    
+    // Normalize to NewsItem format
+    const normalizedData = {
+      items: (data || []).map((item, index) => ({
+        id: item.id?.toString() || `tiingo-${index}-${Date.now()}`,
+        headline: item.title || '',
+        summary: item.description || '',
+        source: item.source || 'Tiingo',
+        url: item.url || '',
+        datetime: item.publishedDate ? new Date(item.publishedDate).getTime() : Date.now(),
+        image: undefined, // Tiingo doesn't provide images
+        related: item.tickers || [],
+        language: 'en'
+      })),
+      fetchedAt: new Date().toISOString()
+    };
+    
+    // Cache for 5 minutes
+    await stockCache.setCache(cacheKey, normalizedData, 300);
+    
+    res.json(normalizedData);
+  } catch (error) {
+    console.error('Tiingo proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch from Tiingo', message: error.message });
   }
 });
 
