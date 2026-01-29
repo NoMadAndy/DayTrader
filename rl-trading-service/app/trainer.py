@@ -13,6 +13,7 @@ import os
 import json
 import logging
 import asyncio
+import warnings
 from datetime import datetime
 from typing import Dict, Optional, List, Any, Tuple
 from pathlib import Path
@@ -307,6 +308,11 @@ class TradingAgentTrainer:
             # Determine architecture based on config
             use_transformer = getattr(config, 'use_transformer_policy', False)
             
+            # Log GPU usage if enabled
+            if settings.device == "cuda":
+                log(f"🚀 GPU Training enabled: {torch.cuda.get_device_name(0)}")
+                log(f"   VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+            
             if use_transformer:
                 log(f"🧠 Creating PPO model with Transformer architecture...")
                 log(f"   d_model: {config.transformer_d_model}")
@@ -367,21 +373,48 @@ class TradingAgentTrainer:
                     activation_fn=torch.nn.ReLU,
                 )
             
-            model = PPO(
-                policy="MlpPolicy",
-                env=vec_env,
-                learning_rate=config.learning_rate,
-                n_steps=settings.default_n_steps,
-                batch_size=settings.default_batch_size,
-                n_epochs=10,
-                gamma=config.gamma,
-                ent_coef=config.ent_coef,
-                clip_range=0.2,
-                policy_kwargs=policy_kwargs,
-                verbose=1,
-                device=self.device,
-                tensorboard_log=str(self.checkpoint_dir / "tensorboard"),
-            )
+            # Create PPO model
+            # For transformer architecture, suppress misleading SB3 GPU warning
+            # Our TransformerFeaturesExtractor contains CNN+Transformer (~2.5-3M params)
+            # and significantly benefits from GPU acceleration
+            if use_transformer:
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore",
+                        message=".*GPU.*primarily intended to run on the CPU.*",
+                        category=UserWarning,
+                    )
+                    model = PPO(
+                        policy="MlpPolicy",
+                        env=vec_env,
+                        learning_rate=config.learning_rate,
+                        n_steps=settings.default_n_steps,
+                        batch_size=settings.default_batch_size,
+                        n_epochs=10,
+                        gamma=config.gamma,
+                        ent_coef=config.ent_coef,
+                        clip_range=0.2,
+                        policy_kwargs=policy_kwargs,
+                        verbose=1,
+                        device=self.device,
+                        tensorboard_log=str(self.checkpoint_dir / "tensorboard"),
+                    )
+            else:
+                model = PPO(
+                    policy="MlpPolicy",
+                    env=vec_env,
+                    learning_rate=config.learning_rate,
+                    n_steps=settings.default_n_steps,
+                    batch_size=settings.default_batch_size,
+                    n_epochs=10,
+                    gamma=config.gamma,
+                    ent_coef=config.ent_coef,
+                    clip_range=0.2,
+                    policy_kwargs=policy_kwargs,
+                    verbose=1,
+                    device=self.device,
+                    tensorboard_log=str(self.checkpoint_dir / "tensorboard"),
+                )
             
             # Setup callbacks
             progress_cb = TrainingProgressCallback(
