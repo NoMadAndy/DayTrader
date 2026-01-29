@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **RL Training - JSON Serialization Error for Infinity/NaN Values** - Fixed 500 Internal Server Error in training status endpoint
+  - Error: `ValueError: Out of range float values are not JSON compliant`
+  - Root cause: `best_reward` initialized with `-np.inf` and `mean_reward` could be `nan` when no episodes completed
+  - Solution: 
+    - Added `sanitize_float()` utility function to convert inf/nan to JSON-safe `None` values
+    - Changed `best_reward` initialization from `-np.inf` to `None`
+    - Sanitize `mean_reward` and `best_reward` before JSON serialization in both training endpoints
+    - Updated logging to handle `None` values properly
+  - API now returns `null` for `best_reward` when no episodes completed, `0.0` for `mean_reward`
 - **RL Training - Conv1d Tensor Size Mismatch** - Fixed tensor concatenation error in MultiScaleCNN
   - Error: `Sizes of tensors must match except in dimension 1. Expected size 60 but got size 61`
   - Root cause: Even kernel sizes (14) with explicit padding values did not account for asymmetric padding, producing incorrect output length (61 instead of 60)
