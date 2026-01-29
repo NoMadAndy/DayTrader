@@ -161,6 +161,42 @@ class AgentConfig(BaseModel):
         description="Entropy coefficient for exploration"
     )
     
+    # Transformer Architecture Settings (Advanced)
+    use_transformer_policy: bool = Field(
+        default=False,
+        description="Use advanced Transformer-enhanced architecture instead of MLP"
+    )
+    transformer_d_model: int = Field(
+        default=256,
+        ge=64,
+        le=512,
+        description="Transformer model dimension"
+    )
+    transformer_n_heads: int = Field(
+        default=8,
+        ge=1,
+        le=16,
+        description="Number of attention heads"
+    )
+    transformer_n_layers: int = Field(
+        default=4,
+        ge=1,
+        le=8,
+        description="Number of transformer encoder blocks"
+    )
+    transformer_d_ff: int = Field(
+        default=512,
+        ge=128,
+        le=2048,
+        description="Transformer feedforward dimension"
+    )
+    transformer_dropout: float = Field(
+        default=0.1,
+        ge=0.0,
+        le=0.5,
+        description="Dropout rate for transformer"
+    )
+    
     class Config:
         use_enum_values = True
 
