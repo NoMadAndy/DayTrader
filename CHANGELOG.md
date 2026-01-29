@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Multi-Source News Integration for FinBERT Analysis** - Extended news aggregation with new data providers
+  - **Backend RSS Feed Support**: New RSS parser integration with endpoints for German financial sources
+    - `/api/rss/feeds` - List available RSS feed configurations
+    - `/api/rss/feed/:feedId` - Fetch news from specific feed (boerse-frankfurt, bafin, ecb, bundesbank)
+    - `/api/rss/all` - Aggregate news from all RSS feeds
+  - **Marketaux Provider**: Finance-specific news API with multi-language support and sentiment data
+    - `/api/marketaux/news` - Proxy endpoint for Marketaux API
+  - **Financial Modeling Prep (FMP) Provider**: Comprehensive financial news with ticker-specific filtering
+    - `/api/fmp/news/stock` - Stock-specific news
+    - `/api/fmp/news/general` - General market news
+  - **Tiingo Provider**: Institutional-grade news API with historical archive
+    - `/api/tiingo/news` - News endpoint with ticker filtering
+  - **Frontend Provider Services**: New TypeScript services for all providers
+    - `rssProvider.ts` - RSS feed integration
+    - `marketauxProvider.ts` - Marketaux API client
+    - `fmpProvider.ts` - FMP API client
+    - `tiingoProvider.ts` - Tiingo API client
+  - **Enhanced DataService**: Parallel news fetching from all configured providers
+    - All news sources now feed into unified news aggregation
+    - Automatic deduplication by headline
+    - Results sorted by recency and limited to prevent overwhelm
+  - **API Configuration Panel Updates**: New API key inputs for Marketaux, FMP, Tiingo
+    - Organized into Market Data and News API sections
+    - RSS Feeds toggle (enabled by default, no API key required)
+    - Links to free API key registration for all providers
 - **Financial Data Providers Documentation** - Comprehensive research documentation for additional news and data providers
   - Created `docs/DATA_PROVIDERS.md` with detailed provider information
   - Finance-specific APIs with free tiers: Marketaux, Alpha Vantage News, FMP, Tiingo, EODHD, Alpaca, Benzinga

@@ -9,6 +9,14 @@ export { AlphaVantageProvider } from './alphaVantageProvider';
 export { TwelveDataProvider } from './twelveDataProvider';
 export { YahooFinanceProvider } from './yahooFinanceProvider';
 export { NewsApiProvider } from './newsApiProvider';
+// New news providers
+export { MarketauxProvider, createMarketauxProvider } from './marketauxProvider';
+export { FMPProvider, createFMPProvider } from './fmpProvider';
+export { TiingoProvider, createTiingoProvider } from './tiingoProvider';
+export { RSSProvider, getRSSProvider } from './rssProvider';
+export type { RSSFeedConfig, RSSNewsItem } from './rssProvider';
+export type { MarketauxNewsItem } from './marketauxProvider';
+
 export { DataService, getDataService, configureDataService } from './dataService';
 export { mlService } from './mlService';
 export type { MLPrediction, MLPredictResponse, MLTrainStatus, MLModelInfo, MLServiceHealth } from './mlService';
@@ -87,12 +95,14 @@ export type { MLSentimentResult, MLSentimentStatus } from './mlSentimentService'
 
 export type {
   DataProvider,
+  NewsProvider,
   DataProviderConfig,
   DataProviderConfigs,
   QuoteData,
   NewsItem,
   StockSearchResult,
   DataSourceType,
+  NewsSourceType,
 } from './types';
 
 // Trading Service (Paper Trading / Börsenspiel)

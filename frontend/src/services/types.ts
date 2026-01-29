@@ -14,6 +14,11 @@ export interface DataProviderConfigs {
   alphaVantage: DataProviderConfig;
   twelveData: DataProviderConfig;
   newsApi: DataProviderConfig;
+  // New providers
+  marketaux: DataProviderConfig;
+  fmp: DataProviderConfig;
+  tiingo: DataProviderConfig;
+  rssFeeds: DataProviderConfig; // No API key required
 }
 
 export interface QuoteData {
@@ -39,6 +44,10 @@ export interface NewsItem {
   image?: string;
   related?: string[];
   sentiment?: 'positive' | 'negative' | 'neutral';
+  // Extended fields for new providers
+  language?: string;
+  category?: string;
+  sentimentScore?: number; // Raw sentiment score from provider (-1 to 1)
 }
 
 export interface DataProvider {
@@ -50,6 +59,13 @@ export interface DataProvider {
   searchSymbols?(query: string): Promise<Array<{ symbol: string; name: string }>>;
 }
 
+export interface NewsProvider {
+  name: string;
+  isConfigured(): boolean;
+  fetchStockNews?(symbol: string): Promise<NewsItem[]>;
+  fetchMarketNews?(): Promise<NewsItem[]>;
+}
+
 export interface StockSearchResult {
   symbol: string;
   name: string;
@@ -58,3 +74,5 @@ export interface StockSearchResult {
 }
 
 export type DataSourceType = 'finnhub' | 'alphaVantage' | 'twelveData' | 'yahoo';
+
+export type NewsSourceType = 'finnhub' | 'newsApi' | 'marketaux' | 'fmp' | 'tiingo' | 'rss';

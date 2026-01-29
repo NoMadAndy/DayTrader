@@ -25,6 +25,10 @@ import { AlphaVantageProvider } from './alphaVantageProvider';
 import { TwelveDataProvider } from './twelveDataProvider';
 import { YahooFinanceProvider } from './yahooFinanceProvider';
 import { NewsApiProvider } from './newsApiProvider';
+import { MarketauxProvider } from './marketauxProvider';
+import { FMPProvider } from './fmpProvider';
+import { TiingoProvider } from './tiingoProvider';
+import { getRSSProvider, type RSSProvider } from './rssProvider';
 import { getRateLimiter, PROVIDER_RATE_LIMITS, type RateLimiter } from './rateLimiter';
 
 // Stock name mappings for display
@@ -60,6 +64,11 @@ export interface DataServiceConfig {
   alphaVantageApiKey?: string;
   twelveDataApiKey?: string;
   newsApiKey?: string;
+  // New provider API keys
+  marketauxApiKey?: string;
+  fmpApiKey?: string;
+  tiingoApiKey?: string;
+  enableRssFeeds?: boolean;
   preferredSource?: DataSourceType;
   useCorsProxy?: boolean;
   corsProxyUrl?: string;
@@ -69,6 +78,11 @@ export interface DataServiceConfig {
 export class DataService {
   private providers: Map<DataSourceType, DataProvider> = new Map();
   private newsProvider: NewsApiProvider | null = null;
+  // New news providers
+  private marketauxProvider: MarketauxProvider | null = null;
+  private fmpProvider: FMPProvider | null = null;
+  private tiingoProvider: TiingoProvider | null = null;
+  private rssProvider: RSSProvider | null = null;
   private preferredSource: DataSourceType;
   private rateLimiter: RateLimiter;
   private enableRateLimiting: boolean;
@@ -100,6 +114,24 @@ export class DataService {
     if (config.newsApiKey) {
       this.newsProvider = new NewsApiProvider(config.newsApiKey);
     }
+
+    // Initialize new news providers
+    if (config.marketauxApiKey) {
+      this.marketauxProvider = new MarketauxProvider(config.marketauxApiKey);
+    }
+
+    if (config.fmpApiKey) {
+      this.fmpProvider = new FMPProvider(config.fmpApiKey);
+    }
+
+    if (config.tiingoApiKey) {
+      this.tiingoProvider = new TiingoProvider(config.tiingoApiKey);
+    }
+
+    // RSS feeds don't require API key
+    if (config.enableRssFeeds !== false) {
+      this.rssProvider = getRSSProvider(true);
+    }
   }
 
   /**
@@ -113,6 +145,35 @@ export class DataService {
         sources.push(source);
       }
     });
+
+    return sources;
+  }
+
+  /**
+   * Get available news sources info
+   */
+  getAvailableNewsSources(): string[] {
+    const sources: string[] = [];
+    
+    const finnhub = this.providers.get('finnhub');
+    if (finnhub?.isConfigured()) {
+      sources.push('Finnhub');
+    }
+    if (this.newsProvider?.isConfigured()) {
+      sources.push('NewsAPI');
+    }
+    if (this.marketauxProvider?.isConfigured()) {
+      sources.push('Marketaux');
+    }
+    if (this.fmpProvider?.isConfigured()) {
+      sources.push('FMP');
+    }
+    if (this.tiingoProvider?.isConfigured()) {
+      sources.push('Tiingo');
+    }
+    if (this.rssProvider?.isConfigured()) {
+      sources.push('RSS Feeds (DE)');
+    }
 
     return sources;
   }
@@ -294,49 +355,91 @@ export class DataService {
 
     return this.rateLimiter.deduplicateRequest(cacheKey, async () => {
       const allNews: NewsItem[] = [];
+      const newsPromises: Promise<void>[] = [];
 
-      // Try Finnhub news first (FinnhubProvider always has fetchNews method)
-      // Don't check rate limit here - backend caches news for 5 minutes
-      // so the actual API calls are already rate-limited server-side
+      // Try Finnhub news (backend caches for 5 minutes)
       const finnhub = this.providers.get('finnhub');
       if (finnhub?.isConfigured() && finnhub instanceof FinnhubProvider) {
-        try {
-          const finnhubNews = await finnhub.fetchNews(symbol);
-          allNews.push(...finnhubNews);
-        } catch (error) {
-          console.warn('Finnhub news fetch failed:', error);
-        }
+        newsPromises.push(
+          finnhub.fetchNews(symbol)
+            .then(news => { allNews.push(...news); })
+            .catch(error => console.warn('Finnhub news fetch failed:', error))
+        );
       }
 
-      // Try NewsAPI only if we don't have enough news from Finnhub
-      // (NewsAPI is rate-limited at 100 requests/day, so be conservative)
-      if (allNews.length < 3 && this.newsProvider?.isConfigured()) {
-        try {
-          const newsApiNews = await this.newsProvider.fetchStockNews(
-            symbol, 
-            companyName || STOCK_NAMES[symbol]
-          );
-          allNews.push(...newsApiNews);
-        } catch (error) {
-          console.warn('NewsAPI fetch failed:', error);
-        }
+      // Try NewsAPI (rate-limited at 100 requests/day)
+      if (this.newsProvider?.isConfigured()) {
+        newsPromises.push(
+          this.newsProvider.fetchStockNews(symbol, companyName || STOCK_NAMES[symbol])
+            .then(news => { allNews.push(...news); })
+            .catch(error => console.warn('NewsAPI fetch failed:', error))
+        );
       }
+
+      // Try Marketaux (multi-language, sentiment data)
+      if (this.marketauxProvider?.isConfigured()) {
+        newsPromises.push(
+          this.marketauxProvider.fetchStockNews(symbol)
+            .then(news => { allNews.push(...news); })
+            .catch(error => console.warn('Marketaux fetch failed:', error))
+        );
+      }
+
+      // Try FMP (ticker-specific news)
+      if (this.fmpProvider?.isConfigured()) {
+        newsPromises.push(
+          this.fmpProvider.fetchStockNews(symbol)
+            .then(news => { allNews.push(...news); })
+            .catch(error => console.warn('FMP fetch failed:', error))
+        );
+      }
+
+      // Try Tiingo (institutional-grade news)
+      if (this.tiingoProvider?.isConfigured()) {
+        newsPromises.push(
+          this.tiingoProvider.fetchStockNews(symbol)
+            .then(news => { allNews.push(...news); })
+            .catch(error => console.warn('Tiingo fetch failed:', error))
+        );
+      }
+
+      // Try RSS feeds (German news sources - general market news, not ticker-specific)
+      // RSS feeds provide broader market context
+      if (this.rssProvider?.isConfigured()) {
+        newsPromises.push(
+          this.rssProvider.fetchAllNews()
+            .then(news => {
+              // Add RSS news but don't relate to specific symbol unless mentioned (case-insensitive)
+              const symbolUpper = symbol.toUpperCase();
+              const rssNews = news.map(item => ({
+                ...item,
+                related: item.headline.toUpperCase().includes(symbolUpper) ? [symbol] : undefined
+              }));
+              allNews.push(...rssNews.slice(0, 10)); // Limit RSS items
+            })
+            .catch(error => console.warn('RSS feeds fetch failed:', error))
+        );
+      }
+
+      // Wait for all providers to complete (with timeout)
+      await Promise.all(newsPromises);
 
       // Remove duplicates by headline using Set for O(n) complexity
       const seenHeadlines = new Set<string>();
       const uniqueNews = allNews.filter((item) => {
-        if (seenHeadlines.has(item.headline)) {
+        const normalizedHeadline = item.headline.toLowerCase().trim();
+        if (seenHeadlines.has(normalizedHeadline)) {
           return false;
         }
-        seenHeadlines.add(item.headline);
+        seenHeadlines.add(normalizedHeadline);
         return true;
       });
 
       // Sort by date (newest first)
       uniqueNews.sort((a, b) => b.datetime - a.datetime);
 
-      // Limit to 15 items
-      const result = uniqueNews.slice(0, 15);
+      // Limit to 20 items (increased to accommodate more sources)
+      const result = uniqueNews.slice(0, 20);
       
       // Cache news for 5 minutes
       this.rateLimiter.setCacheWithDuration(cacheKey, result, 'finnhub', 300000);
