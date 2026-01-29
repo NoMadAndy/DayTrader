@@ -67,6 +67,10 @@ class MultiScaleCNN(nn.Module):
     Uses parallel 1D convolutions with different kernel sizes (3, 5, 7, 14)
     to capture short-term to medium-term patterns.
     
+    Note: Uses padding='same' to preserve sequence length. For even kernel sizes
+    (like 14), PyTorch's 'same' padding automatically handles the asymmetric
+    padding needed to maintain output length, avoiding off-by-one errors.
+    
     Args:
         in_channels: Number of input features
         out_channels: Output dimension per scale
@@ -76,10 +80,11 @@ class MultiScaleCNN(nn.Module):
         super().__init__()
         
         # Different kernel sizes for different temporal scales
-        self.conv3 = nn.Conv1d(in_channels, out_channels, kernel_size=3, padding=1)
-        self.conv5 = nn.Conv1d(in_channels, out_channels, kernel_size=5, padding=2)
-        self.conv7 = nn.Conv1d(in_channels, out_channels, kernel_size=7, padding=3)
-        self.conv14 = nn.Conv1d(in_channels, out_channels, kernel_size=14, padding=7)
+        # Using padding='same' to preserve sequence length for all kernels
+        self.conv3 = nn.Conv1d(in_channels, out_channels, kernel_size=3, padding='same')   # 3-day patterns
+        self.conv5 = nn.Conv1d(in_channels, out_channels, kernel_size=5, padding='same')   # 5-day patterns
+        self.conv7 = nn.Conv1d(in_channels, out_channels, kernel_size=7, padding='same')   # 7-day patterns
+        self.conv14 = nn.Conv1d(in_channels, out_channels, kernel_size=14, padding='same') # 14-day (2-week) patterns
         
         self.bn3 = nn.BatchNorm1d(out_channels)
         self.bn5 = nn.BatchNorm1d(out_channels)

@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **RL Training - Conv1d Tensor Size Mismatch** - Fixed tensor concatenation error in MultiScaleCNN
+  - Error: `Sizes of tensors must match except in dimension 1. Expected size 60 but got size 61`
+  - Root cause: Even kernel sizes (14) with manual padding calculation produced incorrect output length (61 instead of 60)
+  - Solution: Changed all Conv1d layers to use `padding='same'` instead of manual padding values
+  - PyTorch's 'same' padding automatically handles asymmetric padding for even kernel sizes
+  - All convolution layers now consistently produce sequence length of 60, enabling successful concatenation
+  - Updated documentation to explain padding strategy and avoid future issues
+- **RL Training - Misleading GPU Warning** - Suppressed incorrect Stable Baselines3 warning about GPU usage
+  - Warning claimed PPO is "primarily intended to run on the CPU" with MlpPolicy
+  - This warning doesn't apply to custom Transformer+CNN architecture (~2.5-3M parameters)
+  - Transformer architecture significantly benefits from GPU acceleration
+  - Added targeted warning filter when using transformer architecture
+  - Added GPU device logging (device name and VRAM) when GPU training is enabled
 - **Transformer Architecture Shape Mismatch** - Fixed training crash with shape error `'[1, 60, 35]' is invalid for input of size 2105`
   - Root cause: Observation space includes 2100 temporal features (60×35) + 5 portfolio features = 2105 total
   - Previous code incorrectly used integer division `2105 // 60 = 35`, losing the 5 portfolio features

@@ -13,6 +13,7 @@ import os
 import json
 import logging
 import asyncio
+import warnings
 from datetime import datetime
 from typing import Dict, Optional, List, Any, Tuple
 from pathlib import Path
@@ -307,6 +308,11 @@ class TradingAgentTrainer:
             # Determine architecture based on config
             use_transformer = getattr(config, 'use_transformer_policy', False)
             
+            # Log GPU usage if enabled
+            if settings.device == "cuda":
+                log(f"🚀 GPU Training enabled: {torch.cuda.get_device_name(0)}")
+                log(f"   VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+            
             if use_transformer:
                 log(f"🧠 Creating PPO model with Transformer architecture...")
                 log(f"   d_model: {config.transformer_d_model}")
@@ -316,6 +322,16 @@ class TradingAgentTrainer:
                 log(f"   dropout: {config.transformer_dropout}")
                 log(f"   Learning rate: {config.learning_rate}")
                 log(f"   Gamma: {config.gamma}")
+                
+                # Suppress misleading SB3 GPU warning for transformer architecture
+                # Our TransformerFeaturesExtractor contains CNN+Transformer (~2.5-3M params)
+                # and significantly benefits from GPU acceleration
+                warnings.filterwarnings(
+                    "ignore",
+                    message=".*GPU.*primarily intended to run on the CPU.*",
+                    category=UserWarning,
+                    module="stable_baselines3.*"
+                )
                 
                 # Import transformer components
                 from .networks import TransformerFeaturesExtractor
