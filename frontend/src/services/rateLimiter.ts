@@ -134,8 +134,6 @@ interface PendingRequest<T> {
 const STORAGE_KEY = 'daytrader_rate_limiter_stats';
 const NEWS_STORAGE_KEY = 'daytrader_news_rate_limiter_stats';
 
-type AllProviderTypes = DataSourceType | NewsProviderType;
-
 export class RateLimiter {
   private stats: Map<DataSourceType, ProviderStats> = new Map();
   private newsStats: Map<NewsProviderType, ProviderStats> = new Map();
@@ -392,7 +390,7 @@ export class RateLimiter {
     const oneHourAgo = now - 3600000;
     stats.requestHistory = stats.requestHistory.filter(r => r.timestamp > oneHourAgo);
 
-    this.stats.set(source, stats);
+    this.stats.set(dataSource, stats);
     this.saveStats();
     this.notifyListeners();
   }

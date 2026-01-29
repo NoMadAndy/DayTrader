@@ -9,6 +9,7 @@ import { useDataService } from '../hooks';
 import { useSettings, type Language, type Currency } from '../contexts';
 import { DataSourceSelector } from '../components/DataSourceSelector';
 import { ApiQuotaDisplay } from '../components/ApiQuotaDisplay';
+import { NewsApiQuotaDisplay } from '../components/NewsApiQuotaDisplay';
 import { SignalSourceSettingsPanel } from '../components/SignalSourceSettings';
 import { subscribeToAuth, getAuthState, logout, checkAuthStatus, type AuthState } from '../services/authService';
 import { getUserSettings, updateUserSettings, DEFAULT_ML_SETTINGS, type MLSettings } from '../services/userSettingsService';
@@ -30,6 +31,13 @@ interface ApiConfig {
   mediastackApiKey: string;
   newsdataApiKey: string;
   enableRssFeeds: boolean;
+  // Enable/disable toggles for news providers
+  enableNewsApi: boolean;
+  enableMarketaux: boolean;
+  enableFmp: boolean;
+  enableTiingo: boolean;
+  enableMediastack: boolean;
+  enableNewsdata: boolean;
 }
 
 function loadStoredConfig(): ApiConfig {
@@ -44,6 +52,12 @@ function loadStoredConfig(): ApiConfig {
     mediastackApiKey: '',
     newsdataApiKey: '',
     enableRssFeeds: true, // RSS feeds enabled by default (no API key required)
+    enableNewsApi: true,
+    enableMarketaux: true,
+    enableFmp: true,
+    enableTiingo: true,
+    enableMediastack: true,
+    enableNewsdata: true,
   };
   
   try {
@@ -113,6 +127,12 @@ export function SettingsPage() {
               mediastackApiKey: settings.apiKeys.mediastack || '',
               newsdataApiKey: settings.apiKeys.newsdata || '',
               enableRssFeeds: enableRss,
+              enableNewsApi: settings.apiKeys.enableNewsApi !== 'false',
+              enableMarketaux: settings.apiKeys.enableMarketaux !== 'false',
+              enableFmp: settings.apiKeys.enableFmp !== 'false',
+              enableTiingo: settings.apiKeys.enableTiingo !== 'false',
+              enableMediastack: settings.apiKeys.enableMediastack !== 'false',
+              enableNewsdata: settings.apiKeys.enableNewsdata !== 'false',
             };
             setLocalConfig(serverConfig);
             saveConfig(serverConfig);
@@ -135,6 +155,12 @@ export function SettingsPage() {
       mediastackApiKey: config.mediastackApiKey || undefined,
       newsdataApiKey: config.newsdataApiKey || undefined,
       enableRssFeeds: config.enableRssFeeds,
+      enableNewsApi: config.enableNewsApi,
+      enableMarketaux: config.enableMarketaux,
+      enableFmp: config.enableFmp,
+      enableTiingo: config.enableTiingo,
+      enableMediastack: config.enableMediastack,
+      enableNewsdata: config.enableNewsdata,
       preferredSource: config.finnhubApiKey ? 'finnhub' : 
                        config.twelveDataApiKey ? 'twelveData' :
                        config.alphaVantageApiKey ? 'alphaVantage' : 'yahoo',
@@ -161,6 +187,12 @@ export function SettingsPage() {
           mediastack: localConfig.mediastackApiKey,
           newsdata: localConfig.newsdataApiKey,
           enableRssFeeds: localConfig.enableRssFeeds ? 'true' : 'false',
+          enableNewsApi: localConfig.enableNewsApi ? 'true' : 'false',
+          enableMarketaux: localConfig.enableMarketaux ? 'true' : 'false',
+          enableFmp: localConfig.enableFmp ? 'true' : 'false',
+          enableTiingo: localConfig.enableTiingo ? 'true' : 'false',
+          enableMediastack: localConfig.enableMediastack ? 'true' : 'false',
+          enableNewsdata: localConfig.enableNewsdata ? 'true' : 'false',
         },
       });
     }
@@ -178,6 +210,12 @@ export function SettingsPage() {
       mediastackApiKey: '',
       newsdataApiKey: '',
       enableRssFeeds: true,
+      enableNewsApi: true,
+      enableMarketaux: true,
+      enableFmp: true,
+      enableTiingo: true,
+      enableMediastack: true,
+      enableNewsdata: true,
     };
     setLocalConfig(empty);
     saveConfig(empty);
@@ -480,12 +518,24 @@ export function SettingsPage() {
                 
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm text-gray-400 mb-2">
-                      {t('settings.newsApiKey')}
-                      <a href="https://newsapi.org/register" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
-                        {t('settings.freeRegister')}
-                      </a>
-                    </label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm text-gray-400">
+                        {t('settings.newsApiKey')}
+                        <a href="https://newsapi.org/register" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
+                          {t('settings.freeRegister')}
+                        </a>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={localConfig.enableNewsApi}
+                          onChange={(e) => setLocalConfig(prev => ({ ...prev, enableNewsApi: e.target.checked }))}
+                          className="w-4 h-4 rounded border-slate-600 text-blue-600"
+                          disabled={!localConfig.newsApiKey}
+                        />
+                        <span className="text-xs text-gray-400">Aktiviert</span>
+                      </label>
+                    </div>
                     <input
                       type="password"
                       value={localConfig.newsApiKey}
@@ -496,12 +546,24 @@ export function SettingsPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-400 mb-2">
-                      {t('settings.marketauxKey')}
-                      <a href="https://www.marketaux.com/register" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
-                        {t('settings.freeRegister')}
-                      </a>
-                    </label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm text-gray-400">
+                        {t('settings.marketauxKey')}
+                        <a href="https://www.marketaux.com/register" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
+                          {t('settings.freeRegister')}
+                        </a>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={localConfig.enableMarketaux}
+                          onChange={(e) => setLocalConfig(prev => ({ ...prev, enableMarketaux: e.target.checked }))}
+                          className="w-4 h-4 rounded border-slate-600 text-blue-600"
+                          disabled={!localConfig.marketauxApiKey}
+                        />
+                        <span className="text-xs text-gray-400">Aktiviert</span>
+                      </label>
+                    </div>
                     <p className="text-xs text-gray-500 mb-2">{t('settings.marketauxDesc')}</p>
                     <input
                       type="password"
@@ -513,12 +575,24 @@ export function SettingsPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-400 mb-2">
-                      {t('settings.fmpKey')}
-                      <a href="https://financialmodelingprep.com/developer" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
-                        {t('settings.freeRegister')}
-                      </a>
-                    </label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm text-gray-400">
+                        {t('settings.fmpKey')}
+                        <a href="https://financialmodelingprep.com/developer" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
+                          {t('settings.freeRegister')}
+                        </a>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={localConfig.enableFmp}
+                          onChange={(e) => setLocalConfig(prev => ({ ...prev, enableFmp: e.target.checked }))}
+                          className="w-4 h-4 rounded border-slate-600 text-blue-600"
+                          disabled={!localConfig.fmpApiKey}
+                        />
+                        <span className="text-xs text-gray-400">Aktiviert</span>
+                      </label>
+                    </div>
                     <p className="text-xs text-gray-500 mb-2">{t('settings.fmpDesc')}</p>
                     <input
                       type="password"
@@ -530,12 +604,24 @@ export function SettingsPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-400 mb-2">
-                      {t('settings.tiingoKey')}
-                      <a href="https://api.tiingo.com/account/api/token" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
-                        {t('settings.freeRegister')}
-                      </a>
-                    </label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm text-gray-400">
+                        {t('settings.tiingoKey')}
+                        <a href="https://api.tiingo.com/account/api/token" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
+                          {t('settings.freeRegister')}
+                        </a>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={localConfig.enableTiingo}
+                          onChange={(e) => setLocalConfig(prev => ({ ...prev, enableTiingo: e.target.checked }))}
+                          className="w-4 h-4 rounded border-slate-600 text-blue-600"
+                          disabled={!localConfig.tiingoApiKey}
+                        />
+                        <span className="text-xs text-gray-400">Aktiviert</span>
+                      </label>
+                    </div>
                     <p className="text-xs text-gray-500 mb-2">{t('settings.tiingoDesc')}</p>
                     <input
                       type="password"
@@ -547,12 +633,24 @@ export function SettingsPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-400 mb-2">
-                      mediastack API Key
-                      <a href="https://mediastack.com/signup" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
-                        (Get free key - 100/month)
-                      </a>
-                    </label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm text-gray-400">
+                        mediastack API Key
+                        <a href="https://mediastack.com/signup" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
+                          (Get free key - 100/month)
+                        </a>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={localConfig.enableMediastack}
+                          onChange={(e) => setLocalConfig(prev => ({ ...prev, enableMediastack: e.target.checked }))}
+                          className="w-4 h-4 rounded border-slate-600 text-blue-600"
+                          disabled={!localConfig.mediastackApiKey}
+                        />
+                        <span className="text-xs text-gray-400">Aktiviert</span>
+                      </label>
+                    </div>
                     <input
                       type="password"
                       value={localConfig.mediastackApiKey}
@@ -563,12 +661,24 @@ export function SettingsPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-400 mb-2">
-                      NewsData.io API Key
-                      <a href="https://newsdata.io/register" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
-                        (Get free key - 200/day)
-                      </a>
-                    </label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm text-gray-400">
+                        NewsData.io API Key
+                        <a href="https://newsdata.io/register" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
+                          (Get free key - 200/day)
+                        </a>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={localConfig.enableNewsdata}
+                          onChange={(e) => setLocalConfig(prev => ({ ...prev, enableNewsdata: e.target.checked }))}
+                          className="w-4 h-4 rounded border-slate-600 text-blue-600"
+                          disabled={!localConfig.newsdataApiKey}
+                        />
+                        <span className="text-xs text-gray-400">Aktiviert</span>
+                      </label>
+                    </div>
                     <input
                       type="password"
                       value={localConfig.newsdataApiKey}
@@ -637,7 +747,10 @@ export function SettingsPage() {
                 <p className="text-gray-400 text-sm mb-4">
                   {t('settings.apiUsageDesc')}
                 </p>
-                <ApiQuotaDisplay />
+                <div className="space-y-4">
+                  <ApiQuotaDisplay />
+                  <NewsApiQuotaDisplay />
+                </div>
               </div>
             </div>
           )}

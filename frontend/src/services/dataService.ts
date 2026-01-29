@@ -475,7 +475,6 @@ export class DataService {
           );
         }
       }
-      }
 
       // Try Marketaux (multi-language, sentiment data)
       if (this.marketauxProvider?.isConfigured() && this.config.enableMarketaux !== false) {

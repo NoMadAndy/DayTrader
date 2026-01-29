@@ -133,6 +133,12 @@ function getInitialConfig(): ApiConfig {
     mediastackApiKey: envConfig.mediastackApiKey || stored.mediastackApiKey,
     newsdataApiKey: envConfig.newsdataApiKey || stored.newsdataApiKey,
     enableRssFeeds: stored.enableRssFeeds,
+    enableNewsApi: stored.enableNewsApi,
+    enableMarketaux: stored.enableMarketaux,
+    enableFmp: stored.enableFmp,
+    enableTiingo: stored.enableTiingo,
+    enableMediastack: stored.enableMediastack,
+    enableNewsdata: stored.enableNewsdata,
   };
 }
 
