@@ -199,6 +199,19 @@ VITE_PREFERRED_DATA_SOURCE=yahoo
 | **Alpha Vantage** | Yes | Quotes, Daily Data | 5 calls/min, 500/day |
 | **Twelve Data** | Yes | Quotes, Time Series | 8 calls/min, 800/day |
 
+### Additional Data Providers (Research)
+
+For a comprehensive list of additional financial news and data providers that can be integrated (including German sources and free RSS feeds), see:
+
+📚 **[docs/DATA_PROVIDERS.md](docs/DATA_PROVIDERS.md)**
+
+This documentation covers:
+- Finance-specific News APIs with free tiers (Marketaux, FMP, Tiingo, etc.)
+- General News APIs with business/finance filters
+- German RSS feeds (Börse Frankfurt, BaFin, Bundesbank, ECB/EZB, BMF)
+- Open data sources (GDELT)
+- Integration priorities and implementation patterns
+
 ## User Authentication & Settings
 
 DayTrader supports optional user accounts with PostgreSQL for persisting settings:

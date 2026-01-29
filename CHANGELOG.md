@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Financial Data Providers Documentation** - Comprehensive research documentation for additional news and data providers
+  - Created `docs/DATA_PROVIDERS.md` with detailed provider information
+  - Finance-specific APIs with free tiers: Marketaux, Alpha Vantage News, FMP, Tiingo, EODHD, Alpaca, Benzinga
+  - General News APIs: NewsAPI.org, mediastack, TheNewsAPI, NewsData.io, NewsAPI.ai
+  - German RSS feeds: Börse Frankfurt, BaFin, Bundesbank, ECB/EZB, BMF, BAFA
+  - Open data sources: GDELT
+  - Integration priorities and implementation patterns
+  - Environment variable templates for new providers
+
 ### Changed
 - **Watchlist Desktop Layout Redesign** - Kompakte Tabellenansicht für bessere Platzausnutzung auf Desktop
   - Neue horizontale Tabellenansicht mit Spalten: Symbol, Kurs, Signal, Quellen, Perioden, Aktionen
