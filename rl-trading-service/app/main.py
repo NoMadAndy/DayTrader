@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager
 import logging
 import httpx
 import json
+import math
 
 from .config import settings
 from .trainer import trainer, TradingAgentTrainer
@@ -281,13 +282,23 @@ async def train_agent(request: TrainRequest, background_tasks: BackgroundTasks):
     
     # Define progress callback
     def update_progress(info: dict):
+        # Sanitize float values before storing
+        mean_reward = info.get("mean_reward", 0)
+        best_reward = info.get("best_reward")
+        
+        # Ensure JSON-safe values
+        if mean_reward is not None and not math.isfinite(mean_reward):
+            mean_reward = 0.0
+        if best_reward is not None and not math.isfinite(best_reward):
+            best_reward = None
+        
         training_tasks[agent_name].update({
             "status": "training",
             "progress": info["progress"],
             "timesteps": info["timesteps"],
             "episodes": info["episodes"],
-            "mean_reward": info["mean_reward"],
-            "best_reward": info["best_reward"],
+            "mean_reward": mean_reward,
+            "best_reward": best_reward,
         })
     
     # Define log callback
@@ -409,12 +420,22 @@ async def train_from_backend(request: TrainFromBackendRequest, background_tasks:
                 training_tasks[agent_name]["status"] = "training"
                 
                 def update_progress(info: dict):
+                    # Sanitize float values before storing
+                    mean_reward = info.get("mean_reward", 0)
+                    best_reward = info.get("best_reward")
+                    
+                    # Ensure JSON-safe values
+                    if mean_reward is not None and not math.isfinite(mean_reward):
+                        mean_reward = 0.0
+                    if best_reward is not None and not math.isfinite(best_reward):
+                        best_reward = None
+                    
                     training_tasks[agent_name].update({
                         "progress": info["progress"],
                         "timesteps": info["timesteps"],
                         "episodes": info["episodes"],
-                        "mean_reward": info["mean_reward"],
-                        "best_reward": info["best_reward"],
+                        "mean_reward": mean_reward,
+                        "best_reward": best_reward,
                     })
                 
                 result = await trainer.train_agent(

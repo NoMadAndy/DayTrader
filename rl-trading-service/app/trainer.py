@@ -36,6 +36,32 @@ from .indicators import calculate_indicators, prepare_data_for_training
 logger = logging.getLogger(__name__)
 
 
+def sanitize_float(value: Optional[float]) -> Optional[float]:
+    """
+    Convert inf/nan to JSON-safe values.
+    
+    Args:
+        value: A float value that might be inf, -inf, or nan
+        
+    Returns:
+        None if value is inf/-inf/nan, otherwise the float value
+    """
+    import math
+    
+    if value is None:
+        return None
+    
+    # Convert numpy types to Python float
+    if isinstance(value, np.floating):
+        value = float(value)
+    
+    # Check for non-finite values
+    if not math.isfinite(value):
+        return None
+    
+    return value
+
+
 class TrainingProgressCallback(BaseCallback):
     """Callback to track training progress and emit updates with detailed logs"""
     
@@ -52,7 +78,7 @@ class TrainingProgressCallback(BaseCallback):
         self.total_timesteps = total_timesteps
         self.progress_callback = progress_callback
         self.log_callback = log_callback
-        self.best_reward = -np.inf
+        self.best_reward = None  # Start with None instead of -np.inf for JSON compatibility
         self.episode_rewards = []
         self.episode_lengths = []
         self.last_log_timestep = 0
@@ -69,6 +95,8 @@ class TrainingProgressCallback(BaseCallback):
         self._log(f"   Device: {self.model.device}")
         
     def _on_step(self) -> bool:
+        import math
+        
         # Get episode info if available
         if len(self.model.ep_info_buffer) > 0:
             ep_info = self.model.ep_info_buffer[-1]
@@ -84,10 +112,11 @@ class TrainingProgressCallback(BaseCallback):
                 if len(self.episode_rewards) % 10 == 0:  # Log every 10 episodes
                     self._log(f"📊 Episode {len(self.episode_rewards)}: reward={reward:.2f}, length={length}")
             
-            if reward > self.best_reward:
+            # Update best reward (handle None case)
+            if reward > (self.best_reward or float('-inf')):
                 old_best = self.best_reward
                 self.best_reward = reward
-                if old_best > -np.inf:
+                if old_best is not None:
                     self._log(f"🏆 New best reward: {self.best_reward:.2f} (was {old_best:.2f})", "success")
         
         # Calculate progress
@@ -101,14 +130,21 @@ class TrainingProgressCallback(BaseCallback):
             self._log(f"⏳ Progress: {pct:.1f}% ({self.num_timesteps:,}/{self.total_timesteps:,} steps) | Mean reward: {mean_rew:.2f}")
         
         if self.progress_callback:
+            # Calculate mean reward and ensure it's finite
+            mean_reward = 0.0
+            if self.episode_rewards:
+                mean_reward = float(np.mean(self.episode_rewards[-100:]))
+                if not math.isfinite(mean_reward):
+                    mean_reward = 0.0
+            
             self.progress_callback({
                 "agent_name": self.agent_name,
                 "progress": progress,
                 "timesteps": self.num_timesteps,
                 "total_timesteps": self.total_timesteps,
                 "episodes": len(self.episode_rewards),
-                "mean_reward": np.mean(self.episode_rewards[-100:]) if self.episode_rewards else 0,
-                "best_reward": self.best_reward,
+                "mean_reward": mean_reward,
+                "best_reward": sanitize_float(self.best_reward),
             })
         
         return True
@@ -116,7 +152,8 @@ class TrainingProgressCallback(BaseCallback):
     def _on_training_end(self) -> None:
         self._log(f"✅ Training completed!")
         self._log(f"   Total episodes: {len(self.episode_rewards)}")
-        self._log(f"   Best reward: {self.best_reward:.2f}")
+        if self.best_reward is not None:
+            self._log(f"   Best reward: {self.best_reward:.2f}")
         if self.episode_rewards:
             self._log(f"   Final mean reward (last 100): {np.mean(self.episode_rewards[-100:]):.2f}")
 
