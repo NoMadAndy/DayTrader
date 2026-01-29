@@ -62,6 +62,47 @@ export const PROVIDER_RATE_LIMITS: Record<DataSourceType, RateLimitConfig> = {
   }
 };
 
+// News provider rate limits
+export const NEWS_PROVIDER_RATE_LIMITS = {
+  newsApi: {
+    requestsPerDay: 100,
+    requestsPerMinute: 10,
+    cacheDurationMs: 300000, // 5 minutes
+  },
+  marketaux: {
+    requestsPerDay: 100,
+    requestsPerMinute: 10,
+    cacheDurationMs: 300000,
+  },
+  fmp: {
+    requestsPerDay: 250, // Free tier limit
+    requestsPerMinute: 10,
+    cacheDurationMs: 300000,
+  },
+  tiingo: {
+    requestsPerDay: 500, // Free tier limit
+    requestsPerMinute: 20,
+    cacheDurationMs: 300000,
+  },
+  mediastack: {
+    requestsPerDay: 100, // ~3 per day (100/month)
+    requestsPerMinute: 5,
+    cacheDurationMs: 600000, // 10 minutes (conserve quota)
+  },
+  newsdata: {
+    requestsPerDay: 200,
+    requestsPerMinute: 10,
+    cacheDurationMs: 300000,
+  },
+  rss: {
+    requestsPerDay: Infinity, // No limit
+    requestsPerMinute: Infinity,
+    cacheDurationMs: 300000,
+  },
+} as const;
+
+export type NewsProviderType = keyof typeof NEWS_PROVIDER_RATE_LIMITS;
+
 // Request tracking
 interface RequestRecord {
   timestamp: number;
@@ -91,9 +132,11 @@ interface PendingRequest<T> {
 }
 
 const STORAGE_KEY = 'daytrader_rate_limiter_stats';
+const NEWS_STORAGE_KEY = 'daytrader_news_rate_limiter_stats';
 
 export class RateLimiter {
   private stats: Map<DataSourceType, ProviderStats> = new Map();
+  private newsStats: Map<NewsProviderType, ProviderStats> = new Map();
   private cache: Map<string, CacheEntry<unknown>> = new Map();
   private pendingRequests: Map<string, PendingRequest<unknown>> = new Map();
   private listeners: Set<(stats: Map<DataSourceType, ProviderStats>) => void> = new Set();
@@ -133,10 +176,41 @@ export class RateLimiter {
       console.warn('Failed to load rate limiter stats:', e);
     }
 
+    // Load news provider stats
+    try {
+      const stored = localStorage.getItem(NEWS_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const now = Date.now();
+        const dayStart = this.getDayStart();
+
+        Object.entries(parsed).forEach(([source, stats]) => {
+          const providerStats = stats as ProviderStats;
+          if (providerStats.dayStartTimestamp !== dayStart) {
+            providerStats.requestsToday = 0;
+            providerStats.dayStartTimestamp = dayStart;
+          }
+          if (now - providerStats.lastRequest > 60000) {
+            providerStats.requestsThisMinute = 0;
+          }
+          this.newsStats.set(source as NewsProviderType, providerStats);
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to load news rate limiter stats:', e);
+    }
+
     // Initialize missing providers
     for (const source of Object.keys(PROVIDER_RATE_LIMITS) as DataSourceType[]) {
       if (!this.stats.has(source)) {
         this.stats.set(source, this.createEmptyStats());
+      }
+    }
+
+    // Initialize missing news providers
+    for (const source of Object.keys(NEWS_PROVIDER_RATE_LIMITS) as NewsProviderType[]) {
+      if (!this.newsStats.has(source)) {
+        this.newsStats.set(source, this.createEmptyStats());
       }
     }
   }
@@ -153,6 +227,17 @@ export class RateLimiter {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
     } catch (e) {
       console.warn('Failed to save rate limiter stats:', e);
+    }
+
+    // Save news provider stats
+    try {
+      const obj: Record<string, ProviderStats> = {};
+      this.newsStats.forEach((stats, source) => {
+        obj[source] = stats;
+      });
+      localStorage.setItem(NEWS_STORAGE_KEY, JSON.stringify(obj));
+    } catch (e) {
+      console.warn('Failed to save news rate limiter stats:', e);
     }
   }
 
@@ -191,6 +276,13 @@ export class RateLimiter {
           stats.requestHistory = [];
         }
       });
+      this.newsStats.forEach((stats, _source) => {
+        if (stats.dayStartTimestamp !== dayStart) {
+          stats.requestsToday = 0;
+          stats.dayStartTimestamp = dayStart;
+          stats.requestHistory = [];
+        }
+      });
       this.saveStats();
     }, 60000);
   }
@@ -198,9 +290,39 @@ export class RateLimiter {
   /**
    * Check if a request is allowed for a provider
    */
-  canMakeRequest(source: DataSourceType): boolean {
-    const config = PROVIDER_RATE_LIMITS[source];
-    const stats = this.stats.get(source) || this.createEmptyStats();
+  canMakeRequest(source: DataSourceType | NewsProviderType): boolean {
+    // Check if it's a news provider
+    if (source in NEWS_PROVIDER_RATE_LIMITS) {
+      const newsSource = source as NewsProviderType;
+      const config = NEWS_PROVIDER_RATE_LIMITS[newsSource];
+      const stats = this.newsStats.get(newsSource) || this.createEmptyStats();
+      const now = Date.now();
+
+      // Check daily limit
+      if (stats.requestsToday >= config.requestsPerDay) {
+        console.warn(`${source}: Daily limit reached (${config.requestsPerDay})`);
+        return false;
+      }
+
+      // Update minute counter
+      const oneMinuteAgo = now - 60000;
+      stats.requestsThisMinute = stats.requestHistory.filter(
+        r => r.timestamp > oneMinuteAgo
+      ).length;
+
+      // Check per-minute limit
+      if (stats.requestsThisMinute >= config.requestsPerMinute) {
+        console.warn(`${source}: Minute limit reached (${config.requestsPerMinute})`);
+        return false;
+      }
+
+      return true;
+    }
+
+    // Handle data source providers
+    const dataSource = source as DataSourceType;
+    const config = PROVIDER_RATE_LIMITS[dataSource];
+    const stats = this.stats.get(dataSource) || this.createEmptyStats();
     const now = Date.now();
 
     // Check daily limit
@@ -234,8 +356,30 @@ export class RateLimiter {
   /**
    * Record a request
    */
-  recordRequest(source: DataSourceType, endpoint: string): void {
-    const stats = this.stats.get(source) || this.createEmptyStats();
+  recordRequest(source: DataSourceType | NewsProviderType, endpoint: string = ''): void {
+    // Check if it's a news provider
+    if (source in NEWS_PROVIDER_RATE_LIMITS) {
+      const newsSource = source as NewsProviderType;
+      const stats = this.newsStats.get(newsSource) || this.createEmptyStats();
+      const now = Date.now();
+
+      stats.requestsToday++;
+      stats.lastRequest = now;
+      stats.requestHistory.push({ timestamp: now, endpoint });
+
+      // Clean old history (keep last hour)
+      const oneHourAgo = now - 3600000;
+      stats.requestHistory = stats.requestHistory.filter(r => r.timestamp > oneHourAgo);
+
+      this.newsStats.set(newsSource, stats);
+      this.saveStats();
+      this.notifyListeners();
+      return;
+    }
+
+    // Handle data source providers
+    const dataSource = source as DataSourceType;
+    const stats = this.stats.get(dataSource) || this.createEmptyStats();
     const now = Date.now();
 
     stats.requestsToday++;
@@ -246,7 +390,7 @@ export class RateLimiter {
     const oneHourAgo = now - 3600000;
     stats.requestHistory = stats.requestHistory.filter(r => r.timestamp > oneHourAgo);
 
-    this.stats.set(source, stats);
+    this.stats.set(dataSource, stats);
     this.saveStats();
     this.notifyListeners();
   }
@@ -269,6 +413,45 @@ export class RateLimiter {
       daily: Math.max(0, config.requestsPerDay - stats.requestsToday),
       perMinute: Math.max(0, config.requestsPerMinute - requestsThisMinute)
     };
+  }
+
+  /**
+   * Get remaining requests for any provider type
+   */
+  getRemainingRequests(source: DataSourceType | NewsProviderType, period: 'daily' | 'minute'): number {
+    // Check if it's a news provider
+    if (source in NEWS_PROVIDER_RATE_LIMITS) {
+      const newsSource = source as NewsProviderType;
+      const config = NEWS_PROVIDER_RATE_LIMITS[newsSource];
+      const stats = this.newsStats.get(newsSource) || this.createEmptyStats();
+      const now = Date.now();
+
+      if (period === 'daily') {
+        return Math.max(0, config.requestsPerDay - stats.requestsToday);
+      } else {
+        const oneMinuteAgo = now - 60000;
+        const requestsThisMinute = stats.requestHistory.filter(
+          r => r.timestamp > oneMinuteAgo
+        ).length;
+        return Math.max(0, config.requestsPerMinute - requestsThisMinute);
+      }
+    }
+
+    // Handle data source providers
+    const dataSource = source as DataSourceType;
+    const config = PROVIDER_RATE_LIMITS[dataSource];
+    const stats = this.stats.get(dataSource) || this.createEmptyStats();
+    const now = Date.now();
+
+    if (period === 'daily') {
+      return Math.max(0, config.requestsPerDay - stats.requestsToday);
+    } else {
+      const oneMinuteAgo = now - 60000;
+      const requestsThisMinute = stats.requestHistory.filter(
+        r => r.timestamp > oneMinuteAgo
+      ).length;
+      return Math.max(0, config.requestsPerMinute - requestsThisMinute);
+    }
   }
 
   /**
@@ -434,6 +617,10 @@ export class RateLimiter {
     this.stats.clear();
     for (const source of Object.keys(PROVIDER_RATE_LIMITS) as DataSourceType[]) {
       this.stats.set(source, this.createEmptyStats());
+    }
+    this.newsStats.clear();
+    for (const source of Object.keys(NEWS_PROVIDER_RATE_LIMITS) as NewsProviderType[]) {
+      this.newsStats.set(source, this.createEmptyStats());
     }
     this.saveStats();
     this.notifyListeners();

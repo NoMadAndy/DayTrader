@@ -31,7 +31,7 @@ import { TiingoProvider } from './tiingoProvider';
 import { MediastackProvider } from './mediastackProvider';
 import { NewsdataProvider } from './newsdataProvider';
 import { getRSSProvider, type RSSProvider } from './rssProvider';
-import { getRateLimiter, PROVIDER_RATE_LIMITS, type RateLimiter } from './rateLimiter';
+import { getRateLimiter, PROVIDER_RATE_LIMITS, NEWS_PROVIDER_RATE_LIMITS, type RateLimiter, type NewsProviderType } from './rateLimiter';
 
 // Stock name mappings for display
 const STOCK_NAMES: Record<string, string> = {
@@ -73,6 +73,13 @@ export interface DataServiceConfig {
   mediastackApiKey?: string;
   newsdataApiKey?: string;
   enableRssFeeds?: boolean;
+  // Enable/disable toggles for news providers
+  enableNewsApi?: boolean;
+  enableMarketaux?: boolean;
+  enableFmp?: boolean;
+  enableTiingo?: boolean;
+  enableMediastack?: boolean;
+  enableNewsdata?: boolean;
   preferredSource?: DataSourceType;
   useCorsProxy?: boolean;
   corsProxyUrl?: string;
@@ -92,8 +99,10 @@ export class DataService {
   private preferredSource: DataSourceType;
   private rateLimiter: RateLimiter;
   private enableRateLimiting: boolean;
+  private config: DataServiceConfig;
 
   constructor(config: DataServiceConfig = {}) {
+    this.config = config;
     this.preferredSource = config.preferredSource ?? 'yahoo';
     this.rateLimiter = getRateLimiter();
     this.enableRateLimiting = config.enableRateLimiting ?? true;
@@ -273,6 +282,71 @@ export class DataService {
   }
 
   /**
+   * Get quota info for news providers
+   */
+  getNewsProviderQuotaInfo(): Record<string, { daily: number; perMinute: number; config: typeof NEWS_PROVIDER_RATE_LIMITS[NewsProviderType] }> {
+    const info: Record<string, { daily: number; perMinute: number; config: typeof NEWS_PROVIDER_RATE_LIMITS[NewsProviderType] }> = {};
+    
+    if (this.newsProvider?.isConfigured()) {
+      info['newsApi'] = {
+        daily: this.rateLimiter.getRemainingRequests('newsApi', 'daily'),
+        perMinute: this.rateLimiter.getRemainingRequests('newsApi', 'minute'),
+        config: NEWS_PROVIDER_RATE_LIMITS.newsApi,
+      };
+    }
+
+    if (this.marketauxProvider?.isConfigured()) {
+      info['marketaux'] = {
+        daily: this.rateLimiter.getRemainingRequests('marketaux', 'daily'),
+        perMinute: this.rateLimiter.getRemainingRequests('marketaux', 'minute'),
+        config: NEWS_PROVIDER_RATE_LIMITS.marketaux,
+      };
+    }
+
+    if (this.fmpProvider?.isConfigured()) {
+      info['fmp'] = {
+        daily: this.rateLimiter.getRemainingRequests('fmp', 'daily'),
+        perMinute: this.rateLimiter.getRemainingRequests('fmp', 'minute'),
+        config: NEWS_PROVIDER_RATE_LIMITS.fmp,
+      };
+    }
+
+    if (this.tiingoProvider?.isConfigured()) {
+      info['tiingo'] = {
+        daily: this.rateLimiter.getRemainingRequests('tiingo', 'daily'),
+        perMinute: this.rateLimiter.getRemainingRequests('tiingo', 'minute'),
+        config: NEWS_PROVIDER_RATE_LIMITS.tiingo,
+      };
+    }
+
+    if (this.mediastackProvider?.isConfigured()) {
+      info['mediastack'] = {
+        daily: this.rateLimiter.getRemainingRequests('mediastack', 'daily'),
+        perMinute: this.rateLimiter.getRemainingRequests('mediastack', 'minute'),
+        config: NEWS_PROVIDER_RATE_LIMITS.mediastack,
+      };
+    }
+
+    if (this.newsdataProvider?.isConfigured()) {
+      info['newsdata'] = {
+        daily: this.rateLimiter.getRemainingRequests('newsdata', 'daily'),
+        perMinute: this.rateLimiter.getRemainingRequests('newsdata', 'minute'),
+        config: NEWS_PROVIDER_RATE_LIMITS.newsdata,
+      };
+    }
+
+    if (this.rssProvider?.isConfigured()) {
+      info['rss'] = {
+        daily: this.rateLimiter.getRemainingRequests('rss', 'daily'),
+        perMinute: this.rateLimiter.getRemainingRequests('rss', 'minute'),
+        config: NEWS_PROVIDER_RATE_LIMITS.rss,
+      };
+    }
+
+    return info;
+  }
+
+  /**
    * Fetch real-time quote with fallback
    */
   async fetchQuote(symbol: string): Promise<QuoteData | null> {
@@ -388,75 +462,115 @@ export class DataService {
       }
 
       // Try NewsAPI (rate-limited at 100 requests/day)
-      if (this.newsProvider?.isConfigured()) {
-        newsPromises.push(
-          this.newsProvider.fetchStockNews(symbol, companyName || STOCK_NAMES[symbol])
-            .then(news => { allNews.push(...news); })
-            .catch(error => console.warn('NewsAPI fetch failed:', error))
-        );
+      if (this.newsProvider?.isConfigured() && this.config.enableNewsApi !== false) {
+        const canRequest = this.rateLimiter.canMakeRequest('newsApi');
+        if (canRequest) {
+          newsPromises.push(
+            this.newsProvider.fetchStockNews(symbol, companyName || STOCK_NAMES[symbol])
+              .then(news => { 
+                this.rateLimiter.recordRequest('newsApi');
+                allNews.push(...news); 
+              })
+              .catch(error => console.warn('NewsAPI fetch failed:', error))
+          );
+        }
       }
 
       // Try Marketaux (multi-language, sentiment data)
-      if (this.marketauxProvider?.isConfigured()) {
-        newsPromises.push(
-          this.marketauxProvider.fetchStockNews(symbol)
-            .then(news => { allNews.push(...news); })
-            .catch(error => console.warn('Marketaux fetch failed:', error))
-        );
+      if (this.marketauxProvider?.isConfigured() && this.config.enableMarketaux !== false) {
+        const canRequest = this.rateLimiter.canMakeRequest('marketaux');
+        if (canRequest) {
+          newsPromises.push(
+            this.marketauxProvider.fetchStockNews(symbol)
+              .then(news => { 
+                this.rateLimiter.recordRequest('marketaux');
+                allNews.push(...news); 
+              })
+              .catch(error => console.warn('Marketaux fetch failed:', error))
+          );
+        }
       }
 
       // Try FMP (ticker-specific news)
-      if (this.fmpProvider?.isConfigured()) {
-        newsPromises.push(
-          this.fmpProvider.fetchStockNews(symbol)
-            .then(news => { allNews.push(...news); })
-            .catch(error => console.warn('FMP fetch failed:', error))
-        );
+      if (this.fmpProvider?.isConfigured() && this.config.enableFmp !== false) {
+        const canRequest = this.rateLimiter.canMakeRequest('fmp');
+        if (canRequest) {
+          newsPromises.push(
+            this.fmpProvider.fetchStockNews(symbol)
+              .then(news => { 
+                this.rateLimiter.recordRequest('fmp');
+                allNews.push(...news); 
+              })
+              .catch(error => console.warn('FMP fetch failed:', error))
+          );
+        }
       }
 
       // Try Tiingo (institutional-grade news)
-      if (this.tiingoProvider?.isConfigured()) {
-        newsPromises.push(
-          this.tiingoProvider.fetchStockNews(symbol)
-            .then(news => { allNews.push(...news); })
-            .catch(error => console.warn('Tiingo fetch failed:', error))
-        );
+      if (this.tiingoProvider?.isConfigured() && this.config.enableTiingo !== false) {
+        const canRequest = this.rateLimiter.canMakeRequest('tiingo');
+        if (canRequest) {
+          newsPromises.push(
+            this.tiingoProvider.fetchStockNews(symbol)
+              .then(news => { 
+                this.rateLimiter.recordRequest('tiingo');
+                allNews.push(...news); 
+              })
+              .catch(error => console.warn('Tiingo fetch failed:', error))
+          );
+        }
       }
 
       // Try mediastack (multi-language news)
-      if (this.mediastackProvider?.isConfigured()) {
-        newsPromises.push(
-          this.mediastackProvider.fetchStockNews(symbol)
-            .then(news => { allNews.push(...news); })
-            .catch(error => console.warn('mediastack fetch failed:', error))
-        );
+      if (this.mediastackProvider?.isConfigured() && this.config.enableMediastack !== false) {
+        const canRequest = this.rateLimiter.canMakeRequest('mediastack');
+        if (canRequest) {
+          newsPromises.push(
+            this.mediastackProvider.fetchStockNews(symbol)
+              .then(news => { 
+                this.rateLimiter.recordRequest('mediastack');
+                allNews.push(...news); 
+              })
+              .catch(error => console.warn('mediastack fetch failed:', error))
+          );
+        }
       }
 
       // Try NewsData.io (multi-source aggregator)
-      if (this.newsdataProvider?.isConfigured()) {
-        newsPromises.push(
-          this.newsdataProvider.fetchStockNews(symbol)
-            .then(news => { allNews.push(...news); })
+      if (this.newsdataProvider?.isConfigured() && this.config.enableNewsdata !== false) {
+        const canRequest = this.rateLimiter.canMakeRequest('newsdata');
+        if (canRequest) {
+          newsPromises.push(
+            this.newsdataProvider.fetchStockNews(symbol)
+              .then(news => { 
+                this.rateLimiter.recordRequest('newsdata');
+                allNews.push(...news); 
+              })
             .catch(error => console.warn('NewsData.io fetch failed:', error))
         );
+        }
       }
 
       // Try RSS feeds (German news sources - general market news, not ticker-specific)
       // RSS feeds provide broader market context
-      if (this.rssProvider?.isConfigured()) {
-        newsPromises.push(
-          this.rssProvider.fetchAllNews()
-            .then(news => {
-              // Add RSS news but don't relate to specific symbol unless mentioned (case-insensitive)
-              const symbolUpper = symbol.toUpperCase();
-              const rssNews = news.map(item => ({
-                ...item,
-                related: item.headline.toUpperCase().includes(symbolUpper) ? [symbol] : undefined
-              }));
-              allNews.push(...rssNews.slice(0, 10)); // Limit RSS items
-            })
-            .catch(error => console.warn('RSS feeds fetch failed:', error))
-        );
+      if (this.rssProvider?.isConfigured() && this.config.enableRssFeeds !== false) {
+        const canRequest = this.rateLimiter.canMakeRequest('rss');
+        if (canRequest) {
+          newsPromises.push(
+            this.rssProvider.fetchAllNews()
+              .then(news => {
+                this.rateLimiter.recordRequest('rss');
+                // Add RSS news but don't relate to specific symbol unless mentioned (case-insensitive)
+                const symbolUpper = symbol.toUpperCase();
+                const rssNews = news.map(item => ({
+                  ...item,
+                  related: item.headline.toUpperCase().includes(symbolUpper) ? [symbol] : undefined
+                }));
+                allNews.push(...rssNews.slice(0, 10)); // Limit RSS items
+              })
+              .catch(error => console.warn('RSS feeds fetch failed:', error))
+          );
+        }
       }
 
       // Wait for all providers to complete (with timeout)
