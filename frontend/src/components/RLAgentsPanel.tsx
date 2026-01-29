@@ -85,6 +85,7 @@ export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
   const [formSymbols, setFormSymbols] = useState('AAPL,MSFT,GOOGL,AMZN,TSLA');
   const [formDays, setFormDays] = useState(365);
   const [formTimesteps, setFormTimesteps] = useState(100000);
+  const [showTransformerOptions, setShowTransformerOptions] = useState(false);
   
   // Training state
   const [trainingStatus, setTrainingStatus] = useState<Record<string, TrainingStatus>>({});
@@ -732,6 +733,127 @@ export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
                 step="10000"
               />
             </div>
+          </div>
+          
+          {/* Transformer Architecture Section */}
+          <div className="mt-4 p-4 bg-slate-800 rounded-lg border border-slate-600">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="use_transformer"
+                  checked={formConfig.use_transformer_policy || false}
+                  onChange={(e) => {
+                    setFormConfig(prev => ({ 
+                      ...prev, 
+                      use_transformer_policy: e.target.checked,
+                      // Set defaults when enabling
+                      ...(e.target.checked ? {
+                        transformer_d_model: prev.transformer_d_model || 256,
+                        transformer_n_heads: prev.transformer_n_heads || 8,
+                        transformer_n_layers: prev.transformer_n_layers || 4,
+                        transformer_d_ff: prev.transformer_d_ff || 512,
+                        transformer_dropout: prev.transformer_dropout || 0.1,
+                      } : {})
+                    }));
+                  }}
+                  className="w-4 h-4 rounded bg-slate-600 border-slate-500 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                />
+                <label htmlFor="use_transformer" className="text-white font-medium cursor-pointer">
+                  🚀 Use Advanced Transformer Architecture
+                </label>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTransformerOptions(!showTransformerOptions)}
+                className="text-xs text-blue-400 hover:text-blue-300"
+              >
+                {showTransformerOptions ? '▼ Hide Options' : '▶ Show Options'}
+              </button>
+            </div>
+            
+            <div className="text-xs text-slate-400 mb-3">
+              <p className="mb-1">
+                ✨ <strong>~2.5-3M parameters</strong> (vs ~300k for standard MLP)
+              </p>
+              <p>
+                Enables temporal awareness via self-attention, multi-scale feature extraction, 
+                and market regime detection for superior pattern recognition.
+              </p>
+            </div>
+            
+            {showTransformerOptions && formConfig.use_transformer_policy && (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-3 pt-3 border-t border-slate-700">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1" title="Transformer model dimension">
+                    d_model
+                  </label>
+                  <input
+                    type="number"
+                    value={formConfig.transformer_d_model || 256}
+                    onChange={(e) => setFormConfig(prev => ({ ...prev, transformer_d_model: Number(e.target.value) }))}
+                    className="w-full bg-slate-600 text-white rounded px-2 py-1 text-sm"
+                    min="64"
+                    max="512"
+                    step="64"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1" title="Number of attention heads">
+                    n_heads
+                  </label>
+                  <input
+                    type="number"
+                    value={formConfig.transformer_n_heads || 8}
+                    onChange={(e) => setFormConfig(prev => ({ ...prev, transformer_n_heads: Number(e.target.value) }))}
+                    className="w-full bg-slate-600 text-white rounded px-2 py-1 text-sm"
+                    min="1"
+                    max="16"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1" title="Number of transformer layers">
+                    n_layers
+                  </label>
+                  <input
+                    type="number"
+                    value={formConfig.transformer_n_layers || 4}
+                    onChange={(e) => setFormConfig(prev => ({ ...prev, transformer_n_layers: Number(e.target.value) }))}
+                    className="w-full bg-slate-600 text-white rounded px-2 py-1 text-sm"
+                    min="1"
+                    max="8"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1" title="Feedforward dimension">
+                    d_ff
+                  </label>
+                  <input
+                    type="number"
+                    value={formConfig.transformer_d_ff || 512}
+                    onChange={(e) => setFormConfig(prev => ({ ...prev, transformer_d_ff: Number(e.target.value) }))}
+                    className="w-full bg-slate-600 text-white rounded px-2 py-1 text-sm"
+                    min="128"
+                    max="2048"
+                    step="128"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1" title="Dropout rate">
+                    dropout
+                  </label>
+                  <input
+                    type="number"
+                    value={formConfig.transformer_dropout || 0.1}
+                    onChange={(e) => setFormConfig(prev => ({ ...prev, transformer_dropout: Number(e.target.value) }))}
+                    className="w-full bg-slate-600 text-white rounded px-2 py-1 text-sm"
+                    min="0"
+                    max="0.5"
+                    step="0.05"
+                  />
+                </div>
+              </div>
+            )}
           </div>
           
           <div className="flex justify-end gap-2 mt-4">

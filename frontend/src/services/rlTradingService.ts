@@ -90,7 +90,15 @@ export interface AgentConfig {
   learning_rate: number;
   gamma: number;
   ent_coef: number;
+  // Transformer Architecture Settings
+  use_transformer_policy?: boolean;
+  transformer_d_model?: number;
+  transformer_n_heads?: number;
+  transformer_n_layers?: number;
+  transformer_d_ff?: number;
+  transformer_dropout?: number;
 }
+
 
 export interface AgentStatus {
   name: string;
