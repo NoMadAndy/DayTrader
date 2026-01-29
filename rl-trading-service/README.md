@@ -133,10 +133,10 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up rl-trading-ser
 ### Observation Space
 
 The agent observes:
-- 60-period window of OHLCV data
-- Technical indicators (SMA, EMA, RSI, MACD, Bollinger Bands, ATR, etc.)
-- Portfolio state (cash ratio, position ratio, unrealized P&L)
-- Market conditions (volatility, trend strength)
+- 60-period window of OHLCV data and technical indicators (2100 features: 60 timesteps × 35 features)
+  - Technical indicators: SMA, EMA, RSI, MACD, Bollinger Bands, ATR, ADX, Stochastic, CCI, MFI, etc.
+- Portfolio state (5 features): cash ratio, position ratio, unrealized P&L, holding ratio, current drawdown
+- Total observation dimension: 2105 features (2100 temporal + 5 portfolio)
 
 ### Action Space
 

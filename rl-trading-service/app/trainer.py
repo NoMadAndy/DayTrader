@@ -333,6 +333,7 @@ class TradingAgentTrainer:
                         n_layers=config.transformer_n_layers,
                         d_ff=config.transformer_d_ff,
                         dropout=config.transformer_dropout,
+                        n_portfolio_features=5,  # Portfolio state features (cash_ratio, position_ratio, etc.)
                     ),
                     net_arch=dict(pi=[256, 128], vf=[256, 128]),  # Smaller heads since features are rich
                     activation_fn=torch.nn.ReLU,
@@ -349,6 +350,7 @@ class TradingAgentTrainer:
                 log(f"      - Transformer: {param_count['transformer_blocks']:,}")
                 log(f"      - Regime Detector: {param_count['regime_detector']:,}")
                 log(f"      - Aggregation: {param_count['aggregation']:,}")
+                log(f"      - Portfolio Projection: {param_count['portfolio_projection']:,}")
                 log(f"      - Actor: {param_count['actor']:,}")
                 log(f"      - Critic: {param_count['critic']:,}")
                 del temp_extractor  # Free memory
