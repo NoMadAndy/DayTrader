@@ -77,6 +77,11 @@ Train virtual traders using Deep Reinforcement Learning that learn from historic
 ### Features
 
 - **PPO Algorithm**: State-of-the-art Proximal Policy Optimization
+- **Advanced Transformer Architecture** (Optional): ~2.5-3M parameter neural network with:
+  - Multi-scale CNN for temporal feature extraction (3, 5, 7, 14-day patterns)
+  - Self-attention mechanism for temporal awareness
+  - Market regime detection (trend/range/volatile/crash)
+  - Multi-scale temporal aggregation (short/medium/long-term)
 - **Configurable Agent Profiles**:
   - **Holding Periods**: Scalping, Intraday, Swing (1-7 days), Position (weeks/months), Investor
   - **Risk Profiles**: Conservative, Moderate, Aggressive, Very Aggressive
@@ -100,10 +105,11 @@ Train virtual traders using Deep Reinforcement Learning that learn from historic
 
 1. Navigate to **RL Agents** page
 2. Click **+ New Agent** and configure parameters (or choose a preset)
-3. Start training with historical data from your preferred symbols
-4. Monitor training progress in real-time
-5. Once trained, agents appear as **RL Advisors** in Trading Signals
-6. View consensus signals from multiple trained agents
+3. *(Optional)* Enable **"🚀 Use Advanced Transformer Architecture"** for superior performance
+4. Start training with historical data from your preferred symbols
+5. Monitor training progress in real-time
+6. Once trained, agents appear as **RL Advisors** in Trading Signals
+7. View consensus signals from multiple trained agents
 
 ### GPU Training
 

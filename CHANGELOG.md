@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Advanced Transformer-Enhanced PPO Architecture for RL Trading Agents** - New neural network architecture for superior trading performance
+  - **Multi-Scale CNN Encoder**: Extracts features at different temporal scales (3, 5, 7, 14-day patterns)
+  - **Transformer Encoder**: Self-attention mechanism for temporal awareness (4 blocks, 8-head attention)
+  - **Market Regime Detector**: Classifies market phases (trend/range/volatile/crash)
+  - **Multi-Scale Aggregation**: Combines short/medium/long-term perspectives (5/20/60 timesteps)
+  - **Parameter Scale**: ~2.5-3M parameters vs ~300k for standard MLP architecture
+  - **Backend Implementation**:
+    - `rl-trading-service/app/networks/transformer_policy.py` - Core Transformer components
+    - `rl-trading-service/app/networks/custom_features_extractor.py` - Stable Baselines3 integration
+    - `rl-trading-service/app/agent_config.py` - New configuration fields (use_transformer_policy, transformer_d_model, etc.)
+    - `rl-trading-service/app/trainer.py` - Automatic architecture selection with detailed logging
+  - **Frontend UI**:
+    - New checkbox in RL Agents Panel: "🚀 Use Advanced Transformer Architecture"
+    - Collapsible advanced options panel for fine-tuning transformer parameters
+    - Inline documentation explaining benefits and parameter counts
+  - **Backward Compatible**: Existing MLP agents continue to work (default behavior unchanged)
+  - **GPU Optimized**: Automatically uses CUDA when available
+  - **Environment Variables**: Added DEFAULT_TRANSFORMER_* settings to .env.example
+
 ### Security
 - **PyTorch Security Vulnerability (CVE-2025-32434)** - Upgraded PyTorch to >=2.6.0 to address critical security vulnerability
   - Updated `ml-service/requirements.txt` (torch>=2.6.0, torchvision>=0.21.0)
