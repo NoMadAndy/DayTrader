@@ -1,7 +1,7 @@
 # ML Service Dependencies
-# PyTorch with CUDA support
-torch>=2.0.0
-torchvision>=0.15.0
+# PyTorch with CUDA support (>=2.6.0 required due to CVE-2025-32434)
+torch>=2.6.0
+torchvision>=0.21.0
 
 # FastAPI for REST API
 fastapi>=0.109.0
