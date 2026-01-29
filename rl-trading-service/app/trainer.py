@@ -333,7 +333,7 @@ class TradingAgentTrainer:
                         n_layers=config.transformer_n_layers,
                         d_ff=config.transformer_d_ff,
                         dropout=config.transformer_dropout,
-                        n_portfolio_features=5,  # Portfolio state features (cash_ratio, position_ratio, etc.)
+                        n_portfolio_features=TradingEnvironment.N_PORTFOLIO_FEATURES,
                     ),
                     net_arch=dict(pi=[256, 128], vf=[256, 128]),  # Smaller heads since features are rich
                     activation_fn=torch.nn.ReLU,

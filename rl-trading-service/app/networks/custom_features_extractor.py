@@ -21,6 +21,10 @@ class TransformerFeaturesExtractor(BaseFeaturesExtractor):
     The actual actor/critic heads are handled by SB3's policy, but we use
     our custom feature extractor to process observations.
     
+    The extractor splits observations into temporal features (OHLCV + indicators
+    over time) and portfolio state features (cash ratio, position ratio, etc.),
+    processes them separately, and concatenates the results.
+    
     Args:
         observation_space: Gymnasium observation space
         seq_len: Sequence length (lookback window)
@@ -29,6 +33,9 @@ class TransformerFeaturesExtractor(BaseFeaturesExtractor):
         n_layers: Number of transformer blocks
         d_ff: Feedforward dimension
         dropout: Dropout probability
+        n_portfolio_features: Number of portfolio state features (default: 5)
+            Portfolio features include: cash_ratio, position_ratio, unrealized_pnl,
+            holding_ratio, current_drawdown
     """
     
     def __init__(
@@ -79,12 +86,6 @@ class TransformerFeaturesExtractor(BaseFeaturesExtractor):
         
         # Portfolio features projection (to add to aggregated features)
         self.portfolio_projection = nn.Linear(n_portfolio_features, d_model)
-        
-        self._features_dim = features_dim
-    
-    @property
-    def features_dim(self) -> int:
-        return self._features_dim
     
     def forward(self, observations: torch.Tensor) -> torch.Tensor:
         """
