@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Authentication Endpoints Not Working** - Fixed 400 Bad Request errors on login and register endpoints
+  - CORS configuration was only allowing GET and OPTIONS methods
+  - Added POST, PUT, DELETE methods to allowed CORS methods
+  - Affects `/api/auth/register`, `/api/auth/login`, and other write endpoints
+
 ### Added
 - **mediastack and NewsData.io Provider Integration** - Added two new news providers for expanded coverage
   - **mediastack Provider**: Multi-language news API with simple REST interface
