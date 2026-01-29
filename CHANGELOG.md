@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **PyTorch Security Vulnerability (CVE-2025-32434)** - Upgraded PyTorch to >=2.6.0 to address critical security vulnerability
+  - Updated `ml-service/requirements.txt` (torch>=2.6.0, torchvision>=0.21.0)
+  - Updated `rl-trading-service/requirements.txt` (torch>=2.6.0, torchvision>=0.21.0)
+  - Fixes FinBERT model loading error due to `torch.load` security restrictions
+
 ### Fixed
 - **Authentication Error Handling** - Improved error messages and debugging for login/register issues
   - Enhanced CORS configuration with `allowedHeaders` and `credentials: true` for proper cookie support
