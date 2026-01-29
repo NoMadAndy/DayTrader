@@ -10,8 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **RL Training - Conv1d Tensor Size Mismatch** - Fixed tensor concatenation error in MultiScaleCNN
   - Error: `Sizes of tensors must match except in dimension 1. Expected size 60 but got size 61`
-  - Root cause: Even kernel sizes (14) with manual padding calculation produced incorrect output length (61 instead of 60)
-  - Solution: Changed all Conv1d layers to use `padding='same'` instead of manual padding values
+  - Root cause: Even kernel sizes (14) with explicit padding values did not account for asymmetric padding, producing incorrect output length (61 instead of 60)
+  - Solution: Changed all Conv1d layers to use `padding='same'` instead of explicit padding values
   - PyTorch's 'same' padding automatically handles asymmetric padding for even kernel sizes
   - All convolution layers now consistently produce sequence length of 60, enabling successful concatenation
   - Updated documentation to explain padding strategy and avoid future issues

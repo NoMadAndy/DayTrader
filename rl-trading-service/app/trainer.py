@@ -309,7 +309,7 @@ class TradingAgentTrainer:
             use_transformer = getattr(config, 'use_transformer_policy', False)
             
             # Log GPU usage if enabled
-            if settings.device == "cuda":
+            if settings.device == "cuda" and torch.cuda.is_available():
                 log(f"🚀 GPU Training enabled: {torch.cuda.get_device_name(0)}")
                 log(f"   VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
             
