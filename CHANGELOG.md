@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **New Provider Configuration in Settings Page** - Extended API Keys tab with new provider options
+  - Organized into "Market Data APIs" and "News APIs" sections with visual indicators
+  - Marketaux API Key field with description (sentiment analysis, multi-language support)
+  - Financial Modeling Prep (FMP) API Key field
+  - Tiingo API Key field (institutional news with historical archive)
+  - German RSS Feeds toggle (Börse Frankfurt, BaFin, ECB, Bundesbank - no API key required)
+  - All new fields sync with backend when user is authenticated
+  - Added German and English translations for all new settings
 - **Multi-Source News Integration for FinBERT Analysis** - Extended news aggregation with new data providers
   - **Backend RSS Feed Support**: New RSS parser integration with endpoints for German financial sources
     - `/api/rss/feeds` - List available RSS feed configurations

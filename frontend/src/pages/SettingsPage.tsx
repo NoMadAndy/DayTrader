@@ -23,6 +23,11 @@ interface ApiConfig {
   alphaVantageApiKey: string;
   twelveDataApiKey: string;
   newsApiKey: string;
+  // New provider keys
+  marketauxApiKey: string;
+  fmpApiKey: string;
+  tiingoApiKey: string;
+  enableRssFeeds: boolean;
 }
 
 function loadStoredConfig(): ApiConfig {
@@ -31,6 +36,10 @@ function loadStoredConfig(): ApiConfig {
     alphaVantageApiKey: '',
     twelveDataApiKey: '',
     newsApiKey: '',
+    marketauxApiKey: '',
+    fmpApiKey: '',
+    tiingoApiKey: '',
+    enableRssFeeds: true, // RSS feeds enabled by default (no API key required)
   };
   
   try {
@@ -84,11 +93,20 @@ export function SettingsPage() {
         if (settings) {
           setMlSettings(settings.mlSettings || { ...DEFAULT_ML_SETTINGS });
           if (settings.apiKeys && Object.keys(settings.apiKeys).length > 0) {
+            // Parse enableRssFeeds - handle both string and boolean-like values from server
+            // Server stores as Record<string, string>, but may return boolean-ish values
+            const rssValue = settings.apiKeys.enableRssFeeds;
+            const enableRss = rssValue === undefined || rssValue === 'true' || String(rssValue) === 'true';
+            
             const serverConfig: ApiConfig = {
               finnhubApiKey: settings.apiKeys.finnhub || '',
               alphaVantageApiKey: settings.apiKeys.alphaVantage || '',
               twelveDataApiKey: settings.apiKeys.twelveData || '',
               newsApiKey: settings.apiKeys.newsApi || '',
+              marketauxApiKey: settings.apiKeys.marketaux || '',
+              fmpApiKey: settings.apiKeys.fmp || '',
+              tiingoApiKey: settings.apiKeys.tiingo || '',
+              enableRssFeeds: enableRss,
             };
             setLocalConfig(serverConfig);
             saveConfig(serverConfig);
@@ -105,6 +123,10 @@ export function SettingsPage() {
       alphaVantageApiKey: config.alphaVantageApiKey || undefined,
       twelveDataApiKey: config.twelveDataApiKey || undefined,
       newsApiKey: config.newsApiKey || undefined,
+      marketauxApiKey: config.marketauxApiKey || undefined,
+      fmpApiKey: config.fmpApiKey || undefined,
+      tiingoApiKey: config.tiingoApiKey || undefined,
+      enableRssFeeds: config.enableRssFeeds,
       preferredSource: config.finnhubApiKey ? 'finnhub' : 
                        config.twelveDataApiKey ? 'twelveData' :
                        config.alphaVantageApiKey ? 'alphaVantage' : 'yahoo',
@@ -125,6 +147,10 @@ export function SettingsPage() {
           alphaVantage: localConfig.alphaVantageApiKey,
           twelveData: localConfig.twelveDataApiKey,
           newsApi: localConfig.newsApiKey,
+          marketaux: localConfig.marketauxApiKey,
+          fmp: localConfig.fmpApiKey,
+          tiingo: localConfig.tiingoApiKey,
+          enableRssFeeds: localConfig.enableRssFeeds ? 'true' : 'false',
         },
       });
     }
@@ -136,10 +162,14 @@ export function SettingsPage() {
       alphaVantageApiKey: '',
       twelveDataApiKey: '',
       newsApiKey: '',
+      marketauxApiKey: '',
+      fmpApiKey: '',
+      tiingoApiKey: '',
+      enableRssFeeds: true,
     };
     setLocalConfig(empty);
     saveConfig(empty);
-    setConfig({ preferredSource: 'yahoo' });
+    setConfig({ preferredSource: 'yahoo', enableRssFeeds: true });
     
     if (authState.isAuthenticated) {
       updateUserSettings({ apiKeys: {} });
@@ -178,7 +208,9 @@ export function SettingsPage() {
   };
 
   const hasAnyKey = localConfig.finnhubApiKey || localConfig.alphaVantageApiKey || 
-                    localConfig.twelveDataApiKey || localConfig.newsApiKey;
+                    localConfig.twelveDataApiKey || localConfig.newsApiKey ||
+                    localConfig.marketauxApiKey || localConfig.fmpApiKey ||
+                    localConfig.tiingoApiKey;
 
   const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
     {
@@ -369,68 +401,161 @@ export function SettingsPage() {
                 </span>
               </div>
 
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">
-                  {t('settings.finnhubKey')}
-                  <a href="https://finnhub.io/register" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
-                    {t('settings.freeRegister')}
-                  </a>
-                </label>
-                <input
-                  type="password"
-                  value={localConfig.finnhubApiKey}
-                  onChange={(e) => setLocalConfig(prev => ({ ...prev, finnhubApiKey: e.target.value }))}
-                  className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                  placeholder={t('settings.enterKey')}
-                />
+              {/* Market Data APIs Section */}
+              <div className="border-b border-slate-700 pb-4">
+                <h4 className="text-sm font-medium text-white mb-4 flex items-center">
+                  <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
+                  {t('settings.marketDataApis')}
+                </h4>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">
+                      {t('settings.finnhubKey')}
+                      <a href="https://finnhub.io/register" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
+                        {t('settings.freeRegister')}
+                      </a>
+                    </label>
+                    <input
+                      type="password"
+                      value={localConfig.finnhubApiKey}
+                      onChange={(e) => setLocalConfig(prev => ({ ...prev, finnhubApiKey: e.target.value }))}
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                      placeholder={t('settings.enterKey')}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">
+                      {t('settings.alphaVantageKey')}
+                      <a href="https://www.alphavantage.co/support/#api-key" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
+                        {t('settings.freeRegister')}
+                      </a>
+                    </label>
+                    <input
+                      type="password"
+                      value={localConfig.alphaVantageApiKey}
+                      onChange={(e) => setLocalConfig(prev => ({ ...prev, alphaVantageApiKey: e.target.value }))}
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                      placeholder={t('settings.enterKey')}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">
+                      {t('settings.twelveDataKey')}
+                      <a href="https://twelvedata.com/register" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
+                        {t('settings.freeRegister')}
+                      </a>
+                    </label>
+                    <input
+                      type="password"
+                      value={localConfig.twelveDataApiKey}
+                      onChange={(e) => setLocalConfig(prev => ({ ...prev, twelveDataApiKey: e.target.value }))}
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                      placeholder={t('settings.enterKey')}
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">
-                  {t('settings.alphaVantageKey')}
-                  <a href="https://www.alphavantage.co/support/#api-key" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
-                    {t('settings.freeRegister')}
-                  </a>
-                </label>
-                <input
-                  type="password"
-                  value={localConfig.alphaVantageApiKey}
-                  onChange={(e) => setLocalConfig(prev => ({ ...prev, alphaVantageApiKey: e.target.value }))}
-                  className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                  placeholder={t('settings.enterKey')}
-                />
+              {/* News APIs Section */}
+              <div className="border-b border-slate-700 pb-4">
+                <h4 className="text-sm font-medium text-white mb-4 flex items-center">
+                  <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                  {t('settings.newsApis')}
+                </h4>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">
+                      {t('settings.newsApiKey')}
+                      <a href="https://newsapi.org/register" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
+                        {t('settings.freeRegister')}
+                      </a>
+                    </label>
+                    <input
+                      type="password"
+                      value={localConfig.newsApiKey}
+                      onChange={(e) => setLocalConfig(prev => ({ ...prev, newsApiKey: e.target.value }))}
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                      placeholder={t('settings.enterKey')}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">
+                      {t('settings.marketauxKey')}
+                      <a href="https://www.marketaux.com/register" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
+                        {t('settings.freeRegister')}
+                      </a>
+                    </label>
+                    <p className="text-xs text-gray-500 mb-2">{t('settings.marketauxDesc')}</p>
+                    <input
+                      type="password"
+                      value={localConfig.marketauxApiKey}
+                      onChange={(e) => setLocalConfig(prev => ({ ...prev, marketauxApiKey: e.target.value }))}
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                      placeholder={t('settings.enterKey')}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">
+                      {t('settings.fmpKey')}
+                      <a href="https://financialmodelingprep.com/developer" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
+                        {t('settings.freeRegister')}
+                      </a>
+                    </label>
+                    <p className="text-xs text-gray-500 mb-2">{t('settings.fmpDesc')}</p>
+                    <input
+                      type="password"
+                      value={localConfig.fmpApiKey}
+                      onChange={(e) => setLocalConfig(prev => ({ ...prev, fmpApiKey: e.target.value }))}
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                      placeholder={t('settings.enterKey')}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">
+                      {t('settings.tiingoKey')}
+                      <a href="https://api.tiingo.com/account/api/token" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
+                        {t('settings.freeRegister')}
+                      </a>
+                    </label>
+                    <p className="text-xs text-gray-500 mb-2">{t('settings.tiingoDesc')}</p>
+                    <input
+                      type="password"
+                      value={localConfig.tiingoApiKey}
+                      onChange={(e) => setLocalConfig(prev => ({ ...prev, tiingoApiKey: e.target.value }))}
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                      placeholder={t('settings.enterKey')}
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">
-                  {t('settings.twelveDataKey')}
-                  <a href="https://twelvedata.com/register" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
-                    {t('settings.freeRegister')}
-                  </a>
+              {/* German RSS Feeds Section */}
+              <div className="pb-4">
+                <h4 className="text-sm font-medium text-white mb-4 flex items-center">
+                  <span className="w-2 h-2 bg-orange-500 rounded-full mr-2"></span>
+                  {t('settings.rssFeeds')}
+                  <span className="ml-2 text-xs text-gray-500">({t('settings.noApiKeyRequired')})</span>
+                </h4>
+                
+                <label className="flex items-center gap-3 cursor-pointer p-3 bg-slate-900/50 rounded-lg border border-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={localConfig.enableRssFeeds}
+                    onChange={(e) => setLocalConfig(prev => ({ ...prev, enableRssFeeds: e.target.checked }))}
+                    className="w-5 h-5 rounded bg-slate-900 border-slate-600 text-blue-500 focus:ring-blue-500"
+                  />
+                  <div>
+                    <span className="text-white">{t('settings.enableRssFeeds')}</span>
+                    <p className="text-xs text-gray-500">{t('settings.rssFeedsDesc')}</p>
+                  </div>
                 </label>
-                <input
-                  type="password"
-                  value={localConfig.twelveDataApiKey}
-                  onChange={(e) => setLocalConfig(prev => ({ ...prev, twelveDataApiKey: e.target.value }))}
-                  className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                  placeholder={t('settings.enterKey')}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">
-                  NewsAPI Key
-                  <a href="https://newsapi.org/register" target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">
-                    (Kostenlos registrieren)
-                  </a>
-                </label>
-                <input
-                  type="password"
-                  value={localConfig.newsApiKey}
-                  onChange={(e) => setLocalConfig(prev => ({ ...prev, newsApiKey: e.target.value }))}
-                  className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                  placeholder={t('settings.enterKey')}
-                />
               </div>
 
               <div className="flex gap-3 pt-4">
