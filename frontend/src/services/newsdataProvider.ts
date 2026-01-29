@@ -47,7 +47,7 @@ export class NewsdataProvider {
       }
 
       const data = await response.json();
-      return data.articles || [];
+      return data.items || [];
     } catch (error) {
       console.error('NewsData.io fetch error:', error);
       return [];
@@ -77,7 +77,7 @@ export class NewsdataProvider {
       }
 
       const data = await response.json();
-      return data.articles || [];
+      return data.items || [];
     } catch (error) {
       console.error('NewsData.io market news fetch error:', error);
       return [];

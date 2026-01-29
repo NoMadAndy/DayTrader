@@ -3632,7 +3632,7 @@ app.get('/api/mediastack/news', async (req, res) => {
     
     // Normalize to NewsItem format
     const normalizedData = {
-      articles: (data.data || []).map((item, index) => ({
+      items: (data.data || []).map((item, index) => ({
         id: `mediastack-${batchTimestamp}-${index}`,
         headline: item.title || '',
         summary: item.description || '',
@@ -3701,9 +3701,9 @@ app.get('/api/newsdata/news', async (req, res) => {
     const data = await response.json();
     
     if (!response.ok || data.status === 'error') {
-      return res.status(response.status).json({ 
+      return res.status(response.status || 400).json({ 
         error: 'NewsData.io API error',
-        message: data.results?.message || 'Unknown error'
+        message: data.message || 'Unknown error'
       });
     }
     
@@ -3712,7 +3712,7 @@ app.get('/api/newsdata/news', async (req, res) => {
     
     // Normalize to NewsItem format
     const normalizedData = {
-      articles: (data.results || []).map((item, index) => ({
+      items: (data.results || []).map((item, index) => ({
         id: item.article_id || `newsdata-${batchTimestamp}-${index}`,
         headline: item.title || '',
         summary: item.description || item.content || '',

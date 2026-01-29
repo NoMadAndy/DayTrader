@@ -186,7 +186,7 @@ export class DataService {
       sources.push('Tiingo');
     }
     if (this.mediastackProvider?.isConfigured()) {
-      sources.push('mediastack');
+      sources.push('MediaStack');
     }
     if (this.newsdataProvider?.isConfigured()) {
       sources.push('NewsData.io');

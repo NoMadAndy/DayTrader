@@ -13,7 +13,7 @@ import type { NewsItem } from './types';
 const MEDIASTACK_API_BASE = '/api/mediastack';
 
 export class MediastackProvider {
-  name = 'mediastack';
+  name = 'MediaStack';
   private apiKey: string;
 
   constructor(apiKey: string) {
@@ -47,7 +47,7 @@ export class MediastackProvider {
       }
 
       const data = await response.json();
-      return data.articles || [];
+      return data.items || [];
     } catch (error) {
       console.error('mediastack fetch error:', error);
       return [];
@@ -77,7 +77,7 @@ export class MediastackProvider {
       }
 
       const data = await response.json();
-      return data.articles || [];
+      return data.items || [];
     } catch (error) {
       console.error('mediastack market news fetch error:', error);
       return [];
