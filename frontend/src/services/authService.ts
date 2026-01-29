@@ -152,16 +152,23 @@ export async function register(email: string, password: string, username?: strin
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ email, password, username }),
+      credentials: 'include',
     });
     
     const data = await response.json();
     
     if (!response.ok) {
-      return { success: false, error: data.error || 'Registration failed' };
+      console.error('Registration failed:', response.status, data.error);
+      return { success: false, error: data.error || `Registration failed (${response.status})` };
     }
     
+    console.log('Registration successful');
     return { success: true, user: data.user };
   } catch (e) {
+    console.error('Registration network error:', e);
+    if (e instanceof TypeError || (e instanceof Error && (e.name === 'NetworkError' || e.name === 'TypeError'))) {
+      return { success: false, error: 'Cannot reach server. Please check your connection and try again.' };
+    }
     return { success: false, error: 'Network error. Please try again.' };
   }
 }
@@ -177,12 +184,14 @@ export async function login(email: string, password: string): Promise<AuthResult
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ email, password }),
+      credentials: 'include',
     });
     
     const data = await response.json();
     
     if (!response.ok) {
-      return { success: false, error: data.error || 'Login failed' };
+      console.error('Login failed:', response.status, data.error);
+      return { success: false, error: data.error || `Login failed (${response.status})` };
     }
     
     // Store token and user
@@ -195,8 +204,13 @@ export async function login(email: string, password: string): Promise<AuthResult
       token: data.token,
     });
     
+    console.log('Login successful');
     return { success: true, user: data.user, token: data.token };
   } catch (e) {
+    console.error('Login network error:', e);
+    if (e instanceof TypeError || (e instanceof Error && (e.name === 'NetworkError' || e.name === 'TypeError'))) {
+      return { success: false, error: 'Cannot reach server. Please check your connection and try again.' };
+    }
     return { success: false, error: 'Network error. Please try again.' };
   }
 }
