@@ -79,6 +79,10 @@ class TradingEnvironment(gym.Env):
     
     metadata = {"render_modes": ["human", "ansi"]}
     
+    # Number of portfolio state features included in observations
+    # [cash_ratio, position_ratio, unrealized_pnl_ratio, holding_time_ratio, current_drawdown]
+    N_PORTFOLIO_FEATURES = 5
+    
     def __init__(
         self,
         df: pd.DataFrame,
@@ -138,12 +142,10 @@ class TradingEnvironment(gym.Env):
         # Observation: window of features + portfolio state
         # Portfolio state: [cash_ratio, position_ratio, unrealized_pnl_ratio, 
         #                   holding_time_ratio, current_drawdown]
-        n_portfolio_features = 5
-        
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(self.window_size * self.n_features + n_portfolio_features,),
+            shape=(self.window_size * self.n_features + self.N_PORTFOLIO_FEATURES,),
             dtype=np.float32
         )
         

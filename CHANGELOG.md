@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Transformer Architecture Shape Mismatch** - Fixed training crash with shape error `'[1, 60, 35]' is invalid for input of size 2105`
+  - Root cause: Observation space includes 2100 temporal features (60×35) + 5 portfolio features = 2105 total
+  - Previous code incorrectly used integer division `2105 // 60 = 35`, losing the 5 portfolio features
+  - Solution: Split observations into temporal and portfolio features before processing
+  - Added `n_portfolio_features` parameter (default: 5) to `TransformerFeaturesExtractor`
+  - Portfolio features now processed through separate projection layer and concatenated with temporal features
+  - Updated output dimension from 768 to 1024 (768 temporal + 256 portfolio features)
+  - Updated parameter count logging to include new `portfolio_projection` layer
+  - Fixes apply to both `forward()` and `get_regime_probs()` methods
+
 ### Added
 - **Advanced Transformer-Enhanced PPO Architecture for RL Trading Agents** - New neural network architecture for superior trading performance
   - **Multi-Scale CNN Encoder**: Extracts features at different temporal scales (3, 5, 7, 14-day patterns)
