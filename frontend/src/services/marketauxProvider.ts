@@ -53,10 +53,13 @@ export class MarketauxProvider {
       }
 
       const data = await response.json();
-      return (data.items || []).map((item: MarketauxNewsItem) => ({
-        ...item,
-        sentimentScore: item.sentiment != null ? Number(item.sentiment) : undefined,
-      }));
+      return (data.items || []).map((item: MarketauxNewsItem) => {
+        const sentimentValue = Number(item.sentiment);
+        return {
+          ...item,
+          sentimentScore: !isNaN(sentimentValue) ? sentimentValue : undefined,
+        };
+      });
     } catch (error) {
       console.error('Marketaux fetch error:', error);
       return [];

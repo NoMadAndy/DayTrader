@@ -3168,9 +3168,12 @@ app.get('/api/rss/feed/:feedId', async (req, res) => {
     // Fetch and parse RSS feed
     const feed = await rssParser.parseURL(feedConfig.url);
     
+    // Generate unique timestamp base for this batch
+    const batchTimestamp = Date.now();
+    
     // Normalize feed items to NewsItem format
     const items = (feed.items || []).slice(0, 20).map((item, index) => ({
-      id: `rss-${feedId}-${index}-${Date.now()}`,
+      id: `rss-${feedId}-${batchTimestamp}-${index}`,
       headline: item.title || '',
       summary: item.contentSnippet || item.content || '',
       source: feedConfig.name,
@@ -3199,8 +3202,7 @@ app.get('/api/rss/feed/:feedId', async (req, res) => {
     console.error(`RSS feed fetch error for ${feedId}:`, error.message);
     res.status(500).json({ 
       error: 'Failed to fetch RSS feed',
-      feedId,
-      message: error.message 
+      feedId
     });
   }
 });
@@ -3223,12 +3225,15 @@ app.get('/api/rss/all', async (req, res) => {
       });
     }
     
+    // Generate unique timestamp base for this batch request
+    const batchTimestamp = Date.now();
+    
     // Fetch all feeds in parallel
-    const feedPromises = Object.entries(RSS_FEEDS).map(async ([feedId, config]) => {
+    const feedPromises = Object.entries(RSS_FEEDS).map(async ([feedId, config], feedIndex) => {
       try {
         const feed = await rssParser.parseURL(config.url);
         return (feed.items || []).slice(0, 10).map((item, index) => ({
-          id: `rss-${feedId}-${index}-${Date.now()}`,
+          id: `rss-${feedId}-${batchTimestamp}-${feedIndex}-${index}`,
           headline: item.title || '',
           summary: item.contentSnippet || item.content || '',
           source: config.name,
@@ -3261,7 +3266,7 @@ app.get('/api/rss/all', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('RSS all feeds fetch error:', error.message);
-    res.status(500).json({ error: 'Failed to fetch RSS feeds', message: error.message });
+    res.status(500).json({ error: 'Failed to fetch RSS feeds' });
   }
 });
 
@@ -3311,15 +3316,17 @@ app.get('/api/marketaux/news', async (req, res) => {
     
     if (!response.ok) {
       return res.status(response.status).json({ 
-        error: 'Marketaux API error',
-        message: data.error || response.statusText
+        error: 'Marketaux API error'
       });
     }
+    
+    // Generate unique timestamp base for this batch
+    const batchTimestamp = Date.now();
     
     // Normalize to NewsItem format
     const normalizedData = {
       items: (data.data || []).map((item, index) => ({
-        id: item.uuid || `marketaux-${index}-${Date.now()}`,
+        id: item.uuid || `marketaux-${batchTimestamp}-${index}`,
         headline: item.title || '',
         summary: item.description || item.snippet || '',
         source: item.source || 'Marketaux',
@@ -3327,7 +3334,7 @@ app.get('/api/marketaux/news', async (req, res) => {
         datetime: item.published_at ? new Date(item.published_at).getTime() : Date.now(),
         image: item.image_url || undefined,
         related: item.entities?.map(e => e.symbol).filter(Boolean) || [],
-        sentiment: item.sentiment_score != null ? item.sentiment_score : undefined,
+        sentiment: typeof item.sentiment_score === 'number' ? item.sentiment_score : undefined,
         language: item.language || language
       })),
       meta: data.meta,
@@ -3340,7 +3347,7 @@ app.get('/api/marketaux/news', async (req, res) => {
     res.json(normalizedData);
   } catch (error) {
     console.error('Marketaux proxy error:', error);
-    res.status(500).json({ error: 'Failed to fetch from Marketaux', message: error.message });
+    res.status(500).json({ error: 'Failed to fetch from Marketaux' });
   }
 });
 
@@ -3389,15 +3396,17 @@ app.get('/api/fmp/news/stock', async (req, res) => {
     
     if (!response.ok) {
       return res.status(response.status).json({ 
-        error: 'FMP API error',
-        message: data.Error || response.statusText
+        error: 'FMP API error'
       });
     }
+    
+    // Generate unique timestamp base for this batch
+    const batchTimestamp = Date.now();
     
     // Normalize to NewsItem format
     const normalizedData = {
       items: (data || []).map((item, index) => ({
-        id: `fmp-${index}-${Date.now()}`,
+        id: `fmp-${batchTimestamp}-${index}`,
         headline: item.title || '',
         summary: item.text || '',
         source: item.site || 'FMP',
@@ -3416,7 +3425,7 @@ app.get('/api/fmp/news/stock', async (req, res) => {
     res.json(normalizedData);
   } catch (error) {
     console.error('FMP proxy error:', error);
-    res.status(500).json({ error: 'Failed to fetch from FMP', message: error.message });
+    res.status(500).json({ error: 'Failed to fetch from FMP' });
   }
 });
 
@@ -3456,15 +3465,17 @@ app.get('/api/fmp/news/general', async (req, res) => {
     
     if (!response.ok) {
       return res.status(response.status).json({ 
-        error: 'FMP API error',
-        message: data.Error || response.statusText
+        error: 'FMP API error'
       });
     }
+    
+    // Generate unique timestamp base for this batch
+    const batchTimestamp = Date.now();
     
     // Normalize to NewsItem format
     const normalizedData = {
       items: (data || []).map((item, index) => ({
-        id: `fmp-general-${index}-${Date.now()}`,
+        id: `fmp-general-${batchTimestamp}-${index}`,
         headline: item.title || '',
         summary: item.text || '',
         source: item.site || 'FMP',
@@ -3483,7 +3494,7 @@ app.get('/api/fmp/news/general', async (req, res) => {
     res.json(normalizedData);
   } catch (error) {
     console.error('FMP general news proxy error:', error);
-    res.status(500).json({ error: 'Failed to fetch from FMP', message: error.message });
+    res.status(500).json({ error: 'Failed to fetch from FMP' });
   }
 });
 
@@ -3533,21 +3544,22 @@ app.get('/api/tiingo/news', async (req, res) => {
     
     if (!response.ok) {
       return res.status(response.status).json({ 
-        error: 'Tiingo API error',
-        message: data.detail || response.statusText
+        error: 'Tiingo API error'
       });
     }
+    
+    // Generate unique timestamp base for this batch
+    const batchTimestamp = Date.now();
     
     // Normalize to NewsItem format
     const normalizedData = {
       items: (data || []).map((item, index) => ({
-        id: item.id?.toString() || `tiingo-${index}-${Date.now()}`,
+        id: item.id?.toString() || `tiingo-${batchTimestamp}-${index}`,
         headline: item.title || '',
         summary: item.description || '',
         source: item.source || 'Tiingo',
         url: item.url || '',
         datetime: item.publishedDate ? new Date(item.publishedDate).getTime() : Date.now(),
-        image: undefined, // Tiingo doesn't provide images
         related: item.tickers || [],
         language: 'en'
       })),
@@ -3560,7 +3572,7 @@ app.get('/api/tiingo/news', async (req, res) => {
     res.json(normalizedData);
   } catch (error) {
     console.error('Tiingo proxy error:', error);
-    res.status(500).json({ error: 'Failed to fetch from Tiingo', message: error.message });
+    res.status(500).json({ error: 'Failed to fetch from Tiingo' });
   }
 });
 

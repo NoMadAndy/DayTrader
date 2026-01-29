@@ -55,14 +55,15 @@ function loadStoredConfig(): ApiConfig {
       const parsed: unknown = JSON.parse(stored);
       if (isValidApiConfig(parsed)) {
         // Merge with defaults for new fields
+        const parsedObj = parsed as unknown as Record<string, unknown>;
         return {
           ...defaultConfig,
-          ...parsed,
+          ...(parsed as ApiConfig),
           // Ensure new fields have valid defaults
-          marketauxApiKey: (parsed as Record<string, string>).marketauxApiKey || '',
-          fmpApiKey: (parsed as Record<string, string>).fmpApiKey || '',
-          tiingoApiKey: (parsed as Record<string, string>).tiingoApiKey || '',
-          enableRssFeeds: (parsed as Record<string, boolean>).enableRssFeeds !== false,
+          marketauxApiKey: typeof parsedObj.marketauxApiKey === 'string' ? parsedObj.marketauxApiKey : '',
+          fmpApiKey: typeof parsedObj.fmpApiKey === 'string' ? parsedObj.fmpApiKey : '',
+          tiingoApiKey: typeof parsedObj.tiingoApiKey === 'string' ? parsedObj.tiingoApiKey : '',
+          enableRssFeeds: parsedObj.enableRssFeeds !== false,
         };
       }
       console.warn('Invalid stored API config format, using defaults');

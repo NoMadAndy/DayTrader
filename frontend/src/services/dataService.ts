@@ -362,7 +362,7 @@ export class DataService {
       if (finnhub?.isConfigured() && finnhub instanceof FinnhubProvider) {
         newsPromises.push(
           finnhub.fetchNews(symbol)
-            .then(news => allNews.push(...news))
+            .then(news => { allNews.push(...news); })
             .catch(error => console.warn('Finnhub news fetch failed:', error))
         );
       }
@@ -371,7 +371,7 @@ export class DataService {
       if (this.newsProvider?.isConfigured()) {
         newsPromises.push(
           this.newsProvider.fetchStockNews(symbol, companyName || STOCK_NAMES[symbol])
-            .then(news => allNews.push(...news))
+            .then(news => { allNews.push(...news); })
             .catch(error => console.warn('NewsAPI fetch failed:', error))
         );
       }
@@ -380,7 +380,7 @@ export class DataService {
       if (this.marketauxProvider?.isConfigured()) {
         newsPromises.push(
           this.marketauxProvider.fetchStockNews(symbol)
-            .then(news => allNews.push(...news))
+            .then(news => { allNews.push(...news); })
             .catch(error => console.warn('Marketaux fetch failed:', error))
         );
       }
@@ -389,7 +389,7 @@ export class DataService {
       if (this.fmpProvider?.isConfigured()) {
         newsPromises.push(
           this.fmpProvider.fetchStockNews(symbol)
-            .then(news => allNews.push(...news))
+            .then(news => { allNews.push(...news); })
             .catch(error => console.warn('FMP fetch failed:', error))
         );
       }
@@ -398,7 +398,7 @@ export class DataService {
       if (this.tiingoProvider?.isConfigured()) {
         newsPromises.push(
           this.tiingoProvider.fetchStockNews(symbol)
-            .then(news => allNews.push(...news))
+            .then(news => { allNews.push(...news); })
             .catch(error => console.warn('Tiingo fetch failed:', error))
         );
       }
@@ -409,10 +409,11 @@ export class DataService {
         newsPromises.push(
           this.rssProvider.fetchAllNews()
             .then(news => {
-              // Add RSS news but don't relate to specific symbol unless mentioned
+              // Add RSS news but don't relate to specific symbol unless mentioned (case-insensitive)
+              const symbolUpper = symbol.toUpperCase();
               const rssNews = news.map(item => ({
                 ...item,
-                related: item.headline.toUpperCase().includes(symbol) ? [symbol] : undefined
+                related: item.headline.toUpperCase().includes(symbolUpper) ? [symbol] : undefined
               }));
               allNews.push(...rssNews.slice(0, 10)); // Limit RSS items
             })
