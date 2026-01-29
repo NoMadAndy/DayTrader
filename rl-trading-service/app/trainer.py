@@ -304,16 +304,66 @@ class TradingAgentTrainer:
                 clip_obs=10.0,
             )
             
-            log(f"🧠 Creating PPO model...")
-            log(f"   Architecture: [256, 256] hidden layers")
-            log(f"   Learning rate: {config.learning_rate}")
-            log(f"   Gamma: {config.gamma}")
+            # Determine architecture based on config
+            use_transformer = getattr(config, 'use_transformer_policy', False)
             
-            # Create PPO model
-            policy_kwargs = dict(
-                net_arch=dict(pi=[256, 256], vf=[256, 256]),
-                activation_fn=torch.nn.ReLU,
-            )
+            if use_transformer:
+                log(f"🧠 Creating PPO model with Transformer architecture...")
+                log(f"   d_model: {config.transformer_d_model}")
+                log(f"   n_heads: {config.transformer_n_heads}")
+                log(f"   n_layers: {config.transformer_n_layers}")
+                log(f"   d_ff: {config.transformer_d_ff}")
+                log(f"   dropout: {config.transformer_dropout}")
+                log(f"   Learning rate: {config.learning_rate}")
+                log(f"   Gamma: {config.gamma}")
+                
+                # Import transformer components
+                from .networks import TransformerFeaturesExtractor
+                
+                # Get observation space to calculate input dimensions
+                obs_space = vec_env.observation_space
+                
+                # Create policy kwargs with custom features extractor
+                policy_kwargs = dict(
+                    features_extractor_class=TransformerFeaturesExtractor,
+                    features_extractor_kwargs=dict(
+                        seq_len=getattr(config, 'lookback_window', settings.default_lookback_window),
+                        d_model=config.transformer_d_model,
+                        n_heads=config.transformer_n_heads,
+                        n_layers=config.transformer_n_layers,
+                        d_ff=config.transformer_d_ff,
+                        dropout=config.transformer_dropout,
+                    ),
+                    net_arch=dict(pi=[256, 128], vf=[256, 128]),  # Smaller heads since features are rich
+                    activation_fn=torch.nn.ReLU,
+                )
+                
+                # Log parameter count
+                temp_extractor = TransformerFeaturesExtractor(
+                    obs_space,
+                    **policy_kwargs['features_extractor_kwargs']
+                )
+                param_count = temp_extractor.get_parameter_count()
+                log(f"   📊 Parameter count: {param_count['total']:,} total")
+                log(f"      - CNN Encoder: {param_count['cnn_encoder']:,}")
+                log(f"      - Transformer: {param_count['transformer_blocks']:,}")
+                log(f"      - Regime Detector: {param_count['regime_detector']:,}")
+                log(f"      - Aggregation: {param_count['aggregation']:,}")
+                log(f"      - Actor: {param_count['actor']:,}")
+                log(f"      - Critic: {param_count['critic']:,}")
+                del temp_extractor  # Free memory
+                
+            else:
+                log(f"🧠 Creating PPO model with MLP architecture...")
+                log(f"   Architecture: [256, 256] hidden layers")
+                log(f"   Learning rate: {config.learning_rate}")
+                log(f"   Gamma: {config.gamma}")
+                
+                # Create PPO model with standard MLP
+                policy_kwargs = dict(
+                    net_arch=dict(pi=[256, 256], vf=[256, 256]),
+                    activation_fn=torch.nn.ReLU,
+                )
             
             model = PPO(
                 policy="MlpPolicy",

@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     # CUDA settings
     use_cuda: bool = os.getenv("USE_CUDA", "true").lower() == "true"
     
+    # Transformer architecture defaults
+    default_transformer_d_model: int = int(os.getenv("DEFAULT_TRANSFORMER_D_MODEL", "256"))
+    default_transformer_n_heads: int = int(os.getenv("DEFAULT_TRANSFORMER_N_HEADS", "8"))
+    default_transformer_n_layers: int = int(os.getenv("DEFAULT_TRANSFORMER_N_LAYERS", "4"))
+    default_transformer_d_ff: int = int(os.getenv("DEFAULT_TRANSFORMER_D_FF", "512"))
+    default_transformer_dropout: float = float(os.getenv("DEFAULT_TRANSFORMER_DROPOUT", "0.1"))
+    
     # Database
     database_url: Optional[str] = os.getenv("DATABASE_URL")
     
