@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Authentication Error Handling** - Improved error messages and debugging for login/register issues
+  - Enhanced CORS configuration with `allowedHeaders` and `credentials: true` for proper cookie support
+  - Added detailed logging in auth endpoints for debugging login/register failures
+  - PostgreSQL-specific error codes now return clearer messages (e.g., "Email already registered", "Database not properly initialized")
+  - Frontend now shows more helpful messages when server is unreachable
+  - Better distinction between network errors and authentication failures
 - **Authentication Endpoints Not Working** - Fixed 400 Bad Request errors on login and register endpoints
   - CORS configuration was only allowing GET and OPTIONS methods
   - Added POST, PUT, DELETE methods to allowed CORS methods
