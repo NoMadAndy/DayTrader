@@ -2104,6 +2104,7 @@ export async function getLeaderboard(limit = 50, timeframe = 'all', filter = 'al
       winRate: parseFloat(row.win_rate || 0),
       isAITrader: row.ai_trader_id !== null,
       avatar: row.avatar || (row.ai_trader_id ? '🤖' : undefined),
+      aiTraderId: row.ai_trader_id,
     }));
   } catch (e) {
     console.error('Get leaderboard error:', e);
