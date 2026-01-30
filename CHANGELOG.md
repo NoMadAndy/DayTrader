@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Fixed AI Trader creation failing with "Name is required" error by adding missing `Content-Type: application/json` header to API requests in `aiTraderService.ts`
+
 ### Added
 - **Live AI Trader Management Page** - New frontend page at `/ai-traders` for creating and managing AI Traders
   - View list of all AI Traders with status, trades count, win rate, and P&L

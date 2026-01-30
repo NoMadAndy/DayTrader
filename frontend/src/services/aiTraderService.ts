@@ -55,7 +55,10 @@ export async function getAITrader(id: number): Promise<AITrader> {
 export async function createAITrader(data: CreateAITraderRequest): Promise<AITrader> {
   const response = await fetch(`${API_BASE}/ai-traders`, {
     method: 'POST',
-    headers: getAuthHeaders(),
+    headers: {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify(data),
   });
   return handleResponse<AITrader>(response);
@@ -67,7 +70,10 @@ export async function createAITrader(data: CreateAITraderRequest): Promise<AITra
 export async function updateAITrader(id: number, data: UpdateAITraderRequest): Promise<AITrader> {
   const response = await fetch(`${API_BASE}/ai-traders/${id}`, {
     method: 'PUT',
-    headers: getAuthHeaders(),
+    headers: {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify(data),
   });
   return handleResponse<AITrader>(response);
