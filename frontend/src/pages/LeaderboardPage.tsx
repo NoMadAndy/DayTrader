@@ -182,21 +182,10 @@ export function LeaderboardPage() {
           ) : (
             <div className="divide-y divide-slate-700/50">
               {leaderboard.map((entry) => {
-                const EntryWrapper = entry.isAITrader && entry.aiTraderId
-                  ? Link
-                  : 'div';
-                const wrapperProps = entry.isAITrader && entry.aiTraderId
-                  ? { to: `/ai-trader/${entry.aiTraderId}` }
-                  : {};
+                const isClickable = entry.isAITrader && entry.aiTraderId;
                 
-                return (
-                  <EntryWrapper
-                    key={entry.portfolioId}
-                    {...wrapperProps}
-                    className={`p-4 flex items-center justify-between border-l-4 ${getRankStyle(entry.rank)} ${
-                      entry.isAITrader ? 'hover:bg-slate-700/30 transition-colors cursor-pointer' : ''
-                    }`}
-                  >
+                const content = (
+                  <>
                     <div className="flex items-center gap-4">
                       <div className="w-12 text-center text-xl font-bold">
                         {getRankIcon(entry.rank)}
@@ -240,7 +229,24 @@ export function LeaderboardPage() {
                         </div>
                       </div>
                     </div>
-                  </EntryWrapper>
+                  </>
+                );
+                
+                return isClickable ? (
+                  <Link
+                    key={entry.portfolioId}
+                    to={`/ai-trader/${entry.aiTraderId}`}
+                    className={`p-4 flex items-center justify-between border-l-4 ${getRankStyle(entry.rank)} hover:bg-slate-700/30 transition-colors`}
+                  >
+                    {content}
+                  </Link>
+                ) : (
+                  <div
+                    key={entry.portfolioId}
+                    className={`p-4 flex items-center justify-between border-l-4 ${getRankStyle(entry.rank)}`}
+                  >
+                    {content}
+                  </div>
                 );
               })}
             </div>

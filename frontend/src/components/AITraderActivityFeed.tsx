@@ -111,7 +111,7 @@ export function AITraderActivityFeed({
             <div className="flex-1">
               <div className="font-medium text-purple-400">Decision Made</div>
               <div className="text-sm text-gray-400 mt-1">
-                {event.data?.symbol}: {event.data?.decisionType}
+                {String(event.data?.symbol)}: {String(event.data?.decisionType)}
               </div>
               <div className="text-xs text-gray-500 mt-1">{time}</div>
             </div>
@@ -125,7 +125,7 @@ export function AITraderActivityFeed({
             <div className="flex-1">
               <div className="font-medium text-green-400">Trade Executed</div>
               <div className="text-sm text-gray-400 mt-1">
-                {event.data?.symbol}: {event.data?.action} {event.data?.quantity} @ ${event.data?.price}
+                {String(event.data?.symbol)}: {String(event.data?.action)} {String(event.data?.quantity)} @ ${String(event.data?.price)}
               </div>
               <div className="text-xs text-gray-500 mt-1">{time}</div>
             </div>
@@ -139,7 +139,7 @@ export function AITraderActivityFeed({
             <div className="flex-1">
               <div className="font-medium text-orange-400">Position Closed</div>
               <div className="text-sm text-gray-400 mt-1">
-                {event.data?.symbol}: P&L {event.data?.pnl}%
+                {String(event.data?.symbol)}: P&L {String(event.data?.pnl)}%
               </div>
               <div className="text-xs text-gray-500 mt-1">{time}</div>
             </div>
