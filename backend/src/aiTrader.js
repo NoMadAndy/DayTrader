@@ -251,6 +251,21 @@ export async function initializeAITraderSchema() {
       );
     `);
 
+    // Create ai_trader_weight_history table for tracking adaptive learning
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ai_trader_weight_history (
+        id SERIAL PRIMARY KEY,
+        ai_trader_id INTEGER REFERENCES ai_traders(id) ON DELETE CASCADE,
+        timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        
+        old_weights JSONB NOT NULL,
+        new_weights JSONB NOT NULL,
+        
+        reason TEXT,
+        accuracy_snapshot JSONB
+      );
+    `);
+
     // Create indexes
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_ai_traders_status ON ai_traders(status);
@@ -259,6 +274,8 @@ export async function initializeAITraderSchema() {
       CREATE INDEX IF NOT EXISTS idx_decisions_timestamp ON ai_trader_decisions(timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_decisions_symbol ON ai_trader_decisions(symbol);
       CREATE INDEX IF NOT EXISTS idx_decisions_executed ON ai_trader_decisions(executed);
+      CREATE INDEX IF NOT EXISTS idx_weight_history_trader ON ai_trader_weight_history(ai_trader_id);
+      CREATE INDEX IF NOT EXISTS idx_weight_history_timestamp ON ai_trader_weight_history(timestamp DESC);
     `);
 
     await client.query('COMMIT');
@@ -510,6 +527,126 @@ export async function getDecision(decisionId) {
 }
 
 // ============================================================================
+// Outcome Tracking
+// ============================================================================
+
+/**
+ * Update decision outcome when position is closed
+ * @param {number} decisionId - Decision ID
+ * @param {object} outcome - Outcome data
+ * @returns {Promise<object>} Updated decision
+ */
+export async function updateDecisionOutcome(decisionId, outcome) {
+  const {
+    outcomePnl,
+    outcomePnlPercent,
+    outcomeHoldingDays,
+    outcomeWasCorrect,
+  } = outcome;
+
+  const result = await query(
+    `UPDATE ai_trader_decisions
+     SET outcome_pnl = $1,
+         outcome_pnl_percent = $2,
+         outcome_holding_days = $3,
+         outcome_was_correct = $4
+     WHERE id = $5
+     RETURNING *`,
+    [outcomePnl, outcomePnlPercent, outcomeHoldingDays, outcomeWasCorrect, decisionId]
+  );
+
+  return result.rows[0];
+}
+
+/**
+ * Update pending outcomes for closed positions
+ * Finds decisions with closed positions that don't have outcomes yet
+ * @returns {Promise<number>} Number of outcomes updated
+ */
+export async function updatePendingOutcomes() {
+  try {
+    // Find decisions with closed positions but no outcome
+    const result = await query(
+      `SELECT d.id, d.decision_type, d.ai_trader_id, d.timestamp,
+              d.ml_score, d.rl_score, d.sentiment_score, d.technical_score,
+              p.symbol, p.entry_price, p.exit_price, p.realized_pnl, 
+              p.realized_pnl_percent, p.closed_at
+       FROM ai_trader_decisions d
+       JOIN positions p ON d.position_id = p.id
+       WHERE d.executed = true
+       AND d.outcome_pnl IS NULL
+       AND p.status = 'closed'
+       AND p.closed_at IS NOT NULL`
+    );
+
+    const decisions = result.rows;
+    let updated = 0;
+
+    for (const decision of decisions) {
+      // Calculate holding days
+      const entryDate = new Date(decision.timestamp);
+      const exitDate = new Date(decision.closed_at);
+      const holdingDays = Math.round((exitDate - entryDate) / (1000 * 60 * 60 * 24));
+
+      // Determine if decision was correct
+      // A buy decision is correct if P&L is positive
+      // A sell/close decision is correct if it avoided further loss or captured gain
+      const wasCorrect = determineDecisionCorrectness(
+        decision.decision_type,
+        parseFloat(decision.realized_pnl || 0),
+        decision
+      );
+
+      // Update outcome
+      await updateDecisionOutcome(decision.id, {
+        outcomePnl: decision.realized_pnl,
+        outcomePnlPercent: decision.realized_pnl_percent,
+        outcomeHoldingDays: holdingDays,
+        outcomeWasCorrect: wasCorrect,
+      });
+
+      updated++;
+    }
+
+    if (updated > 0) {
+      console.log(`Updated ${updated} decision outcomes`);
+    }
+
+    return updated;
+  } catch (error) {
+    console.error('Error updating pending outcomes:', error);
+    throw error;
+  }
+}
+
+/**
+ * Determine if a decision was correct based on the outcome
+ * @param {string} decisionType - Type of decision (buy, sell, close, hold)
+ * @param {number} pnl - Realized P&L
+ * @param {object} decision - Full decision object
+ * @returns {boolean} Whether the decision was correct
+ */
+function determineDecisionCorrectness(decisionType, pnl, decision) {
+  // Simple heuristic: 
+  // - Buy decisions are correct if they resulted in profit
+  // - Sell/close decisions are correct if P&L is positive or limited loss
+  // - This can be enhanced with more sophisticated logic
+  
+  if (decisionType === 'buy') {
+    return pnl > 0;
+  } else if (decisionType === 'sell' || decisionType === 'close') {
+    // For close decisions, positive P&L means it was a good decision
+    // Small losses might also be correct if they prevented bigger losses
+    return pnl > 0 || (pnl > -100); // Allow small losses as "correct" risk management
+  } else if (decisionType === 'hold') {
+    // Hold decisions are harder to evaluate
+    return true; // Neutral for now
+  }
+  
+  return false;
+}
+
+// ============================================================================
 // Portfolio Integration
 // ============================================================================
 
@@ -684,6 +821,8 @@ export default {
   logDecision,
   getDecisions,
   getDecision,
+  updateDecisionOutcome,
+  updatePendingOutcomes,
   createAITraderPortfolio,
   getAITraderPortfolio,
   getDailyReports,

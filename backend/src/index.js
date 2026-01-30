@@ -3317,6 +3317,134 @@ app.get('/api/ai-traders/:id/reports', async (req, res) => {
 });
 
 /**
+ * Get a specific report by date
+ * GET /api/ai-traders/:id/reports/:date
+ */
+app.get('/api/ai-traders/:id/reports/:date', async (req, res) => {
+  try {
+    const aiTraderReportsModule = await import('./aiTraderReports.js');
+    const report = await aiTraderReportsModule.getReportByDate(
+      parseInt(req.params.id),
+      req.params.date
+    );
+    
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+    
+    res.json(report);
+  } catch (e) {
+    console.error('Get report by date error:', e);
+    res.status(500).json({ error: 'Failed to fetch report' });
+  }
+});
+
+/**
+ * Generate daily report manually
+ * POST /api/ai-traders/:id/reports/generate
+ */
+app.post('/api/ai-traders/:id/reports/generate', authMiddleware, async (req, res) => {
+  try {
+    const aiTraderReportsModule = await import('./aiTraderReports.js');
+    const { date } = req.body;
+    const reportDate = date ? new Date(date) : new Date();
+    
+    const report = await aiTraderReportsModule.generateDailyReport(
+      parseInt(req.params.id),
+      reportDate
+    );
+    
+    res.json(report);
+  } catch (e) {
+    console.error('Generate report error:', e);
+    res.status(500).json({ error: 'Failed to generate report' });
+  }
+});
+
+/**
+ * Get signal accuracy for an AI trader
+ * GET /api/ai-traders/:id/signal-accuracy
+ */
+app.get('/api/ai-traders/:id/signal-accuracy', async (req, res) => {
+  try {
+    const aiTraderSignalAccuracyModule = await import('./aiTraderSignalAccuracy.js');
+    const days = parseInt(req.query.days) || 30;
+    
+    const accuracy = await aiTraderSignalAccuracyModule.calculateSignalAccuracy(
+      parseInt(req.params.id),
+      days
+    );
+    
+    res.json(accuracy);
+  } catch (e) {
+    console.error('Get signal accuracy error:', e);
+    res.status(500).json({ error: 'Failed to calculate signal accuracy' });
+  }
+});
+
+/**
+ * Get insights for an AI trader
+ * GET /api/ai-traders/:id/insights
+ */
+app.get('/api/ai-traders/:id/insights', async (req, res) => {
+  try {
+    const aiTraderInsightsModule = await import('./aiTraderInsights.js');
+    
+    const insights = await aiTraderInsightsModule.getInsights(
+      parseInt(req.params.id)
+    );
+    
+    res.json({ insights });
+  } catch (e) {
+    console.error('Get insights error:', e);
+    res.status(500).json({ error: 'Failed to fetch insights' });
+  }
+});
+
+/**
+ * Get weight history for an AI trader
+ * GET /api/ai-traders/:id/weight-history
+ */
+app.get('/api/ai-traders/:id/weight-history', async (req, res) => {
+  try {
+    const aiTraderLearningModule = await import('./aiTraderLearning.js');
+    const limit = parseInt(req.query.limit) || 20;
+    
+    const history = await aiTraderLearningModule.getWeightHistory(
+      parseInt(req.params.id),
+      limit
+    );
+    
+    res.json(history);
+  } catch (e) {
+    console.error('Get weight history error:', e);
+    res.status(500).json({ error: 'Failed to fetch weight history' });
+  }
+});
+
+/**
+ * Manually adjust weights
+ * POST /api/ai-traders/:id/adjust-weights
+ */
+app.post('/api/ai-traders/:id/adjust-weights', authMiddleware, async (req, res) => {
+  try {
+    const aiTraderLearningModule = await import('./aiTraderLearning.js');
+    const { weights, reason } = req.body;
+    
+    const result = await aiTraderLearningModule.manuallyAdjustWeights(
+      parseInt(req.params.id),
+      weights,
+      reason || 'manual_adjustment'
+    );
+    
+    res.json(result);
+  } catch (e) {
+    console.error('Adjust weights error:', e);
+    res.status(400).json({ error: e.message || 'Failed to adjust weights' });
+  }
+});
+
+/**
  * Get default personality configuration
  * GET /api/ai-traders/config/default-personality
  */
