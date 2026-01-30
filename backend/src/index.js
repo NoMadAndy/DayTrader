@@ -18,6 +18,7 @@ import { registerUser, loginUser, logoutUser, authMiddleware, optionalAuthMiddle
 import { getUserSettings, updateUserSettings, getCustomSymbols, addCustomSymbol, removeCustomSymbol, syncCustomSymbols } from './userSettings.js';
 import * as trading from './trading.js';
 import * as aiTrader from './aiTrader.js';
+import { aiTraderEvents } from './aiTraderEvents.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -3321,6 +3322,36 @@ app.get('/api/ai-traders/:id/reports', async (req, res) => {
  */
 app.get('/api/ai-traders/config/default-personality', (req, res) => {
   res.json(aiTrader.DEFAULT_PERSONALITY);
+});
+
+/**
+ * SSE: Stream for individual AI Trader
+ * GET /api/stream/ai-trader/:id
+ */
+app.get('/api/stream/ai-trader/:id', optionalAuthMiddleware, (req, res) => {
+  const traderId = parseInt(req.params.id);
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(7);
+  const clientId = `${req.user?.id || 'anon'}-${timestamp}-${random}`;
+  
+  aiTraderEvents.addClient(clientId, res, [traderId]);
+  
+  // Initial status message
+  res.write(`data: ${JSON.stringify({ type: 'connected', traderId })}\n\n`);
+});
+
+/**
+ * SSE: Stream for all AI Traders
+ * GET /api/stream/ai-traders
+ */
+app.get('/api/stream/ai-traders', optionalAuthMiddleware, (req, res) => {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(7);
+  const clientId = `${req.user?.id || 'anon'}-${timestamp}-${random}`;
+  
+  aiTraderEvents.addClient(clientId, res, []);
+  
+  res.write(`data: ${JSON.stringify({ type: 'connected', all: true })}\n\n`);
 });
 
 // ============================================================================

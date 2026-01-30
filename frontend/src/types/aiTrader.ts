@@ -261,3 +261,47 @@ export interface AITraderNotificationPrefs {
   createdAt: string;
   updatedAt: string;
 }
+
+// ============================================================================
+// SSE Event Types
+// ============================================================================
+
+export type AITraderEventType = 
+  | 'connected' 
+  | 'heartbeat' 
+  | 'status_changed' 
+  | 'analyzing' 
+  | 'decision_made' 
+  | 'trade_executed' 
+  | 'position_closed' 
+  | 'error';
+
+export interface AITraderEvent {
+  type: AITraderEventType;
+  traderId?: number;
+  all?: boolean;
+  timestamp?: string;
+  data?: {
+    traderId?: number;
+    traderName?: string;
+    oldStatus?: AITraderStatus;
+    newStatus?: AITraderStatus;
+    message?: string;
+    symbols?: string[];
+    phase?: string;
+    progress?: number;
+    timestamp?: string;
+    error?: string;
+    [key: string]: unknown;
+  };
+}
+
+export interface SignalDetail {
+  score: number;
+  confidence: number;
+  prediction?: string;
+  action?: string;
+  sentiment?: string;
+  indicators?: Record<string, unknown>;
+}
+

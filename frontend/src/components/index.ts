@@ -22,3 +22,7 @@ export { default as RLAgentsPanel } from './RLAgentsPanel';
 export { default as RLAdvisorPanel } from './RLAdvisorPanel';
 export { SignalSourceSettingsPanel } from './SignalSourceSettings';
 export { TrainingConsole } from './TrainingConsole';
+export { AITraderCard } from './AITraderCard';
+export { AITraderActivityFeed } from './AITraderActivityFeed';
+export { TradeReasoningCard } from './TradeReasoningCard';
+export { SignalBreakdown } from './SignalBreakdown';
