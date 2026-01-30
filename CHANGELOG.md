@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **AI Live Trader - Phase 1: Database & Grundstruktur** - Foundation for AI trading agents
+  - **Backend Database Schema**:
+    - Extended `users` table with `is_system_user` and `user_type` columns
+    - Extended `portfolios` table with `ai_trader_id` foreign key
+    - New `ai_traders` table for AI agent configuration and performance tracking
+    - New `ai_trader_decisions` table for decision history and reasoning
+    - New `ai_trader_notification_prefs` table for user notification settings
+    - New `ai_trader_daily_reports` table for performance analytics
+  - **Backend AI Trader Service** (`backend/src/aiTrader.js`):
+    - CRUD operations for AI traders (create, get, update, delete)
+    - Status control functions (start, stop, pause)
+    - Decision logging with reasoning and outcomes
+    - Portfolio integration with separate AI trader portfolios
+    - Daily report generation functions
+    - Default personality configuration with risk, signals, and trading settings
+  - **Backend API Endpoints** (`/api/ai-traders/*`):
+    - RESTful CRUD endpoints for AI trader management
+    - Status control endpoints (start/stop/pause)
+    - Decision history and analysis endpoints
+    - Position and report query endpoints
+    - Default personality configuration endpoint
+  - **Backend Leaderboard Enhancement**:
+    - Updated `getLeaderboard()` to include AI traders alongside humans
+    - Added filter parameter: 'all' (default), 'humans', 'ai'
+    - AI traders display avatar and special indicator in results
+    - Helper function `getOpenPositionsByPortfolio()` for AI trader positions
+  - **Frontend TypeScript Types** (`frontend/src/types/aiTrader.ts`):
+    - Complete type definitions for AI traders, personalities, and decisions
+    - Market context and portfolio snapshot interfaces
+    - Notification preferences and daily report types
+  - **Frontend API Service** (`frontend/src/services/aiTraderService.ts`):
+    - Full client implementation for all AI trader endpoints
+    - Type-safe async functions for all operations
+  - **Frontend Leaderboard UI**:
+    - Filter buttons: Alle (All), Menschen (Humans), KI (AI)
+    - AI trader indicators with avatar emoji and "KI" badge
+    - Updated `LeaderboardEntry` interface with `isAITrader` and `avatar` fields
+    - Visual distinction between human and AI traders
+
 ### Fixed
 - **RL Training - JSON Serialization Error for Infinity/NaN Values** - Fixed 500 Internal Server Error in training status endpoint
   - Error: `ValueError: Out of range float values are not JSON compliant`

@@ -83,21 +83,11 @@ export async function initializeAITraderSchema() {
       END $$;
     `);
 
-    // Extend portfolios table
-    await client.query(`
-      DO $$ 
-      BEGIN 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'portfolios' AND column_name = 'ai_trader_id') THEN
-          ALTER TABLE portfolios ADD COLUMN ai_trader_id INTEGER REFERENCES ai_traders(id) ON DELETE SET NULL;
-        END IF;
-      END $$;
-    `);
-
-    // Create ai_traders table
+    // Create ai_traders table first (without portfolio_id reference initially)
     await client.query(`
       CREATE TABLE IF NOT EXISTS ai_traders (
         id SERIAL PRIMARY KEY,
-        portfolio_id INTEGER REFERENCES portfolios(id) ON DELETE SET NULL,
+        portfolio_id INTEGER,
         
         name VARCHAR(100) NOT NULL UNIQUE,
         avatar VARCHAR(50) DEFAULT '🤖',
@@ -125,6 +115,32 @@ export async function initializeAITraderSchema() {
         current_streak INTEGER DEFAULT 0,
         max_drawdown DECIMAL(5,2) DEFAULT 0
       );
+    `);
+
+    // Extend portfolios table to reference ai_traders
+    await client.query(`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'portfolios' AND column_name = 'ai_trader_id') THEN
+          ALTER TABLE portfolios ADD COLUMN ai_trader_id INTEGER REFERENCES ai_traders(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+    `);
+
+    // Add foreign key constraint to ai_traders.portfolio_id if not exists
+    await client.query(`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.table_constraints 
+          WHERE constraint_name = 'ai_traders_portfolio_id_fkey' 
+          AND table_name = 'ai_traders'
+        ) THEN
+          ALTER TABLE ai_traders 
+          ADD CONSTRAINT ai_traders_portfolio_id_fkey 
+          FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
     `);
 
     // Create ai_trader_decisions table

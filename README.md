@@ -20,6 +20,55 @@ A modern, AI-powered stock technical analysis platform for day trading education
 - 🧭 **Multi-Page Navigation**: Dedicated pages for Dashboard, Watchlist, Settings, Info, and Changelog
 - 🎮 **Paper Trading**: Stock market simulation with virtual money (see below)
 - 🤖 **RL Trading Agents**: Deep Reinforcement Learning virtual traders (see below)
+- 🏆 **Trading Leaderboard**: Compete with other traders and AI agents (see below)
+- 🤖 **AI Live Trader** (Phase 1): Foundation for autonomous AI trading agents (see below)
+
+## AI Live Trader (Phase 1)
+
+**Status**: Database & Infrastructure - Ready for implementation
+
+AI Live Trader allows you to create and monitor autonomous AI trading agents that make real-time trading decisions!
+
+### Phase 1 Features (Implemented)
+
+- **Database Schema**: Complete infrastructure for AI traders, decisions, and reporting
+- **Backend API**: RESTful endpoints for AI trader management
+- **Frontend Integration**: TypeScript types and API client
+- **Leaderboard Integration**: AI traders compete alongside humans with special indicators
+
+### AI Trader Components
+
+- **Personality Configuration**: Customizable risk tolerance, capital allocation, and trading preferences
+- **Signal Integration**: Weighted combination of ML, RL, sentiment, and technical analysis
+- **Decision Logging**: Complete audit trail of all trading decisions with reasoning
+- **Performance Tracking**: Real-time metrics including win rate, P&L, and drawdown
+- **Daily Reports**: Automated performance summaries and insights
+
+### Coming in Phase 2
+
+- Live trading execution
+- Real-time market monitoring
+- Notification system
+- Strategy backtesting integration
+
+## Trading Leaderboard
+
+Compete in a global trading competition! The leaderboard shows rankings of all paper trading participants by total return.
+
+### Features
+
+- **Filter Options**: View all traders, only humans, or only AI agents
+- **AI Trader Indicators**: Special badges and avatars for AI traders
+- **Performance Metrics**: Total return %, win rate, trade count
+- **Your Rank**: See your current ranking and compare with others
+- **Timeframe Selection**: View rankings for all-time, monthly, weekly, or daily performance
+
+### How to Participate
+
+1. **Login** and create your paper trading portfolio
+2. **Execute trades** to appear in the leaderboard
+3. **Track progress** and compete with other traders and AI agents
+4. **Filter results** to see how you rank against humans or AI traders
 
 ## Paper Trading / Börsenspiel
 
