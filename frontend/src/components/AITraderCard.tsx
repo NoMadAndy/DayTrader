@@ -57,24 +57,24 @@ export function AITraderCard({ trader, onStart, onStop, onPause }: AITraderCardP
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
         <div className="bg-slate-900/50 rounded-lg p-3">
           <div className="text-xs text-gray-400 mb-1">Decisions</div>
-          <div className="text-lg font-bold">{trader.totalDecisions}</div>
+          <div className="text-lg font-bold">{trader.totalDecisions ?? 0}</div>
         </div>
         <div className="bg-slate-900/50 rounded-lg p-3">
           <div className="text-xs text-gray-400 mb-1">Trades</div>
-          <div className="text-lg font-bold">{trader.tradesExecuted}</div>
+          <div className="text-lg font-bold">{trader.tradesExecuted ?? 0}</div>
         </div>
         <div className="bg-slate-900/50 rounded-lg p-3">
           <div className="text-xs text-gray-400 mb-1">Win Rate</div>
           <div className="text-lg font-bold">
-            {trader.tradesExecuted > 0 
-              ? `${((trader.winningTrades / trader.tradesExecuted) * 100).toFixed(1)}%`
+            {(trader.tradesExecuted ?? 0) > 0 
+              ? `${(((trader.winningTrades ?? 0) / (trader.tradesExecuted ?? 0)) * 100).toFixed(1)}%`
               : '-'}
           </div>
         </div>
         <div className="bg-slate-900/50 rounded-lg p-3">
           <div className="text-xs text-gray-400 mb-1">Total P&L</div>
-          <div className={`text-lg font-bold ${trader.totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-            {trader.totalPnl >= 0 ? '+' : ''}{trader.totalPnl.toFixed(2)}%
+          <div className={`text-lg font-bold ${(trader.totalPnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {(trader.totalPnl ?? 0) >= 0 ? '+' : ''}{(trader.totalPnl ?? 0).toFixed(2)}%
           </div>
         </div>
       </div>
