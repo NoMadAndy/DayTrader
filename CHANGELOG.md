@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Fixed TypeScript build error in `AITraderReportCard.tsx` by adding proper `TradeDetail` interface for bestTrade/worstTrade properties
+- Added missing `ai_trader_insights` table to database schema for persistent insights with severity levels and expiration support
+- Added `signal_accuracy` JSONB column to `ai_traders` table for cumulative accuracy tracking
+- Added persistent insights management functions to `aiTraderInsights.js` (createPersistentInsight, getPersistentInsights, deactivateInsight, cleanupExpiredInsights)
+- Added database indexes for optimal query performance on insights table
+- Added SMTP email configuration to `.env.example` for optional email notifications
+
 ### Added
 - **AI Live Trader - Phase 4: Reporting, Analytics & Adaptive Learning** - Complete performance tracking and optimization system
   - **Backend Modules**:
