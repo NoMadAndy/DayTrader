@@ -8,9 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **AI Trader P&L Display Bug** - Fixed `TypeError: Cannot read properties of undefined (reading 'toFixed')` on AI Traders list page when `totalPnl` is undefined
 - Fixed AI Trader creation failing with "Name is required" error by adding missing `Content-Type: application/json` header to API requests in `aiTraderService.ts`
 
 ### Added
+- **Enhanced AI Trader Creation Form**:
+  - Name suggestion button that generates contextual names based on selected properties (signal sources, risk tolerance)
+  - Signal source toggles for ML, RL, Sentiment Analysis, and Technical Indicators with visual status and descriptions
+  - DB symbols integration - loads available symbols from database with clickable badges and "Select All" option
+  - Form validation prevents creating trader without at least one signal source enabled
+  - Full German and English translations for all new UI elements
 - **Live AI Trader Management Page** - New frontend page at `/ai-traders` for creating and managing AI Traders
   - View list of all AI Traders with status, trades count, win rate, and P&L
   - Create new AI Traders via accessible modal form with:
