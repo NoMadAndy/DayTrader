@@ -14,7 +14,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { DataServiceProvider, useServiceWorker } from './hooks';
 import { SettingsProvider, useSettings } from './contexts';
 import { Navigation } from './components/Navigation';
-import { DashboardPage, WatchlistPage, SettingsPage, ChangelogPage, InfoPage, TradingPortfolioPage, LeaderboardPage, RLAgentsPage, AITraderPage } from './pages';
+import { DashboardPage, WatchlistPage, SettingsPage, ChangelogPage, InfoPage, TradingPortfolioPage, LeaderboardPage, RLAgentsPage, AITraderPage, AITradersPage } from './pages';
 import BacktestPage from './pages/BacktestPage';
 import { initializeAuth, subscribeToAuth } from './services/authService';
 import { getBestSymbolFromWatchlist, clearBestSymbolCache } from './services/bestSymbolService';
@@ -108,6 +108,7 @@ function AppContent() {
             <Route path="/trading" element={<TradingPortfolioPage />} />
             <Route path="/portfolio" element={<TradingPortfolioPage />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />
+            <Route path="/ai-traders" element={<AITradersPage />} />
             <Route path="/ai-trader/:id" element={<AITraderPage />} />
             <Route path="/backtest" element={<BacktestPage />} />
             <Route path="/rl-agents" element={<RLAgentsPage />} />

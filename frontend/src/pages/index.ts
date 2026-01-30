@@ -13,3 +13,4 @@ export { TradingPortfolioPage } from './TradingPortfolioPage';
 export { LeaderboardPage } from './LeaderboardPage';
 export { default as RLAgentsPage } from './RLAgentsPage';
 export { AITraderPage } from './AITraderPage';
+export { default as AITradersPage } from './AITradersPage';
