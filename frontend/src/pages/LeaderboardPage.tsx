@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { getAuthState, subscribeToAuth, type AuthState } from '../services/authService';
 import {
   getLeaderboard,
@@ -180,56 +181,68 @@ export function LeaderboardPage() {
             </div>
           ) : (
             <div className="divide-y divide-slate-700/50">
-              {leaderboard.map((entry) => (
-                <div
-                  key={entry.portfolioId}
-                  className={`p-4 flex items-center justify-between border-l-4 ${getRankStyle(entry.rank)}`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 text-center text-xl font-bold">
-                      {getRankIcon(entry.rank)}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {entry.isAITrader && entry.avatar && (
-                        <span className="text-2xl" title="AI Trader">{entry.avatar}</span>
-                      )}
-                      <div>
-                        <div className="font-semibold flex items-center gap-2">
-                          {entry.username}
-                          {entry.isAITrader && (
-                            <span className="text-xs bg-purple-600/30 text-purple-300 px-2 py-0.5 rounded-full">
-                              KI
-                            </span>
-                          )}
+              {leaderboard.map((entry) => {
+                const EntryWrapper = entry.isAITrader && entry.aiTraderId
+                  ? Link
+                  : 'div';
+                const wrapperProps = entry.isAITrader && entry.aiTraderId
+                  ? { to: `/ai-trader/${entry.aiTraderId}` }
+                  : {};
+                
+                return (
+                  <EntryWrapper
+                    key={entry.portfolioId}
+                    {...wrapperProps}
+                    className={`p-4 flex items-center justify-between border-l-4 ${getRankStyle(entry.rank)} ${
+                      entry.isAITrader ? 'hover:bg-slate-700/30 transition-colors cursor-pointer' : ''
+                    }`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 text-center text-xl font-bold">
+                        {getRankIcon(entry.rank)}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {entry.isAITrader && entry.avatar && (
+                          <span className="text-2xl" title="AI Trader">{entry.avatar}</span>
+                        )}
+                        <div>
+                          <div className="font-semibold flex items-center gap-2">
+                            {entry.username}
+                            {entry.isAITrader && (
+                              <span className="text-xs bg-purple-600/30 text-purple-300 px-2 py-0.5 rounded-full">
+                                KI
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-sm text-gray-400">{entry.name}</div>
                         </div>
-                        <div className="text-sm text-gray-400">{entry.name}</div>
                       </div>
                     </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-8">
-                    <div className="text-right hidden md:block">
-                      <div className="text-sm text-gray-400">{t('leaderboard.columns.trades')}</div>
-                      <div className="font-medium">{entry.totalTrades}</div>
-                    </div>
-                    <div className="text-right hidden md:block">
-                      <div className="text-sm text-gray-400">{t('leaderboard.columns.winRate')}</div>
-                      <div className={`font-medium ${entry.winRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>
-                        {entry.winRate.toFixed(1)}%
+                    
+                    <div className="flex items-center gap-8">
+                      <div className="text-right hidden md:block">
+                        <div className="text-sm text-gray-400">{t('leaderboard.columns.trades')}</div>
+                        <div className="font-medium">{entry.totalTrades}</div>
+                      </div>
+                      <div className="text-right hidden md:block">
+                        <div className="text-sm text-gray-400">{t('leaderboard.columns.winRate')}</div>
+                        <div className={`font-medium ${entry.winRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>
+                          {entry.winRate.toFixed(1)}%
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm text-gray-400">Portfolio</div>
+                        <div className="font-medium">{formatCurrency(entry.currentValue)}</div>
+                      </div>
+                      <div className="text-right min-w-[100px]">
+                        <div className={`text-xl font-bold ${entry.totalReturnPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {formatPercent(entry.totalReturnPct)}
+                        </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-sm text-gray-400">Portfolio</div>
-                      <div className="font-medium">{formatCurrency(entry.currentValue)}</div>
-                    </div>
-                    <div className="text-right min-w-[100px]">
-                      <div className={`text-xl font-bold ${entry.totalReturnPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {formatPercent(entry.totalReturnPct)}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                  </EntryWrapper>
+                );
+              })}
             </div>
           )}
         </div>
