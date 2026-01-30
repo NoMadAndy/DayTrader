@@ -17,6 +17,7 @@ import backgroundJobs from './backgroundJobs.js';
 import { registerUser, loginUser, logoutUser, authMiddleware, optionalAuthMiddleware } from './auth.js';
 import { getUserSettings, updateUserSettings, getCustomSymbols, addCustomSymbol, removeCustomSymbol, syncCustomSymbols } from './userSettings.js';
 import * as trading from './trading.js';
+import * as aiTrader from './aiTrader.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -2730,7 +2731,8 @@ app.get('/api/trading/leaderboard', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;
     const timeframe = req.query.timeframe || 'all'; // all, day, week, month
-    const leaderboard = await trading.getLeaderboard(limit, timeframe);
+    const filter = req.query.filter || 'all'; // all, humans, ai
+    const leaderboard = await trading.getLeaderboard(limit, timeframe, filter);
     res.json(leaderboard);
   } catch (e) {
     res.status(500).json({ error: 'Failed to get leaderboard' });
@@ -3091,6 +3093,234 @@ app.delete('/api/trading/backtest/session/:id', authMiddleware, async (req, res)
   } catch (e) {
     res.status(500).json({ error: 'Failed to delete backtest session' });
   }
+});
+
+// ============================================================================
+// AI Trader Endpoints
+// ============================================================================
+
+/**
+ * Get all AI traders
+ * GET /api/ai-traders
+ */
+app.get('/api/ai-traders', async (req, res) => {
+  try {
+    const traders = await aiTrader.getAllAITraders();
+    res.json(traders);
+  } catch (e) {
+    console.error('Get AI traders error:', e);
+    res.status(500).json({ error: 'Failed to fetch AI traders' });
+  }
+});
+
+/**
+ * Get AI trader by ID
+ * GET /api/ai-traders/:id
+ */
+app.get('/api/ai-traders/:id', async (req, res) => {
+  try {
+    const trader = await aiTrader.getAITrader(parseInt(req.params.id));
+    if (!trader) {
+      return res.status(404).json({ error: 'AI trader not found' });
+    }
+    res.json(trader);
+  } catch (e) {
+    console.error('Get AI trader error:', e);
+    res.status(500).json({ error: 'Failed to fetch AI trader' });
+  }
+});
+
+/**
+ * Create new AI trader
+ * POST /api/ai-traders
+ */
+app.post('/api/ai-traders', authMiddleware, async (req, res) => {
+  try {
+    const { name, description, personality, initialCapital } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ error: 'Name is required' });
+    }
+    
+    // Create AI trader
+    const trader = await aiTrader.createAITrader(
+      name,
+      description,
+      personality || aiTrader.DEFAULT_PERSONALITY
+    );
+    
+    // Create portfolio for the AI trader
+    if (initialCapital) {
+      await aiTrader.createAITraderPortfolio(trader.id, initialCapital);
+    }
+    
+    res.json(trader);
+  } catch (e) {
+    console.error('Create AI trader error:', e);
+    if (e.message.includes('duplicate key')) {
+      res.status(400).json({ error: 'AI trader with this name already exists' });
+    } else {
+      res.status(500).json({ error: 'Failed to create AI trader' });
+    }
+  }
+});
+
+/**
+ * Update AI trader
+ * PUT /api/ai-traders/:id
+ */
+app.put('/api/ai-traders/:id', authMiddleware, async (req, res) => {
+  try {
+    const trader = await aiTrader.updateAITrader(
+      parseInt(req.params.id),
+      req.body
+    );
+    res.json(trader);
+  } catch (e) {
+    console.error('Update AI trader error:', e);
+    res.status(500).json({ error: 'Failed to update AI trader' });
+  }
+});
+
+/**
+ * Delete AI trader
+ * DELETE /api/ai-traders/:id
+ */
+app.delete('/api/ai-traders/:id', authMiddleware, async (req, res) => {
+  try {
+    const success = await aiTrader.deleteAITrader(parseInt(req.params.id));
+    if (!success) {
+      return res.status(404).json({ error: 'AI trader not found' });
+    }
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Delete AI trader error:', e);
+    res.status(500).json({ error: 'Failed to delete AI trader' });
+  }
+});
+
+/**
+ * Start AI trader
+ * POST /api/ai-traders/:id/start
+ */
+app.post('/api/ai-traders/:id/start', authMiddleware, async (req, res) => {
+  try {
+    const trader = await aiTrader.startAITrader(parseInt(req.params.id));
+    res.json(trader);
+  } catch (e) {
+    console.error('Start AI trader error:', e);
+    res.status(500).json({ error: 'Failed to start AI trader' });
+  }
+});
+
+/**
+ * Stop AI trader
+ * POST /api/ai-traders/:id/stop
+ */
+app.post('/api/ai-traders/:id/stop', authMiddleware, async (req, res) => {
+  try {
+    const trader = await aiTrader.stopAITrader(parseInt(req.params.id));
+    res.json(trader);
+  } catch (e) {
+    console.error('Stop AI trader error:', e);
+    res.status(500).json({ error: 'Failed to stop AI trader' });
+  }
+});
+
+/**
+ * Pause AI trader
+ * POST /api/ai-traders/:id/pause
+ */
+app.post('/api/ai-traders/:id/pause', authMiddleware, async (req, res) => {
+  try {
+    const trader = await aiTrader.pauseAITrader(parseInt(req.params.id));
+    res.json(trader);
+  } catch (e) {
+    console.error('Pause AI trader error:', e);
+    res.status(500).json({ error: 'Failed to pause AI trader' });
+  }
+});
+
+/**
+ * Get AI trader decisions
+ * GET /api/ai-traders/:id/decisions
+ */
+app.get('/api/ai-traders/:id/decisions', async (req, res) => {
+  try {
+    const { limit = 50, offset = 0 } = req.query;
+    const decisions = await aiTrader.getDecisions(
+      parseInt(req.params.id),
+      parseInt(limit),
+      parseInt(offset)
+    );
+    res.json(decisions);
+  } catch (e) {
+    console.error('Get decisions error:', e);
+    res.status(500).json({ error: 'Failed to fetch decisions' });
+  }
+});
+
+/**
+ * Get specific AI trader decision
+ * GET /api/ai-traders/:id/decisions/:did
+ */
+app.get('/api/ai-traders/:id/decisions/:did', async (req, res) => {
+  try {
+    const decision = await aiTrader.getDecision(parseInt(req.params.did));
+    if (!decision || decision.ai_trader_id !== parseInt(req.params.id)) {
+      return res.status(404).json({ error: 'Decision not found' });
+    }
+    res.json(decision);
+  } catch (e) {
+    console.error('Get decision error:', e);
+    res.status(500).json({ error: 'Failed to fetch decision' });
+  }
+});
+
+/**
+ * Get AI trader positions
+ * GET /api/ai-traders/:id/positions
+ */
+app.get('/api/ai-traders/:id/positions', async (req, res) => {
+  try {
+    const portfolio = await aiTrader.getAITraderPortfolio(parseInt(req.params.id));
+    if (!portfolio) {
+      return res.status(404).json({ error: 'Portfolio not found' });
+    }
+    
+    const positions = await trading.getOpenPositionsByPortfolio(portfolio.id);
+    res.json(positions);
+  } catch (e) {
+    console.error('Get positions error:', e);
+    res.status(500).json({ error: 'Failed to fetch positions' });
+  }
+});
+
+/**
+ * Get AI trader daily reports
+ * GET /api/ai-traders/:id/reports
+ */
+app.get('/api/ai-traders/:id/reports', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const reports = await aiTrader.getDailyReports(
+      parseInt(req.params.id),
+      startDate,
+      endDate
+    );
+    res.json(reports);
+  } catch (e) {
+    console.error('Get reports error:', e);
+    res.status(500).json({ error: 'Failed to fetch reports' });
+  }
+});
+
+/**
+ * Get default personality configuration
+ * GET /api/ai-traders/config/default-personality
+ */
+app.get('/api/ai-traders/config/default-personality', (req, res) => {
+  res.json(aiTrader.DEFAULT_PERSONALITY);
 });
 
 // ============================================================================
@@ -3768,6 +3998,7 @@ const startServer = async () => {
     try {
       await db.initializeDatabase();
       await trading.initializeTradingSchema();
+      await aiTrader.initializeAITraderSchema();
       await stockCache.initializeCacheTable();
       console.log('Database connected and initialized');
       

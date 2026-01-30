@@ -777,6 +777,24 @@ export async function getAllPositions(portfolioId, userId, limit = 100) {
 }
 
 /**
+ * Get open positions by portfolio ID only (for AI traders)
+ */
+export async function getOpenPositionsByPortfolio(portfolioId) {
+  try {
+    const result = await query(
+      `SELECT * FROM positions 
+       WHERE portfolio_id = $1 AND is_open = true
+       ORDER BY opened_at DESC`,
+      [portfolioId]
+    );
+    return result.rows.map(formatPosition);
+  } catch (e) {
+    console.error('Get positions by portfolio error:', e);
+    throw e;
+  }
+}
+
+/**
  * Update position price (for P&L calculation)
  */
 export async function updatePositionPrice(positionId, userId, currentPrice) {
@@ -2009,7 +2027,7 @@ export async function saveDailySnapshots() {
 /**
  * Get global leaderboard by total return
  */
-export async function getLeaderboard(limit = 50, timeframe = 'all') {
+export async function getLeaderboard(limit = 50, timeframe = 'all', filter = 'all') {
   try {
     let timeCondition = '';
     if (timeframe === 'day') {
@@ -2018,6 +2036,14 @@ export async function getLeaderboard(limit = 50, timeframe = 'all') {
       timeCondition = "AND ps.recorded_at >= NOW() - INTERVAL '7 days'";
     } else if (timeframe === 'month') {
       timeCondition = "AND ps.recorded_at >= NOW() - INTERVAL '30 days'";
+    }
+    
+    // Build filter condition for humans vs AI
+    let filterCondition = '';
+    if (filter === 'humans') {
+      filterCondition = 'AND p.ai_trader_id IS NULL';
+    } else if (filter === 'ai') {
+      filterCondition = 'AND p.ai_trader_id IS NOT NULL';
     }
     
     // Calculate returns based on snapshots or current state
@@ -2035,10 +2061,13 @@ export async function getLeaderboard(limit = 50, timeframe = 'all') {
             p.cash_balance
           ) as current_value,
           (SELECT COUNT(*) FROM positions WHERE portfolio_id = p.id AND is_open = false) as total_trades,
-          (SELECT COUNT(*) FROM positions WHERE portfolio_id = p.id AND is_open = false AND realized_pnl > 0) as winning_trades
+          (SELECT COUNT(*) FROM positions WHERE portfolio_id = p.id AND is_open = false AND realized_pnl > 0) as winning_trades,
+          p.ai_trader_id,
+          a.avatar
         FROM portfolios p
-        JOIN users u ON p.user_id = u.id
-        WHERE p.is_active = true
+        LEFT JOIN users u ON p.user_id = u.id
+        LEFT JOIN ai_traders a ON p.ai_trader_id = a.id
+        WHERE p.is_active = true ${filterCondition}
       )
       SELECT 
         portfolio_id,
@@ -2048,6 +2077,8 @@ export async function getLeaderboard(limit = 50, timeframe = 'all') {
         current_value,
         total_trades,
         winning_trades,
+        ai_trader_id,
+        avatar,
         ((current_value - initial_capital) / initial_capital * 100) as total_return_pct,
         CASE WHEN total_trades > 0 
           THEN (winning_trades::float / total_trades * 100) 
@@ -2071,6 +2102,8 @@ export async function getLeaderboard(limit = 50, timeframe = 'all') {
       totalTrades: parseInt(row.total_trades),
       winningTrades: parseInt(row.winning_trades),
       winRate: parseFloat(row.win_rate || 0),
+      isAITrader: row.ai_trader_id !== null,
+      avatar: row.avatar || (row.ai_trader_id ? '🤖' : undefined),
     }));
   } catch (e) {
     console.error('Get leaderboard error:', e);
