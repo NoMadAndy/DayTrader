@@ -15,6 +15,7 @@ import SignalAccuracyChart from '../components/SignalAccuracyChart';
 import AdaptiveWeightsPanel from '../components/AdaptiveWeightsPanel';
 import { useAITraderStream } from '../hooks/useAITraderStream';
 import { useAITraderReports } from '../hooks/useAITraderReports';
+import { startAITrader, stopAITrader, pauseAITrader } from '../services/aiTraderService';
 import type { AITrader, AITraderDecision } from '../types/aiTrader';
 import type { PositionWithPnL } from '../types/trading';
 
@@ -94,14 +95,8 @@ export function AITraderPage() {
   const handleStart = async () => {
     if (!traderId) return;
     try {
-      const res = await fetch(`/api/ai-traders/${traderId}/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setTrader(updated);
-      }
+      const updated = await startAITrader(traderId);
+      setTrader(updated);
     } catch (err) {
       console.error('Error starting trader:', err);
     }
@@ -110,14 +105,8 @@ export function AITraderPage() {
   const handleStop = async () => {
     if (!traderId) return;
     try {
-      const res = await fetch(`/api/ai-traders/${traderId}/stop`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setTrader(updated);
-      }
+      const updated = await stopAITrader(traderId);
+      setTrader(updated);
     } catch (err) {
       console.error('Error stopping trader:', err);
     }
@@ -126,14 +115,8 @@ export function AITraderPage() {
   const handlePause = async () => {
     if (!traderId) return;
     try {
-      const res = await fetch(`/api/ai-traders/${traderId}/pause`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setTrader(updated);
-      }
+      const updated = await pauseAITrader(traderId);
+      setTrader(updated);
     } catch (err) {
       console.error('Error pausing trader:', err);
     }
