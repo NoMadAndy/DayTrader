@@ -195,9 +195,14 @@ export function AITraderActivityFeed({
               const content = renderEventContent(event);
               if (!content) return null;
               
+              // Create a unique key using timestamp and type, fallback to index
+              const key = event.data?.timestamp 
+                ? `${event.type}-${event.data.timestamp}-${event.traderId || 'all'}`
+                : `${event.type}-${index}`;
+              
               return (
                 <div 
-                  key={index}
+                  key={key}
                   className="bg-slate-900/50 rounded-lg p-3 border border-slate-700/30 hover:border-slate-600/50 transition-colors"
                 >
                   {content}

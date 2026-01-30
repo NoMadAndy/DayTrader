@@ -3330,7 +3330,9 @@ app.get('/api/ai-traders/config/default-personality', (req, res) => {
  */
 app.get('/api/stream/ai-trader/:id', optionalAuthMiddleware, (req, res) => {
   const traderId = parseInt(req.params.id);
-  const clientId = `${req.user?.id || 'anon'}-${Date.now()}`;
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(7);
+  const clientId = `${req.user?.id || 'anon'}-${timestamp}-${random}`;
   
   aiTraderEvents.addClient(clientId, res, [traderId]);
   
@@ -3343,7 +3345,9 @@ app.get('/api/stream/ai-trader/:id', optionalAuthMiddleware, (req, res) => {
  * GET /api/stream/ai-traders
  */
 app.get('/api/stream/ai-traders', optionalAuthMiddleware, (req, res) => {
-  const clientId = `${req.user?.id || 'anon'}-${Date.now()}`;
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(7);
+  const clientId = `${req.user?.id || 'anon'}-${timestamp}-${random}`;
   
   aiTraderEvents.addClient(clientId, res, []);
   
