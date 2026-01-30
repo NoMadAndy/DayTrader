@@ -8,12 +8,13 @@
  * - Navigate to individual AI trader dashboards
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getAuthState, subscribeToAuth, type AuthState } from '../services/authService';
 import { 
   getAITraders, 
   createAITrader, 
+  updateAITrader,
   deleteAITrader,
   getDefaultPersonality 
 } from '../services/aiTraderService';
@@ -23,12 +24,28 @@ import { useSettings } from '../contexts';
 // Available avatars for AI traders
 const AVATAR_OPTIONS = ['🤖', '🧠', '💹', '📈', '🎯', '⚡', '🔮', '🌟', '🚀', '💎', '🦾', '🎲'];
 
-// Risk tolerance options
+// Available avatar names for accessibility
+const AVATAR_NAMES: Record<string, string> = {
+  '🤖': 'Robot',
+  '🧠': 'Brain',
+  '💹': 'Chart',
+  '📈': 'Growth',
+  '🎯': 'Target',
+  '⚡': 'Lightning',
+  '🔮': 'Crystal Ball',
+  '🌟': 'Star',
+  '🚀': 'Rocket',
+  '💎': 'Diamond',
+  '🦾': 'Mechanical Arm',
+  '🎲': 'Dice',
+};
+
+// Risk tolerance options - labels are translation keys
 const RISK_OPTIONS = [
-  { value: 'conservative', label: 'Conservative', description: 'Lower risk, smaller positions' },
-  { value: 'moderate', label: 'Moderate', description: 'Balanced approach' },
-  { value: 'aggressive', label: 'Aggressive', description: 'Higher risk, larger positions' },
-];
+  { value: 'conservative', labelKey: 'aiTraders.risk.conservative', descKey: 'aiTraders.risk.conservativeDesc' },
+  { value: 'moderate', labelKey: 'aiTraders.risk.moderate', descKey: 'aiTraders.risk.moderateDesc' },
+  { value: 'aggressive', labelKey: 'aiTraders.risk.aggressive', descKey: 'aiTraders.risk.aggressiveDesc' },
+] as const;
 
 const STATUS_STYLES: Record<AITraderStatus, { bg: string; text: string; icon: string }> = {
   running: { bg: 'bg-green-500/20', text: 'text-green-400', icon: '▶️' },
@@ -135,6 +152,16 @@ export default function AITradersPage() {
       };
 
       const newTrader = await createAITrader(request);
+      
+      // Update the avatar if it's different from default
+      if (formAvatar !== '🤖') {
+        try {
+          await updateAITrader(newTrader.id, { avatar: formAvatar });
+        } catch (avatarErr) {
+          console.warn('Failed to set avatar:', avatarErr);
+        }
+      }
+      
       setSuccess(t('aiTraders.createSuccess').replace('{name}', newTrader.name));
       setShowCreateForm(false);
       resetForm();
@@ -181,6 +208,23 @@ export default function AITradersPage() {
     setFormRiskTolerance('moderate');
     setFormWatchlistSymbols('AAPL,MSFT,GOOGL,AMZN,TSLA');
   };
+
+  const closeModal = useCallback(() => {
+    setShowCreateForm(false);
+    resetForm();
+  }, []);
+
+  // Handle Escape key to close modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showCreateForm) {
+        closeModal();
+      }
+    };
+    
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showCreateForm, closeModal]);
 
   if (!authState.isAuthenticated) {
     return (
@@ -237,19 +281,22 @@ export default function AITradersPage() {
 
         {/* Create Form Modal */}
         {showCreateForm && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div 
+            className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-trader-title"
+          >
             <div className="bg-slate-800 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <div className="p-6 border-b border-slate-700">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <h2 id="create-trader-title" className="text-xl font-bold text-white flex items-center gap-2">
                     ✨ {t('aiTraders.createTitle')}
                   </h2>
                   <button
-                    onClick={() => {
-                      setShowCreateForm(false);
-                      resetForm();
-                    }}
+                    onClick={closeModal}
                     className="text-gray-400 hover:text-white p-2"
+                    aria-label={t('aiTraders.form.cancel')}
                   >
                     ✕
                   </button>
@@ -290,7 +337,7 @@ export default function AITradersPage() {
                   <label className="block text-sm font-medium text-gray-300 mb-2">
                     {t('aiTraders.form.avatar')}
                   </label>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={t('aiTraders.form.avatar')}>
                     {AVATAR_OPTIONS.map((avatar) => (
                       <button
                         key={avatar}
@@ -300,6 +347,9 @@ export default function AITradersPage() {
                             ? 'bg-blue-600 border-2 border-blue-400'
                             : 'bg-slate-700 hover:bg-slate-600 border-2 border-transparent'
                         }`}
+                        role="radio"
+                        aria-checked={formAvatar === avatar}
+                        aria-label={`Select ${AVATAR_NAMES[avatar]} avatar`}
                       >
                         {avatar}
                       </button>
@@ -345,8 +395,8 @@ export default function AITradersPage() {
                             : 'bg-slate-700 hover:bg-slate-600 border-2 border-transparent'
                         }`}
                       >
-                        <div className="font-medium text-white">{option.label}</div>
-                        <div className="text-xs text-gray-400">{option.description}</div>
+                        <div className="font-medium text-white">{t(option.labelKey)}</div>
+                        <div className="text-xs text-gray-400">{t(option.descKey)}</div>
                       </button>
                     ))}
                   </div>
@@ -382,10 +432,7 @@ export default function AITradersPage() {
               {/* Footer */}
               <div className="p-6 border-t border-slate-700 flex gap-3 justify-end">
                 <button
-                  onClick={() => {
-                    setShowCreateForm(false);
-                    resetForm();
-                  }}
+                  onClick={closeModal}
                   className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
                 >
                   {t('aiTraders.form.cancel')}

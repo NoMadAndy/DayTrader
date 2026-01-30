@@ -82,10 +82,10 @@ export function Navigation() {
       labelKey: 'nav.aiTraders',
       icon: (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-          <circle cx="9" cy="8" r="1" fill="currentColor" />
-          <circle cx="15" cy="8" r="1" fill="currentColor" />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 11h6" />
+          <rect x="4" y="4" width="16" height="12" rx="2" strokeWidth={2} />
+          <circle cx="9" cy="10" r="1.5" fill="currentColor" />
+          <circle cx="15" cy="10" r="1.5" fill="currentColor" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4V2M8 16v4M16 16v4M4 10H2M22 10h-2" />
         </svg>
       ),
     },
