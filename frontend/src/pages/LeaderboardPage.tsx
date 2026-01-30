@@ -15,12 +15,14 @@ import { useSettings } from '../contexts/SettingsContext';
 import type { LeaderboardEntry, UserRank } from '../types/trading';
 
 type TimeframeType = 'all' | 'month' | 'week' | 'day';
+type FilterType = 'all' | 'humans' | 'ai';
 
 export function LeaderboardPage() {
   const [authState, setAuthState] = useState<AuthState>(getAuthState());
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [userRank, setUserRank] = useState<UserRank | null>(null);
   const [timeframe, setTimeframe] = useState<TimeframeType>('all');
+  const [filter, setFilter] = useState<FilterType>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { t, formatCurrency } = useSettings();
@@ -36,7 +38,7 @@ export function LeaderboardPage() {
         setError(null);
         
         const [leaderboardData, rankData] = await Promise.all([
-          getLeaderboard(50, timeframe),
+          getLeaderboard(50, timeframe, filter),
           authState.isAuthenticated ? getUserRank() : Promise.resolve(null),
         ]);
         
@@ -51,7 +53,7 @@ export function LeaderboardPage() {
     }
     
     loadData();
-  }, [timeframe, authState.isAuthenticated]);
+  }, [timeframe, filter, authState.isAuthenticated]);
   
   const getRankIcon = (rank: number): string => {
     if (rank === 1) return '🥇';
@@ -101,6 +103,28 @@ export function LeaderboardPage() {
             </button>
           ))}
         </div>
+      </div>
+      
+      {/* Filter Buttons */}
+      <div className="flex gap-2 justify-center">
+        {[
+          { id: 'all', label: 'Alle', icon: '👥' },
+          { id: 'humans', label: 'Menschen', icon: '👤' },
+          { id: 'ai', label: 'KI', icon: '🤖' },
+        ].map((f) => (
+          <button
+            key={f.id}
+            onClick={() => setFilter(f.id as FilterType)}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+              filter === f.id
+                ? 'bg-purple-600 text-white'
+                : 'bg-slate-800 text-gray-300 hover:bg-slate-700'
+            }`}
+          >
+            <span>{f.icon}</span>
+            <span>{f.label}</span>
+          </button>
+        ))}
       </div>
       
       {/* User's own rank card */}
@@ -165,9 +189,21 @@ export function LeaderboardPage() {
                     <div className="w-12 text-center text-xl font-bold">
                       {getRankIcon(entry.rank)}
                     </div>
-                    <div>
-                      <div className="font-semibold">{entry.username}</div>
-                      <div className="text-sm text-gray-400">{entry.name}</div>
+                    <div className="flex items-center gap-2">
+                      {entry.isAITrader && entry.avatar && (
+                        <span className="text-2xl" title="AI Trader">{entry.avatar}</span>
+                      )}
+                      <div>
+                        <div className="font-semibold flex items-center gap-2">
+                          {entry.username}
+                          {entry.isAITrader && (
+                            <span className="text-xs bg-purple-600/30 text-purple-300 px-2 py-0.5 rounded-full">
+                              KI
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-400">{entry.name}</div>
+                      </div>
                     </div>
                   </div>
                   
