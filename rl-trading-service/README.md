@@ -66,6 +66,90 @@ Each agent can be configured with:
 - `GET /options/trading-styles`
 - `GET /options/broker-profiles`
 
+### AI Trader Decision Engine (NEW)
+- `POST /ai-trader/start/{trader_id}` - Start an AI trader with configuration
+- `POST /ai-trader/stop/{trader_id}` - Stop a running AI trader
+- `POST /ai-trader/analyze` - Perform one-time symbol analysis (testing/debugging)
+
+## AI Trader Decision Engine
+
+The AI Trader Decision Engine aggregates signals from multiple sources to make intelligent trading decisions with comprehensive risk management.
+
+### Signal Sources
+
+1. **ML Signals** (30% weight): LSTM price predictions from ml-service
+2. **RL Signals** (30% weight): PPO agent recommendations from local trained models
+3. **Sentiment Signals** (20% weight): FinBERT sentiment analysis from ml-service
+4. **Technical Signals** (20% weight): RSI, MACD, moving averages
+
+### Risk Management
+
+The engine performs 10 comprehensive risk checks before executing any trade:
+
+| Check | Description | Default Limit |
+|-------|-------------|---------------|
+| Position Size | Per-position limit | 25% of budget |
+| Max Positions | Total open positions | 10 positions |
+| Symbol Exposure | Per-symbol total | 25% of budget |
+| Total Exposure | Portfolio exposure | 80% of budget |
+| Cash Reserve | Minimum cash | 10% of budget |
+| Daily Loss | Max daily loss | 5% |
+| Max Drawdown | Max peak-to-trough | 15% |
+| Trading Hours | Time restrictions | Mon-Fri 9:15-17:15 |
+| Loss Cooldown | After consecutive losses | 30 minutes |
+| VIX Level | Market volatility | Pause if VIX > 30 |
+
+### Position Sizing Strategies
+
+- **Fixed**: Fixed percentage of budget (default 10%)
+- **Kelly**: Kelly Criterion with configurable fraction (25%)
+- **Volatility**: Adjusted based on confidence levels
+
+### Starting an AI Trader
+
+```bash
+# Start an AI trader
+curl -X POST http://localhost:8001/ai-trader/start/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Aggressive Trader",
+    "initial_budget": 100000,
+    "symbols": ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"],
+    "rl_agent_name": "aggressive_momentum",
+    "check_interval": 5,
+    "min_confidence": 0.65,
+    "position_sizing": "kelly",
+    "risk_tolerance": "aggressive"
+  }'
+```
+
+### Analyzing a Symbol
+
+```bash
+# One-time analysis (for testing)
+curl -X POST http://localhost:8001/ai-trader/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "AAPL",
+    "config": {
+      "ml_weight": 0.3,
+      "rl_weight": 0.3,
+      "sentiment_weight": 0.2,
+      "technical_weight": 0.2,
+      "min_confidence": 0.65
+    }
+  }'
+```
+
+Response includes:
+- Decision type (buy/sell/hold/close/skip)
+- Confidence score and weighted signal
+- Individual signal scores (ML, RL, sentiment, technical)
+- Signal agreement level
+- Risk check results
+- Position sizing recommendations
+- Stop-loss and take-profit levels
+
 ## Training Example
 
 ```bash
