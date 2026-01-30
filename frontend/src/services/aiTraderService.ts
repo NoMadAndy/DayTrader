@@ -175,6 +175,86 @@ export async function getAITraderReports(
   return handleResponse<AITraderDailyReport[]>(response);
 }
 
+/**
+ * Get a specific report by date
+ */
+export async function getAITraderReportByDate(
+  id: number,
+  date: string
+): Promise<AITraderDailyReport> {
+  const response = await fetch(`${API_BASE}/ai-traders/${id}/reports/${date}`);
+  return handleResponse<AITraderDailyReport>(response);
+}
+
+/**
+ * Generate daily report manually
+ */
+export async function generateAITraderReport(
+  id: number,
+  date?: string
+): Promise<AITraderDailyReport> {
+  const response = await fetch(`${API_BASE}/ai-traders/${id}/reports/generate`, {
+    method: 'POST',
+    headers: {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ date }),
+  });
+  return handleResponse<AITraderDailyReport>(response);
+}
+
+/**
+ * Get signal accuracy for an AI trader
+ */
+export async function getSignalAccuracy(
+  id: number,
+  days: number = 30
+): Promise<import('../types/aiTrader').SignalAccuracyData> {
+  const response = await fetch(`${API_BASE}/ai-traders/${id}/signal-accuracy?days=${days}`);
+  return handleResponse<import('../types/aiTrader').SignalAccuracyData>(response);
+}
+
+/**
+ * Get insights for an AI trader
+ */
+export async function getAITraderInsights(
+  id: number
+): Promise<import('../types/aiTrader').AITraderInsightsResponse> {
+  const response = await fetch(`${API_BASE}/ai-traders/${id}/insights`);
+  return handleResponse<import('../types/aiTrader').AITraderInsightsResponse>(response);
+}
+
+/**
+ * Get weight history for an AI trader
+ */
+export async function getWeightHistory(
+  id: number,
+  limit: number = 20
+): Promise<import('../types/aiTrader').WeightHistoryEntry[]> {
+  const response = await fetch(`${API_BASE}/ai-traders/${id}/weight-history?limit=${limit}`);
+  return handleResponse<import('../types/aiTrader').WeightHistoryEntry[]>(response);
+}
+
+/**
+ * Manually adjust weights for an AI trader
+ */
+export async function adjustWeights(
+  id: number,
+  weights: import('../types/aiTrader').AITraderSignalWeights,
+  reason?: string
+): Promise<{ success: boolean; oldWeights: import('../types/aiTrader').AITraderSignalWeights; newWeights: import('../types/aiTrader').AITraderSignalWeights }> {
+  const response = await fetch(`${API_BASE}/ai-traders/${id}/adjust-weights`, {
+    method: 'POST',
+    headers: {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ weights, reason }),
+  });
+  return handleResponse<{ success: boolean; oldWeights: import('../types/aiTrader').AITraderSignalWeights; newWeights: import('../types/aiTrader').AITraderSignalWeights }>(response);
+}
+
 // ============================================================================
 // Configuration
 // ============================================================================

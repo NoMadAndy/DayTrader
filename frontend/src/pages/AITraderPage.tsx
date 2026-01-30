@@ -9,7 +9,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { AITraderCard } from '../components/AITraderCard';
 import { AITraderActivityFeed } from '../components/AITraderActivityFeed';
 import { TradeReasoningCard } from '../components/TradeReasoningCard';
+import AITraderReportCard from '../components/AITraderReportCard';
+import AITraderInsights from '../components/AITraderInsights';
+import SignalAccuracyChart from '../components/SignalAccuracyChart';
+import AdaptiveWeightsPanel from '../components/AdaptiveWeightsPanel';
 import { useAITraderStream } from '../hooks/useAITraderStream';
+import { useAITraderReports } from '../hooks/useAITraderReports';
 import type { AITrader, AITraderDecision } from '../types/aiTrader';
 import type { PositionWithPnL } from '../types/trading';
 
@@ -22,12 +27,14 @@ export function AITraderPage() {
   const [portfolio, setPortfolio] = useState<{ cash: number; totalValue: number; pnl: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'activity' | 'reports' | 'analytics'>('activity');
   
   const traderId = id ? parseInt(id) : undefined;
   const { events, connected } = useAITraderStream({ 
     traderId,
     enabled: !!traderId,
   });
+  const { reports } = useAITraderReports(traderId);
   
   // Load trader data
   useEffect(() => {
@@ -212,73 +219,146 @@ export function AITraderPage() {
         </div>
       )}
       
-      {/* Two Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left Column: Activity Feed */}
-        <AITraderActivityFeed events={events} maxHeight="600px" autoScroll={true} />
-        
-        {/* Right Column: Positions & Decisions */}
-        <div className="space-y-6">
-          {/* Open Positions */}
-          <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
-            <div className="px-4 py-3 border-b border-slate-700/50">
-              <h3 className="font-bold">📍 Open Positions ({positions.length})</h3>
-            </div>
-            <div className="p-4">
-              {positions.length === 0 ? (
-                <div className="text-center text-gray-500 py-8">
-                  <div className="text-2xl mb-2">📭</div>
-                  <div>No open positions</div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {positions.map((position) => (
-                    <div 
-                      key={position.id}
-                      className="bg-slate-900/50 rounded-lg p-3 flex items-center justify-between"
-                    >
-                      <div>
-                        <div className="font-bold">{position.symbol}</div>
-                        <div className="text-xs text-gray-400">
-                          {position.quantity} @ ${position.entryPrice?.toFixed(2)}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className={`font-bold ${(position.unrealizedPnlPercent || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                          {(position.unrealizedPnlPercent || 0) >= 0 ? '+' : ''}
-                          {(position.unrealizedPnlPercent || 0).toFixed(2)}%
-                        </div>
-                        <div className="text-xs text-gray-400">
-                          ${(position.unrealizedPnl || 0).toFixed(2)}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+      {/* Tab Navigation */}
+      <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-1 flex gap-1">
+        <button
+          onClick={() => setActiveTab('activity')}
+          className={`flex-1 px-4 py-2 rounded-md transition-colors ${
+            activeTab === 'activity'
+              ? 'bg-blue-500 text-white'
+              : 'text-gray-400 hover:bg-slate-700/50'
+          }`}
+        >
+          🔴 Live Activity
+        </button>
+        <button
+          onClick={() => setActiveTab('reports')}
+          className={`flex-1 px-4 py-2 rounded-md transition-colors ${
+            activeTab === 'reports'
+              ? 'bg-blue-500 text-white'
+              : 'text-gray-400 hover:bg-slate-700/50'
+          }`}
+        >
+          📊 Reports
+        </button>
+        <button
+          onClick={() => setActiveTab('analytics')}
+          className={`flex-1 px-4 py-2 rounded-md transition-colors ${
+            activeTab === 'analytics'
+              ? 'bg-blue-500 text-white'
+              : 'text-gray-400 hover:bg-slate-700/50'
+          }`}
+        >
+          📈 Analytics
+        </button>
+      </div>
+      
+      {/* Tab Content */}
+      {activeTab === 'activity' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left Column: Activity Feed */}
+          <AITraderActivityFeed events={events} maxHeight="600px" autoScroll={true} />
           
-          {/* Recent Decisions */}
-          <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
-            <div className="px-4 py-3 border-b border-slate-700/50">
-              <h3 className="font-bold">🧠 Recent Decisions</h3>
+          {/* Right Column: Positions & Decisions */}
+          <div className="space-y-6">
+            {/* Open Positions */}
+            <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
+              <div className="px-4 py-3 border-b border-slate-700/50">
+                <h3 className="font-bold">📍 Open Positions ({positions.length})</h3>
+              </div>
+              <div className="p-4">
+                {positions.length === 0 ? (
+                  <div className="text-center text-gray-500 py-8">
+                    <div className="text-2xl mb-2">📭</div>
+                    <div>No open positions</div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {positions.map((position) => (
+                      <div 
+                        key={position.id}
+                        className="bg-slate-900/50 rounded-lg p-3 flex items-center justify-between"
+                      >
+                        <div>
+                          <div className="font-bold">{position.symbol}</div>
+                          <div className="text-xs text-gray-400">
+                            {position.quantity} @ ${position.entryPrice?.toFixed(2)}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className={`font-bold ${(position.unrealizedPnlPercent || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {(position.unrealizedPnlPercent || 0) >= 0 ? '+' : ''}
+                            {(position.unrealizedPnlPercent || 0).toFixed(2)}%
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            ${(position.unrealizedPnl || 0).toFixed(2)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="p-4 space-y-3">
-              {decisions.length === 0 ? (
-                <div className="text-center text-gray-500 py-8">
-                  <div className="text-2xl mb-2">🤔</div>
-                  <div>No decisions yet</div>
-                </div>
-              ) : (
-                decisions.map((decision) => (
-                  <TradeReasoningCard key={decision.id} decision={decision} />
-                ))
-              )}
+            
+            {/* Recent Decisions */}
+            <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
+              <div className="px-4 py-3 border-b border-slate-700/50">
+                <h3 className="font-bold">🧠 Recent Decisions</h3>
+              </div>
+              <div className="p-4 space-y-3">
+                {decisions.length === 0 ? (
+                  <div className="text-center text-gray-500 py-8">
+                    <div className="text-2xl mb-2">🤔</div>
+                    <div>No decisions yet</div>
+                  </div>
+                ) : (
+                  decisions.map((decision) => (
+                    <TradeReasoningCard key={decision.id} decision={decision} />
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
+      
+      {activeTab === 'reports' && traderId && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Latest Report */}
+          <div>
+            {reports.length > 0 ? (
+              <AITraderReportCard report={reports[0]} />
+            ) : (
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow text-center">
+                <div className="text-4xl mb-2">📊</div>
+                <p className="text-gray-600 dark:text-gray-400">
+                  No reports available yet. Reports are generated daily after market close.
+                </p>
+              </div>
+            )}
+          </div>
+          
+          {/* Insights */}
+          <div>
+            <AITraderInsights traderId={traderId} />
+          </div>
+        </div>
+      )}
+      
+      {activeTab === 'analytics' && traderId && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Signal Accuracy */}
+          <div>
+            <SignalAccuracyChart traderId={traderId} days={30} />
+          </div>
+          
+          {/* Adaptive Weights */}
+          <div>
+            <AdaptiveWeightsPanel trader={trader} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

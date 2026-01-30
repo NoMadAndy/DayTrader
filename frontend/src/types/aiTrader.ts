@@ -211,6 +211,52 @@ export interface AITraderDailyReport {
 }
 
 // ============================================================================
+// Signal Accuracy Types
+// ============================================================================
+
+export interface SignalAccuracyMetrics {
+  accuracy: number | null;
+  totalSignals: number;
+  correct: number;
+  incorrect: number;
+}
+
+export interface SignalAccuracyData {
+  ml: SignalAccuracyMetrics;
+  rl: SignalAccuracyMetrics;
+  sentiment: SignalAccuracyMetrics;
+  technical: SignalAccuracyMetrics;
+  overall: {
+    accuracy: number | null;
+    totalTrades: number;
+    correct: number;
+    incorrect: number;
+  };
+}
+
+// ============================================================================
+// Weight History Types
+// ============================================================================
+
+export interface WeightHistoryEntry {
+  id: number;
+  aiTraderId: number;
+  timestamp: string;
+  oldWeights: AITraderSignalWeights;
+  newWeights: AITraderSignalWeights;
+  reason: string;
+  accuracySnapshot: SignalAccuracyData | null;
+}
+
+// ============================================================================
+// Insights Types
+// ============================================================================
+
+export interface AITraderInsightsResponse {
+  insights: string[];
+}
+
+// ============================================================================
 // API Request/Response Types
 // ============================================================================
 

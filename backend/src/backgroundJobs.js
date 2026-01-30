@@ -256,6 +256,9 @@ export function startBackgroundJobs() {
   quoteUpdateTimer = setInterval(runQuoteUpdateCycle, CONFIG.quoteUpdateInterval);
   cacheCleanupTimer = setInterval(runCacheCleanup, CONFIG.cacheCleanupInterval);
   
+  // Start AI Trader jobs
+  scheduleAITraderJobs();
+  
   console.log('[BackgroundJobs] Background jobs started');
 }
 
@@ -276,6 +279,9 @@ export function stopBackgroundJobs() {
     clearInterval(cacheCleanupTimer);
     cacheCleanupTimer = null;
   }
+  
+  // Stop AI Trader jobs
+  stopAITraderJobs();
   
   isRunning = false;
   console.log('[BackgroundJobs] Background jobs stopped');
@@ -338,6 +344,178 @@ export function updateConfig(newConfig) {
   console.log('[BackgroundJobs] Configuration updated:', CONFIG);
 }
 
+// ============================================================================
+// AI Trader Scheduled Jobs
+// ============================================================================
+
+/**
+ * Run daily report generation for all running AI traders
+ * Scheduled to run after market close (17:35 CET)
+ */
+async function generateDailyReports() {
+  try {
+    console.log('[BackgroundJobs] Starting daily report generation...');
+    
+    // Import dynamically to avoid circular dependencies
+    const { generateDailyReport, getRunningAITraders } = await import('./aiTraderReports.js');
+    
+    const traders = await getRunningAITraders();
+    const date = new Date();
+    
+    console.log(`[BackgroundJobs] Generating reports for ${traders.length} traders`);
+    
+    for (const trader of traders) {
+      try {
+        await generateDailyReport(trader.id, date);
+        console.log(`[BackgroundJobs] Generated daily report for trader ${trader.name}`);
+      } catch (error) {
+        console.error(`[BackgroundJobs] Error generating report for trader ${trader.id}:`, error);
+      }
+    }
+    
+    console.log('[BackgroundJobs] Daily report generation complete');
+  } catch (error) {
+    console.error('[BackgroundJobs] Error in daily report generation:', error);
+  }
+}
+
+/**
+ * Update pending decision outcomes
+ * Scheduled to run hourly
+ */
+async function updateOutcomes() {
+  try {
+    console.log('[BackgroundJobs] Starting outcome tracking update...');
+    
+    // Import dynamically to avoid circular dependencies
+    const { updatePendingOutcomes } = await import('./aiTrader.js');
+    
+    const updated = await updatePendingOutcomes();
+    
+    if (updated > 0) {
+      console.log(`[BackgroundJobs] Updated ${updated} decision outcomes`);
+    }
+  } catch (error) {
+    console.error('[BackgroundJobs] Error updating outcomes:', error);
+  }
+}
+
+/**
+ * Adjust weights for AI traders with adaptive learning enabled
+ * Scheduled to run weekly (Sunday 00:00)
+ */
+async function adjustAdaptiveWeights() {
+  try {
+    console.log('[BackgroundJobs] Starting adaptive weight adjustments...');
+    
+    // Import dynamically to avoid circular dependencies
+    const { getTradersWithLearningEnabled, adjustSignalWeights } = await import('./aiTraderLearning.js');
+    
+    const traders = await getTradersWithLearningEnabled();
+    
+    console.log(`[BackgroundJobs] Found ${traders.length} traders with learning enabled`);
+    
+    for (const trader of traders) {
+      try {
+        const result = await adjustSignalWeights(trader.id);
+        
+        if (result.adjusted) {
+          console.log(`[BackgroundJobs] Adjusted weights for trader ${trader.name}`);
+        } else {
+          console.log(`[BackgroundJobs] No adjustment needed for trader ${trader.name}: ${result.reason}`);
+        }
+      } catch (error) {
+        console.error(`[BackgroundJobs] Error adjusting weights for trader ${trader.id}:`, error);
+      }
+    }
+    
+    console.log('[BackgroundJobs] Adaptive weight adjustments complete');
+  } catch (error) {
+    console.error('[BackgroundJobs] Error in adaptive weight adjustments:', error);
+  }
+}
+
+// Timers for AI Trader jobs
+let dailyReportTimer = null;
+let outcomeTrackingTimer = null;
+let adaptiveWeightsTimer = null;
+
+/**
+ * Schedule AI Trader background jobs
+ */
+function scheduleAITraderJobs() {
+  // Daily reports at 17:35 (after market close)
+  // Run at 35 minutes past each hour for testing, or set specific time
+  const now = new Date();
+  const nextRun = new Date(now);
+  nextRun.setHours(17, 35, 0, 0);
+  
+  if (nextRun <= now) {
+    nextRun.setDate(nextRun.getDate() + 1);
+  }
+  
+  const msUntilNextRun = nextRun.getTime() - now.getTime();
+  
+  // Schedule first run
+  dailyReportTimer = setTimeout(() => {
+    generateDailyReports();
+    // Then run daily
+    dailyReportTimer = setInterval(generateDailyReports, 24 * 60 * 60 * 1000);
+  }, msUntilNextRun);
+  
+  console.log(`[BackgroundJobs] Daily reports scheduled for ${nextRun.toISOString()}`);
+  
+  // Outcome tracking hourly
+  outcomeTrackingTimer = setInterval(updateOutcomes, 60 * 60 * 1000);
+  console.log('[BackgroundJobs] Outcome tracking scheduled hourly');
+  
+  // Run immediately on startup
+  updateOutcomes();
+  
+  // Adaptive weights weekly on Sunday at 00:00
+  const nextSunday = new Date(now);
+  nextSunday.setDate(nextSunday.getDate() + (7 - nextSunday.getDay()) % 7);
+  nextSunday.setHours(0, 0, 0, 0);
+  
+  if (nextSunday <= now) {
+    nextSunday.setDate(nextSunday.getDate() + 7);
+  }
+  
+  const msUntilSunday = nextSunday.getTime() - now.getTime();
+  
+  adaptiveWeightsTimer = setTimeout(() => {
+    adjustAdaptiveWeights();
+    // Then run weekly
+    adaptiveWeightsTimer = setInterval(adjustAdaptiveWeights, 7 * 24 * 60 * 60 * 1000);
+  }, msUntilSunday);
+  
+  console.log(`[BackgroundJobs] Adaptive weights scheduled for ${nextSunday.toISOString()}`);
+}
+
+/**
+ * Stop AI Trader scheduled jobs
+ */
+function stopAITraderJobs() {
+  if (dailyReportTimer) {
+    clearInterval(dailyReportTimer);
+    clearTimeout(dailyReportTimer);
+    dailyReportTimer = null;
+  }
+  
+  if (outcomeTrackingTimer) {
+    clearInterval(outcomeTrackingTimer);
+    outcomeTrackingTimer = null;
+  }
+  
+  if (adaptiveWeightsTimer) {
+    clearInterval(adaptiveWeightsTimer);
+    clearTimeout(adaptiveWeightsTimer);
+    adaptiveWeightsTimer = null;
+  }
+  
+  console.log('[BackgroundJobs] AI Trader jobs stopped');
+}
+
 export default {
   startBackgroundJobs,
   stopBackgroundJobs,
@@ -345,4 +523,9 @@ export default {
   triggerQuoteUpdate,
   updateConfig,
   setBroadcastCallback,
+  scheduleAITraderJobs,
+  stopAITraderJobs,
+  generateDailyReports,
+  updateOutcomes,
+  adjustAdaptiveWeights,
 };
