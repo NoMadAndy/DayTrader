@@ -29,6 +29,14 @@ A modern, AI-powered stock technical analysis platform for day trading education
 
 AI Live Trader is now a complete autonomous trading system with real-time monitoring, comprehensive reporting, signal accuracy tracking, and adaptive learning capabilities!
 
+### How to Access
+
+1. **Login** to your account
+2. Click **"Live AI"** in the navigation bar (🤖 icon)
+3. Click **"+ New AI Trader"** to create a new trader
+4. Configure your trader's personality (name, risk tolerance, initial capital, watchlist)
+5. After creation, you'll be redirected to the trader's dashboard
+
 ### Phase 4 Features (Latest - Implemented)
 
 - **📊 Daily Reports**: Automated performance reports generated after market close
