@@ -8,6 +8,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **AI Live Trader - Phase 4: Reporting, Analytics & Adaptive Learning** - Complete performance tracking and optimization system
+  - **Backend Modules**:
+    - `backend/src/aiTraderReports.js` - Daily report generation with comprehensive statistics
+      - Automatic report generation after market close (17:35 daily)
+      - Portfolio value tracking (start/end/P&L)
+      - Trading activity metrics (trades executed, positions opened/closed)
+      - Win/loss statistics (win rate, average win/loss, best/worst trades)
+      - Signal accuracy breakdown per source
+      - Auto-generated insights
+    - `backend/src/aiTraderSignalAccuracy.js` - Signal performance tracking
+      - Accuracy calculation for ML, RL, Sentiment, and Technical signals
+      - Historical accuracy trends
+      - Correct vs incorrect signal tracking
+    - `backend/src/aiTraderInsights.js` - Auto-generated performance insights
+      - Signal accuracy comparisons
+      - Performance highlights and warnings
+      - Actionable recommendations for weight adjustments
+      - Drawdown warnings
+      - Symbol-specific performance insights
+    - `backend/src/aiTraderLearning.js` - Adaptive weight adjustment system
+      - Automatic weight optimization based on signal accuracy
+      - Gradual weight changes (max 5% per adjustment)
+      - Manual weight adjustment support
+      - Weight history tracking
+  - **Backend Features**:
+    - Trade outcome tracking - Automatic P&L tracking when positions close
+    - Decision correctness evaluation
+    - Database migration for `ai_trader_weight_history` table
+    - Scheduled background jobs:
+      - Daily reports (17:35 after market close)
+      - Hourly outcome tracking
+      - Weekly adaptive weights (Sunday 00:00)
+  - **API Endpoints**:
+    - `GET /api/ai-traders/:id/reports` - List all reports
+    - `GET /api/ai-traders/:id/reports/:date` - Get specific date report
+    - `POST /api/ai-traders/:id/reports/generate` - Generate report manually
+    - `GET /api/ai-traders/:id/signal-accuracy?days=30` - Get signal accuracy metrics
+    - `GET /api/ai-traders/:id/insights` - Get auto-generated insights
+    - `GET /api/ai-traders/:id/weight-history` - Get weight adjustment history
+    - `POST /api/ai-traders/:id/adjust-weights` - Manually adjust weights
+  - **Frontend Components**:
+    - `AITraderReportCard.tsx` - Daily performance report display
+      - Portfolio value and P&L visualization
+      - Trading activity summary
+      - Win/loss statistics with averages
+      - Notable trades (best/worst)
+      - Fees paid
+    - `AITraderInsights.tsx` - Insights display with color-coded categories
+      - Performance insights (green)
+      - Warnings (yellow)
+      - Recommendations (blue)
+      - Market analysis (purple)
+    - `SignalAccuracyChart.tsx` - Visual accuracy breakdown
+      - Bar chart for each signal source
+      - Overall accuracy display
+      - Trend indicators (up/down/neutral)
+      - Signal statistics (correct/total)
+    - `AdaptiveWeightsPanel.tsx` - Weight management interface
+      - Current weight visualization with progress bars
+      - Weight adjustment history
+      - Learning mode indicator
+      - Auto-adjust status
+  - **Frontend Enhancements**:
+    - Updated `AITraderPage.tsx` with tabbed interface:
+      - Live Activity tab (existing real-time feed)
+      - Reports tab (daily reports and insights)
+      - Analytics tab (signal accuracy and weight management)
+    - New hook `useAITraderReports.ts` for report data management
+    - Updated TypeScript types for new data structures
+    - Extended `aiTraderService.ts` with Phase 4 API calls
+
 - **AI Live Trader - Phase 3: Live Streaming & UI** - Complete real-time dashboard with SSE broadcasting
   - **Backend SSE Broadcasting Service** (`backend/src/aiTraderEvents.js`):
     - `AITraderEventEmitter` class for managing SSE client connections
