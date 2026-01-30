@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Live AI Trader Management Page** - New frontend page at `/ai-traders` for creating and managing AI Traders
+  - View list of all AI Traders with status, trades count, win rate, and P&L
+  - Create new AI Traders via accessible modal form with:
+    - Name and description
+    - Selectable avatars (Robot, Brain, Chart, etc.)
+    - Initial capital slider (€10,000 - €1,000,000)
+    - Risk tolerance selection (Conservative/Moderate/Aggressive)
+    - Watchlist symbols configuration
+  - Delete AI Traders with confirmation
+  - Navigate directly to individual AI Trader dashboards
+  - Full German and English translations
+  - ARIA accessibility support (modal, keyboard navigation, screen reader labels)
+- Added "Live AI" navigation item with distinctive robot icon
+
 ### Fixed
 - Fixed TypeScript build error in `AITraderReportCard.tsx` by adding proper `TradeDetail` interface for bestTrade/worstTrade properties
 

@@ -78,6 +78,18 @@ export function Navigation() {
       ),
     },
     {
+      path: '/ai-traders',
+      labelKey: 'nav.aiTraders',
+      icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <rect x="4" y="4" width="16" height="12" rx="2" strokeWidth={2} />
+          <circle cx="9" cy="10" r="1.5" fill="currentColor" />
+          <circle cx="15" cy="10" r="1.5" fill="currentColor" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4V2M8 16v4M16 16v4M4 10H2M22 10h-2" />
+        </svg>
+      ),
+    },
+    {
       path: '/watchlist',
       labelKey: 'nav.watchlist',
       icon: (
