@@ -8,6 +8,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **AI Live Trader - Phase 2: Decision Engine** - AI trading decision engine implementation
+  - **RL Trading Service - AI Trader Engine** (`rl-trading-service/app/ai_trader_engine.py`):
+    - `AITraderConfig` dataclass with comprehensive trading parameters
+    - `TradingDecision` dataclass for complete decision tracking
+    - `AITraderEngine` class for signal aggregation and decision making
+    - Adaptive threshold calculation based on market conditions and performance
+    - Multiple position sizing strategies (fixed, Kelly criterion, volatility-based)
+    - Automatic stop-loss and take-profit calculation
+    - Detailed reasoning and summary generation
+  - **RL Trading Service - Signal Aggregation** (`rl-trading-service/app/ai_trader_signals.py`):
+    - `AggregatedSignal` dataclass for multi-source signal results
+    - `SignalAggregator` class combining ML, RL, sentiment, and technical signals
+    - ML signal integration via LSTM predictions from ml-service
+    - RL signal generation using local PPO agents
+    - Sentiment analysis integration via FinBERT from ml-service
+    - Technical indicator calculations (RSI, MACD, moving averages)
+    - Signal agreement calculation (strong/moderate/weak/mixed consensus)
+  - **RL Trading Service - Risk Management** (`rl-trading-service/app/ai_trader_risk.py`):
+    - `RiskCheck` and `RiskCheckResult` dataclasses
+    - `RiskManager` class with 10 comprehensive risk checks:
+      - Position size limits (max 25% per position)
+      - Maximum number of positions (configurable limit)
+      - Symbol-specific exposure limits
+      - Total portfolio exposure limits (max 80%)
+      - Cash reserve requirements (min 10%)
+      - Daily loss limits (max 5% daily loss)
+      - Maximum drawdown limits (max 15% from peak)
+      - Trading hours validation with timezone support
+      - Consecutive loss cooldown periods
+      - VIX-based market volatility monitoring
+  - **RL Trading Service - Scheduler** (`rl-trading-service/app/ai_trader_scheduler.py`):
+    - `AITraderScheduler` class for managing multiple AI traders
+    - Scheduled trading loops with configurable check intervals
+    - Trading time validation with day-of-week and time-of-day checks
+    - Market data fetching from backend service
+    - Automatic decision logging to backend database
+    - Trade execution via backend API
+    - Graceful shutdown and cleanup handling
+  - **RL Trading Service - API Endpoints** (extended `rl-trading-service/app/main.py`):
+    - `POST /ai-trader/start/{trader_id}` - Start AI trader with configuration
+    - `POST /ai-trader/stop/{trader_id}` - Stop running AI trader
+    - `POST /ai-trader/analyze` - One-time symbol analysis for testing
+    - Application shutdown handler for scheduler cleanup
+  - **Dependencies**:
+    - Added `pytz>=2023.3` for timezone handling in trading hours
+
 - **AI Live Trader - Phase 1: Database & Grundstruktur** - Foundation for AI trading agents
   - **Backend Database Schema**:
     - Extended `users` table with `is_system_user` and `user_type` columns

@@ -40,6 +40,7 @@ aiohttp>=3.9.0
 # Utilities
 python-dotenv>=1.0.0
 python-json-logger>=2.0.0
+pytz>=2023.3
 
 # Database
 asyncpg>=0.29.0

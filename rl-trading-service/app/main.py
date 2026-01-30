@@ -779,3 +779,158 @@ async def get_broker_profiles():
         {"value": bp.value, "label": bp.name.replace("_", " ").title()}
         for bp in BrokerProfile
     ]
+
+
+# ============== AI Trader Decision Engine Endpoints ==============
+
+from .ai_trader_scheduler import get_scheduler
+from .ai_trader_engine import AITraderConfig, AITraderEngine
+
+
+@app.post("/ai-trader/start/{trader_id}")
+async def start_ai_trader(trader_id: int, config: dict):
+    """
+    Start an AI trader with scheduled trading checks.
+    
+    Args:
+        trader_id: Unique trader ID
+        config: Configuration dictionary
+        
+    Returns:
+        Status and trader ID
+    """
+    try:
+        # Create config from dict
+        trader_config = AITraderConfig(
+            trader_id=trader_id,
+            name=config.get('name', f'Trader-{trader_id}'),
+            **{k: v for k, v in config.items() if k != 'trader_id' and k != 'name'}
+        )
+        
+        # Start trader
+        sched = get_scheduler()
+        await sched.start_trader(trader_id, trader_config)
+        
+        return {
+            "status": "started",
+            "trader_id": trader_id,
+            "name": trader_config.name
+        }
+        
+    except Exception as e:
+        logger.error(f"Error starting trader {trader_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ai-trader/stop/{trader_id}")
+async def stop_ai_trader(trader_id: int):
+    """
+    Stop a running AI trader.
+    
+    Args:
+        trader_id: Trader ID to stop
+        
+    Returns:
+        Status message
+    """
+    try:
+        sched = get_scheduler()
+        await sched.stop_trader(trader_id)
+        
+        return {
+            "status": "stopped",
+            "trader_id": trader_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Error stopping trader {trader_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ai-trader/analyze")
+async def analyze_symbol_once(request: dict):
+    """
+    Perform a one-time analysis of a symbol (for testing/debugging).
+    
+    Args:
+        request: Dict with 'symbol', 'config' (optional), 'market_data' (optional)
+        
+    Returns:
+        Trading decision with all details
+    """
+    try:
+        symbol = request.get('symbol')
+        if not symbol:
+            raise HTTPException(status_code=400, detail="Symbol is required")
+        
+        # Create config
+        config_dict = request.get('config', {})
+        config = AITraderConfig(
+            trader_id=0,
+            name="test",
+            **config_dict
+        )
+        
+        # Create engine
+        engine = AITraderEngine(config)
+        
+        try:
+            # Get market data
+            market_data = request.get('market_data')
+            if not market_data:
+                # Fetch from backend
+                sched = get_scheduler()
+                market_data = await sched._fetch_market_data(symbol)
+                
+                if not market_data:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"No market data available for {symbol}"
+                    )
+            
+            # Analyze
+            decision = await engine.analyze_symbol(symbol, market_data)
+            
+            return {
+                'symbol': decision.symbol,
+                'decision': decision.decision_type,
+                'confidence': decision.confidence,
+                'weighted_score': decision.weighted_score,
+                'signals': {
+                    'ml': decision.ml_score,
+                    'rl': decision.rl_score,
+                    'sentiment': decision.sentiment_score,
+                    'technical': decision.technical_score
+                },
+                'agreement': decision.signal_agreement,
+                'summary': decision.summary_short,
+                'reasoning': decision.reasoning,
+                'risk_passed': decision.risk_checks_passed,
+                'risk_warnings': decision.risk_warnings,
+                'risk_blockers': decision.risk_blockers,
+                'quantity': decision.quantity,
+                'price': decision.price,
+                'stop_loss': decision.stop_loss,
+                'take_profit': decision.take_profit,
+                'timestamp': decision.timestamp.isoformat()
+            }
+            
+        finally:
+            await engine.close()
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in analyze_symbol_once: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on application shutdown"""
+    logger.info("Shutting down AI Trader scheduler...")
+    try:
+        sched = get_scheduler()
+        await sched.close()
+    except Exception as e:
+        logger.error(f"Error during scheduler shutdown: {e}")
