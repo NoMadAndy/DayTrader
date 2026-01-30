@@ -8,6 +8,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **AI Live Trader - Phase 3: Live Streaming & UI** - Complete real-time dashboard with SSE broadcasting
+  - **Backend SSE Broadcasting Service** (`backend/src/aiTraderEvents.js`):
+    - `AITraderEventEmitter` class for managing SSE client connections
+    - Event broadcasting to subscribed clients (individual or all traders)
+    - Heartbeat mechanism (30-second intervals) for connection health
+    - Event types: `status_changed`, `analyzing`, `decision_made`, `trade_executed`, `position_closed`, `error`
+    - Automatic client cleanup on disconnect
+  - **Backend SSE Endpoints** (`backend/src/index.js`):
+    - `GET /api/stream/ai-trader/:id` - Stream events for individual AI trader
+    - `GET /api/stream/ai-traders` - Stream events for all AI traders
+    - Support for authenticated and anonymous connections
+  - **Frontend SSE Hook** (`frontend/src/hooks/useAITraderStream.ts`):
+    - Real-time event streaming with automatic reconnection
+    - Event buffering (last 100 events)
+    - Connection state management
+    - 5-second auto-reconnect on connection loss
+  - **Frontend AI Trader Dashboard** (`frontend/src/pages/AITraderPage.tsx`):
+    - Full-featured monitoring page with live updates
+    - Portfolio overview (cash, total value, P&L)
+    - Real-time activity feed with event history
+    - Open positions display with unrealized P&L
+    - Recent decisions with expandable reasoning
+    - Start/Stop/Pause controls
+  - **Frontend Components**:
+    - `AITraderCard.tsx` - Status card with controls and key metrics
+    - `AITraderActivityFeed.tsx` - Scrolling live event stream
+    - `TradeReasoningCard.tsx` - Expandable decision analysis with signal breakdown
+    - `SignalBreakdown.tsx` - Visual signal score display with confidence bars
+  - **Enhanced Leaderboard** (`frontend/src/pages/LeaderboardPage.tsx`):
+    - Clickable AI trader entries linking to dashboard
+    - Visual indicators (🤖 avatar, KI badge)
+    - Hover effects for AI traders
+  - **Routing & Navigation**:
+    - Added `/ai-trader/:id` route to App.tsx
+    - Updated component and page exports
+  - **TypeScript Types** (`frontend/src/types/aiTrader.ts`):
+    - `AITraderEvent` interface with event type definitions
+    - `SignalDetail` interface for signal visualization
+    - Updated `LeaderboardEntry` to include `aiTraderId`
+
 - **AI Live Trader - Phase 2: Decision Engine** - AI trading decision engine implementation
   - **RL Trading Service - AI Trader Engine** (`rl-trading-service/app/ai_trader_engine.py`):
     - `AITraderConfig` dataclass with comprehensive trading parameters
