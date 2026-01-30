@@ -543,10 +543,11 @@ export async function getEquityCurve(
  */
 export async function getLeaderboard(
   limit = 50,
-  timeframe: 'all' | 'day' | 'week' | 'month' = 'all'
+  timeframe: 'all' | 'day' | 'week' | 'month' = 'all',
+  filter: 'all' | 'humans' | 'ai' = 'all'
 ): Promise<LeaderboardEntry[]> {
   const response = await fetch(
-    `${API_BASE}/trading/leaderboard?limit=${limit}&timeframe=${timeframe}`
+    `${API_BASE}/trading/leaderboard?limit=${limit}&timeframe=${timeframe}&filter=${filter}`
   );
   return handleResponse<LeaderboardEntry[]>(response);
 }

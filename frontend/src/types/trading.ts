@@ -376,6 +376,8 @@ export interface LeaderboardEntry {
   totalTrades: number;
   winningTrades: number;
   winRate: number;
+  isAITrader: boolean;
+  avatar?: string;
 }
 
 export interface UserRank {
