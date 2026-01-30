@@ -206,3 +206,146 @@ export async function getInsights(traderId) {
     return [];
   }
 }
+
+// ============================================================================
+// Persistent Insights Management
+// ============================================================================
+
+/**
+ * Store a persistent insight in the database
+ * @param {number} traderId - AI Trader ID
+ * @param {string} insightType - Type: 'trend', 'timing', 'signal', 'risk'
+ * @param {string} title - Short insight title
+ * @param {string} description - Detailed description
+ * @param {object} data - Additional data
+ * @param {string} severity - 'info', 'warning', 'critical'
+ * @param {Date|null} expiresAt - Optional expiration date
+ * @returns {Promise<object>} Created insight
+ */
+export async function createPersistentInsight(
+  traderId,
+  insightType,
+  title,
+  description = null,
+  data = null,
+  severity = 'info',
+  expiresAt = null
+) {
+  // Validate traderId
+  if (!Number.isInteger(traderId) || traderId <= 0) {
+    throw new Error('Invalid traderId: must be a positive integer');
+  }
+
+  // Validate insightType
+  const validInsightTypes = ['trend', 'timing', 'signal', 'risk'];
+  if (!validInsightTypes.includes(insightType)) {
+    throw new Error(`Invalid insightType: must be one of ${validInsightTypes.join(', ')}`);
+  }
+
+  // Validate severity
+  const validSeverities = ['info', 'warning', 'critical'];
+  if (!validSeverities.includes(severity)) {
+    throw new Error(`Invalid severity: must be one of ${validSeverities.join(', ')}`);
+  }
+
+  try {
+    const result = await query(
+      `INSERT INTO ai_trader_insights 
+       (ai_trader_id, insight_type, title, description, data, severity, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [
+        traderId,
+        insightType,
+        title,
+        description,
+        data != null ? JSON.stringify(data) : null,
+        severity,
+        expiresAt,
+      ]
+    );
+    return result.rows[0];
+  } catch (error) {
+    console.error('Error creating persistent insight:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get persistent insights for a trader
+ * @param {number} traderId - AI Trader ID
+ * @param {boolean} activeOnly - Only return active insights
+ * @returns {Promise<Array>} Array of insights
+ */
+export async function getPersistentInsights(traderId, activeOnly = true) {
+  // Validate traderId
+  if (!Number.isInteger(traderId) || traderId <= 0) {
+    throw new Error('Invalid traderId: must be a positive integer');
+  }
+
+  try {
+    const params = [traderId];
+    let queryText = `
+      SELECT * FROM ai_trader_insights
+      WHERE ai_trader_id = $1
+    `;
+    
+    if (activeOnly) {
+      queryText += ` AND is_active = true
+        AND (expires_at IS NULL OR expires_at > NOW())`;
+    }
+    
+    queryText += ` ORDER BY created_at DESC`;
+    
+    const result = await query(queryText, params);
+    return result.rows;
+  } catch (error) {
+    console.error('Error getting persistent insights:', error);
+    return [];
+  }
+}
+
+/**
+ * Deactivate an insight
+ * @param {number} insightId - Insight ID
+ * @returns {Promise<boolean>} Success status
+ */
+export async function deactivateInsight(insightId) {
+  // Validate insightId
+  if (!Number.isInteger(insightId) || insightId <= 0) {
+    throw new Error('Invalid insightId: must be a positive integer');
+  }
+
+  try {
+    const result = await query(
+      `UPDATE ai_trader_insights
+       SET is_active = false
+       WHERE id = $1`,
+      [insightId]
+    );
+    return result.rowCount > 0;
+  } catch (error) {
+    console.error('Error deactivating insight:', error);
+    return false;
+  }
+}
+
+/**
+ * Clean up expired insights
+ * @returns {Promise<number>} Number of insights cleaned up
+ */
+export async function cleanupExpiredInsights() {
+  try {
+    const result = await query(
+      `UPDATE ai_trader_insights
+       SET is_active = false
+       WHERE is_active = true
+       AND expires_at IS NOT NULL
+       AND expires_at < NOW()`
+    );
+    return result.rowCount;
+  } catch (error) {
+    console.error('Error cleaning up expired insights:', error);
+    return 0;
+  }
+}

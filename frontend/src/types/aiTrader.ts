@@ -183,6 +183,13 @@ export interface AITraderDecision {
 // Daily Report Types
 // ============================================================================
 
+export interface TradeDetail {
+  symbol: string;
+  pnl: number;
+  pnl_percent: number;
+  holding_days: number | null;
+}
+
 export interface AITraderDailyReport {
   id: number;
   aiTraderId: number;
@@ -202,8 +209,8 @@ export interface AITraderDailyReport {
   winRate: number | null;
   avgWin: number | null;
   avgLoss: number | null;
-  bestTrade: Record<string, unknown> | null;
-  worstTrade: Record<string, unknown> | null;
+  bestTrade: TradeDetail | null;
+  worstTrade: TradeDetail | null;
   signalAccuracy: Record<string, unknown> | null;
   openPositions: Record<string, unknown> | null;
   insights: string[];

@@ -143,6 +143,16 @@ export async function initializeAITraderSchema() {
       END $$;
     `);
 
+    // Add signal_accuracy column for cumulative accuracy tracking (Phase 4)
+    await client.query(`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_traders' AND column_name = 'signal_accuracy') THEN
+          ALTER TABLE ai_traders ADD COLUMN signal_accuracy JSONB DEFAULT '{"ml": null, "rl": null, "sentiment": null, "technical": null}';
+        END IF;
+      END $$;
+    `);
+
     // Create ai_trader_decisions table
     await client.query(`
       CREATE TABLE IF NOT EXISTS ai_trader_decisions (
@@ -266,6 +276,22 @@ export async function initializeAITraderSchema() {
       );
     `);
 
+    // Create ai_trader_insights table for persistent insights
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ai_trader_insights (
+        id SERIAL PRIMARY KEY,
+        ai_trader_id INTEGER REFERENCES ai_traders(id) ON DELETE CASCADE,
+        insight_type VARCHAR(50) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        data JSONB,
+        severity VARCHAR(20) DEFAULT 'info',
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        expires_at TIMESTAMP WITH TIME ZONE
+      );
+    `);
+
     // Create indexes
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_ai_traders_status ON ai_traders(status);
@@ -276,6 +302,10 @@ export async function initializeAITraderSchema() {
       CREATE INDEX IF NOT EXISTS idx_decisions_executed ON ai_trader_decisions(executed);
       CREATE INDEX IF NOT EXISTS idx_weight_history_trader ON ai_trader_weight_history(ai_trader_id);
       CREATE INDEX IF NOT EXISTS idx_weight_history_timestamp ON ai_trader_weight_history(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_insights_trader ON ai_trader_insights(ai_trader_id);
+      CREATE INDEX IF NOT EXISTS idx_insights_type ON ai_trader_insights(insight_type);
+      CREATE INDEX IF NOT EXISTS idx_insights_active ON ai_trader_insights(is_active);
+      CREATE INDEX IF NOT EXISTS idx_insights_expires_at ON ai_trader_insights(expires_at);
     `);
 
     await client.query('COMMIT');
