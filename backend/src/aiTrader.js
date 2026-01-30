@@ -305,6 +305,7 @@ export async function initializeAITraderSchema() {
       CREATE INDEX IF NOT EXISTS idx_insights_trader ON ai_trader_insights(ai_trader_id);
       CREATE INDEX IF NOT EXISTS idx_insights_type ON ai_trader_insights(insight_type);
       CREATE INDEX IF NOT EXISTS idx_insights_active ON ai_trader_insights(is_active);
+      CREATE INDEX IF NOT EXISTS idx_insights_expires_at ON ai_trader_insights(expires_at);
     `);
 
     await client.query('COMMIT');

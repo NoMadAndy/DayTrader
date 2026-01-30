@@ -9,10 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Fixed TypeScript build error in `AITraderReportCard.tsx` by adding proper `TradeDetail` interface for bestTrade/worstTrade properties
+
+### Added
 - Added missing `ai_trader_insights` table to database schema for persistent insights with severity levels and expiration support
 - Added `signal_accuracy` JSONB column to `ai_traders` table for cumulative accuracy tracking
-- Added persistent insights management functions to `aiTraderInsights.js` (createPersistentInsight, getPersistentInsights, deactivateInsight, cleanupExpiredInsights)
-- Added database indexes for optimal query performance on insights table
+- Added persistent insights management functions to `aiTraderInsights.js`:
+  - `createPersistentInsight()` - Store structured insights with validation
+  - `getPersistentInsights()` - Retrieve active insights
+  - `deactivateInsight()` - Deactivate insights
+  - `cleanupExpiredInsights()` - Remove expired insights
+- Added database indexes for optimal query performance on insights table (including expires_at index)
+- Added input validation for all persistent insights functions (traderId, insightType, severity)
 - Added SMTP email configuration to `.env.example` for optional email notifications
 
 ### Added

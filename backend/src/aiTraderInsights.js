@@ -231,6 +231,23 @@ export async function createPersistentInsight(
   severity = 'info',
   expiresAt = null
 ) {
+  // Validate traderId
+  if (!Number.isInteger(traderId) || traderId <= 0) {
+    throw new Error('Invalid traderId: must be a positive integer');
+  }
+
+  // Validate insightType
+  const validInsightTypes = ['trend', 'timing', 'signal', 'risk'];
+  if (!validInsightTypes.includes(insightType)) {
+    throw new Error(`Invalid insightType: must be one of ${validInsightTypes.join(', ')}`);
+  }
+
+  // Validate severity
+  const validSeverities = ['info', 'warning', 'critical'];
+  if (!validSeverities.includes(severity)) {
+    throw new Error(`Invalid severity: must be one of ${validSeverities.join(', ')}`);
+  }
+
   try {
     const result = await query(
       `INSERT INTO ai_trader_insights 
@@ -242,7 +259,7 @@ export async function createPersistentInsight(
         insightType,
         title,
         description,
-        data ? JSON.stringify(data) : null,
+        data != null ? JSON.stringify(data) : null,
         severity,
         expiresAt,
       ]
@@ -261,7 +278,13 @@ export async function createPersistentInsight(
  * @returns {Promise<Array>} Array of insights
  */
 export async function getPersistentInsights(traderId, activeOnly = true) {
+  // Validate traderId
+  if (!Number.isInteger(traderId) || traderId <= 0) {
+    throw new Error('Invalid traderId: must be a positive integer');
+  }
+
   try {
+    const params = [traderId];
     let queryText = `
       SELECT * FROM ai_trader_insights
       WHERE ai_trader_id = $1
@@ -274,7 +297,7 @@ export async function getPersistentInsights(traderId, activeOnly = true) {
     
     queryText += ` ORDER BY created_at DESC`;
     
-    const result = await query(queryText, [traderId]);
+    const result = await query(queryText, params);
     return result.rows;
   } catch (error) {
     console.error('Error getting persistent insights:', error);
@@ -288,6 +311,11 @@ export async function getPersistentInsights(traderId, activeOnly = true) {
  * @returns {Promise<boolean>} Success status
  */
 export async function deactivateInsight(insightId) {
+  // Validate insightId
+  if (!Number.isInteger(insightId) || insightId <= 0) {
+    throw new Error('Invalid insightId: must be a positive integer');
+  }
+
   try {
     const result = await query(
       `UPDATE ai_trader_insights
