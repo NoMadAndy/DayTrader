@@ -184,7 +184,7 @@ export function AITraderPage() {
       
       {/* Trading Time Warning - Show when running but not in trading hours */}
       {trader.status === 'running' && trader.tradingTime === false && (
-        <div className="bg-amber-500/20 border-2 border-amber-500/50 rounded-lg p-4 flex items-start gap-3 animate-pulse">
+        <div className="bg-amber-500/20 border-2 border-amber-500/50 rounded-lg p-4 flex items-start gap-3 motion-safe:animate-pulse">
           <div className="text-3xl">🚦</div>
           <div className="flex-1">
             <div className="font-bold text-amber-400 text-lg mb-1">

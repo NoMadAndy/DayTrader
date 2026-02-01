@@ -42,9 +42,11 @@ export function isWithinTradingTime(personality) {
     });
     
     const parts = formatter.formatToParts(now);
-    const weekday = parts.find(p => p.type === 'weekday')?.value.toLowerCase().slice(0, 3);
-    const hour = parseInt(parts.find(p => p.type === 'hour')?.value || '0');
-    const minute = parseInt(parts.find(p => p.type === 'minute')?.value || '0');
+    // weekday format from 'en-US' locale returns 'Mon', 'Tue', etc. (3 letters)
+    const weekdayRaw = parts.find(p => p.type === 'weekday')?.value || '';
+    const weekday = weekdayRaw.toLowerCase().substring(0, 3);
+    const hour = parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10);
+    const minute = parseInt(parts.find(p => p.type === 'minute')?.value || '0', 10);
     
     // Check day of week
     const tradingDays = scheduleConfig.tradingDays || ['mon', 'tue', 'wed', 'thu', 'fri'];
@@ -52,9 +54,25 @@ export function isWithinTradingTime(personality) {
       return false;
     }
     
-    // Parse trading hours
-    const [startHour, startMinute] = (scheduleConfig.tradingStart || '09:00').split(':').map(Number);
-    const [endHour, endMinute] = (scheduleConfig.tradingEnd || '17:30').split(':').map(Number);
+    // Parse trading hours with validation
+    const startTime = scheduleConfig.tradingStart || '09:00';
+    const endTime = scheduleConfig.tradingEnd || '17:30';
+    
+    if (!/^\d{1,2}:\d{2}$/.test(startTime) || !/^\d{1,2}:\d{2}$/.test(endTime)) {
+      console.error('Invalid time format in schedule config:', { startTime, endTime });
+      return false;
+    }
+    
+    const [startHour, startMinute] = startTime.split(':').map(Number);
+    const [endHour, endMinute] = endTime.split(':').map(Number);
+    
+    // Validate parsed time values
+    if (isNaN(startHour) || isNaN(startMinute) || isNaN(endHour) || isNaN(endMinute) ||
+        startHour < 0 || startHour > 23 || endHour < 0 || endHour > 23 ||
+        startMinute < 0 || startMinute > 59 || endMinute < 0 || endMinute > 59) {
+      console.error('Invalid time values in schedule config');
+      return false;
+    }
     
     // Add buffers (avoid market open/close) from personality
     const avoidOpen = scheduleConfig.avoidMarketOpenMinutes || 15;
@@ -87,6 +105,26 @@ export function isWithinTradingTime(personality) {
     // On error, default to false for safety
     return false;
   }
+}
+
+/**
+ * Enhance trader object with trading_time field and status_message.
+ * 
+ * @param {object} trader - Trader object from database
+ * @returns {object} Enhanced trader object
+ */
+function enhanceTraderWithTradingTime(trader) {
+  if (!trader) return trader;
+  
+  // Add trading_time field based on current schedule
+  trader.trading_time = isWithinTradingTime(trader.personality);
+  
+  // Update status_message if running but not in trading time
+  if (trader.status === 'running' && !trader.trading_time && !trader.status_message) {
+    trader.status_message = 'Wartet auf Handelszeit';
+  }
+  
+  return trader;
 }
 
 // ============================================================================
@@ -437,18 +475,7 @@ export async function getAITrader(id) {
     [id]
   );
   const trader = result.rows[0] || null;
-  
-  if (trader) {
-    // Add trading_time field based on current schedule
-    trader.trading_time = isWithinTradingTime(trader.personality);
-    
-    // Update status_message if running but not in trading time
-    if (trader.status === 'running' && !trader.trading_time && !trader.status_message) {
-      trader.status_message = 'Wartet auf Handelszeit';
-    }
-  }
-  
-  return trader;
+  return enhanceTraderWithTradingTime(trader);
 }
 
 /**
@@ -460,17 +487,8 @@ export async function getAllAITraders() {
     'SELECT * FROM ai_traders ORDER BY created_at DESC'
   );
   
-  // Add trading_time field to each trader
-  return result.rows.map(trader => {
-    trader.trading_time = isWithinTradingTime(trader.personality);
-    
-    // Update status_message if running but not in trading time
-    if (trader.status === 'running' && !trader.trading_time && !trader.status_message) {
-      trader.status_message = 'Wartet auf Handelszeit';
-    }
-    
-    return trader;
-  });
+  // Enhance each trader with trading_time field
+  return result.rows.map(trader => enhanceTraderWithTradingTime(trader));
 }
 
 /**
