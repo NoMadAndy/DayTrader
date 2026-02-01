@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **AI Trader Start/Stop/Pause Now Actually Works** - Fixed critical bug where clicking "Start" on an AI Trader only updated the database status but didn't start the actual trading loop. The backend now calls the RL Trading Service to start/stop/pause the trading loop, and emits SSE events for real-time status updates in the frontend.
 - **AI Trader SSE Stream Timeout** - Fixed 504 Gateway Timeout on `/api/stream/ai-trader/:id` endpoints by adding SSE-specific Nginx configuration with 24-hour timeouts, `proxy_buffering off`, `proxy_cache off`, and proper `Connection` header handling. AI Trader Dashboard now correctly shows "Live" status instead of "Disconnected"
 - **AI Trader P&L Display Bug** - Fixed `TypeError: Cannot read properties of undefined (reading 'toFixed')` on AI Traders list page when `totalPnl` is undefined
 - Fixed AI Trader creation failing with "Name is required" error by adding missing `Content-Type: application/json` header to API requests in `aiTraderService.ts`

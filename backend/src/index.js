@@ -18,7 +18,7 @@ import { registerUser, loginUser, logoutUser, authMiddleware, optionalAuthMiddle
 import { getUserSettings, updateUserSettings, getCustomSymbols, addCustomSymbol, removeCustomSymbol, syncCustomSymbols } from './userSettings.js';
 import * as trading from './trading.js';
 import * as aiTrader from './aiTrader.js';
-import { aiTraderEvents } from './aiTraderEvents.js';
+import { aiTraderEvents, emitStatusChanged, emitError } from './aiTraderEvents.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -3206,7 +3206,58 @@ app.delete('/api/ai-traders/:id', authMiddleware, async (req, res) => {
  */
 app.post('/api/ai-traders/:id/start', authMiddleware, async (req, res) => {
   try {
-    const trader = await aiTrader.startAITrader(parseInt(req.params.id));
+    const traderId = parseInt(req.params.id);
+    
+    // Get trader details first
+    const traderBefore = await aiTrader.getAITrader(traderId);
+    if (!traderBefore) {
+      return res.status(404).json({ error: 'AI trader not found' });
+    }
+    
+    // Update status in database
+    const trader = await aiTrader.startAITrader(traderId);
+    
+    // Build config from trader.personality
+    const config = {
+      name: trader.name,
+      initial_budget: trader.personality?.initialBudget || 100000,
+      symbols: trader.personality?.symbols || ['AAPL', 'MSFT', 'GOOGL'],
+      rl_agent_name: trader.personality?.rlAgentName || null,
+      check_interval: trader.personality?.checkInterval || 5,
+      min_confidence: trader.personality?.minConfidence || 0.6,
+      risk_tolerance: trader.personality?.riskTolerance || 'moderate',
+      position_sizing: trader.personality?.positionSizing || 'fixed',
+      max_position_pct: trader.personality?.maxPositionPct || 0.1,
+      max_portfolio_risk: trader.personality?.maxPortfolioRisk || 0.2,
+      schedule_enabled: trader.personality?.scheduleEnabled ?? true,
+      trading_start: trader.personality?.tradingStart || '09:30',
+      trading_end: trader.personality?.tradingEnd || '16:00',
+      timezone: trader.personality?.timezone || 'America/New_York',
+    };
+    
+    // Call RL Trading Service to start the trading loop
+    try {
+      const rlResponse = await fetch(`${RL_SERVICE_URL}/ai-trader/start/${traderId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config)
+      });
+      
+      if (!rlResponse.ok) {
+        const errorText = await rlResponse.text();
+        console.error(`RL service start failed: ${rlResponse.status} ${errorText}`);
+        // Don't fail the request - DB status was updated, user can retry
+      } else {
+        console.log(`AI Trader ${traderId} started in RL service`);
+      }
+    } catch (rlError) {
+      console.error('Error calling RL service:', rlError);
+      // Don't fail the request - DB status was updated, user can retry
+    }
+    
+    // Emit SSE event for status change
+    emitStatusChanged(traderId, trader.name, traderBefore.status, trader.status, 'AI Trader started');
+    
     res.json(trader);
   } catch (e) {
     console.error('Start AI trader error:', e);
@@ -3220,7 +3271,38 @@ app.post('/api/ai-traders/:id/start', authMiddleware, async (req, res) => {
  */
 app.post('/api/ai-traders/:id/stop', authMiddleware, async (req, res) => {
   try {
-    const trader = await aiTrader.stopAITrader(parseInt(req.params.id));
+    const traderId = parseInt(req.params.id);
+    
+    // Get trader details first
+    const traderBefore = await aiTrader.getAITrader(traderId);
+    if (!traderBefore) {
+      return res.status(404).json({ error: 'AI trader not found' });
+    }
+    
+    // Update status in database
+    const trader = await aiTrader.stopAITrader(traderId);
+    
+    // Call RL Trading Service to stop the trading loop
+    try {
+      const rlResponse = await fetch(`${RL_SERVICE_URL}/ai-trader/stop/${traderId}`, {
+        method: 'POST'
+      });
+      
+      if (!rlResponse.ok) {
+        const errorText = await rlResponse.text();
+        console.error(`RL service stop failed: ${rlResponse.status} ${errorText}`);
+        // Don't fail the request - DB status was updated, user can retry
+      } else {
+        console.log(`AI Trader ${traderId} stopped in RL service`);
+      }
+    } catch (rlError) {
+      console.error('Error calling RL service:', rlError);
+      // Don't fail the request - DB status was updated, user can retry
+    }
+    
+    // Emit SSE event for status change
+    emitStatusChanged(traderId, trader.name, traderBefore.status, trader.status, 'AI Trader stopped');
+    
     res.json(trader);
   } catch (e) {
     console.error('Stop AI trader error:', e);
@@ -3234,7 +3316,38 @@ app.post('/api/ai-traders/:id/stop', authMiddleware, async (req, res) => {
  */
 app.post('/api/ai-traders/:id/pause', authMiddleware, async (req, res) => {
   try {
-    const trader = await aiTrader.pauseAITrader(parseInt(req.params.id));
+    const traderId = parseInt(req.params.id);
+    
+    // Get trader details first
+    const traderBefore = await aiTrader.getAITrader(traderId);
+    if (!traderBefore) {
+      return res.status(404).json({ error: 'AI trader not found' });
+    }
+    
+    // Update status in database
+    const trader = await aiTrader.pauseAITrader(traderId);
+    
+    // Call RL Trading Service to stop the trading loop (pause is same as stop in RL service)
+    try {
+      const rlResponse = await fetch(`${RL_SERVICE_URL}/ai-trader/stop/${traderId}`, {
+        method: 'POST'
+      });
+      
+      if (!rlResponse.ok) {
+        const errorText = await rlResponse.text();
+        console.error(`RL service stop failed: ${rlResponse.status} ${errorText}`);
+        // Don't fail the request - DB status was updated, user can retry
+      } else {
+        console.log(`AI Trader ${traderId} paused in RL service`);
+      }
+    } catch (rlError) {
+      console.error('Error calling RL service:', rlError);
+      // Don't fail the request - DB status was updated, user can retry
+    }
+    
+    // Emit SSE event for status change
+    emitStatusChanged(traderId, trader.name, traderBefore.status, trader.status, 'AI Trader paused');
+    
     res.json(trader);
   } catch (e) {
     console.error('Pause AI trader error:', e);
