@@ -3256,7 +3256,7 @@ app.post('/api/ai-traders/:id/start', authMiddleware, async (req, res) => {
     }
     
     // Emit SSE event for status change
-    emitStatusChanged(traderId, trader.name, traderBefore.status, 'running', 'AI Trader started');
+    emitStatusChanged(traderId, trader.name, traderBefore.status, trader.status, 'AI Trader started');
     
     res.json(trader);
   } catch (e) {
@@ -3301,7 +3301,7 @@ app.post('/api/ai-traders/:id/stop', authMiddleware, async (req, res) => {
     }
     
     // Emit SSE event for status change
-    emitStatusChanged(traderId, trader.name, traderBefore.status, 'stopped', 'AI Trader stopped');
+    emitStatusChanged(traderId, trader.name, traderBefore.status, trader.status, 'AI Trader stopped');
     
     res.json(trader);
   } catch (e) {
@@ -3346,7 +3346,7 @@ app.post('/api/ai-traders/:id/pause', authMiddleware, async (req, res) => {
     }
     
     // Emit SSE event for status change
-    emitStatusChanged(traderId, trader.name, traderBefore.status, 'paused', 'AI Trader paused');
+    emitStatusChanged(traderId, trader.name, traderBefore.status, trader.status, 'AI Trader paused');
     
     res.json(trader);
   } catch (e) {
