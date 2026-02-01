@@ -38,13 +38,35 @@ export function AITraderCard({ trader, onStart, onStop, onPause }: AITraderCardP
         </div>
         
         {/* Status Badge */}
-        <div className={`px-3 py-1 rounded-full ${statusStyle.bg} flex items-center gap-2`}>
-          <span className={statusStyle.pulse ? 'animate-pulse' : ''}>{statusStyle.icon}</span>
-          <span className={`text-sm font-medium ${statusStyle.text} uppercase`}>
-            {trader.status}
-          </span>
+        <div className="flex items-center gap-2">
+          <div className={`px-3 py-1 rounded-full ${statusStyle.bg} flex items-center gap-2`}>
+            <span className={statusStyle.pulse ? 'animate-pulse' : ''}>{statusStyle.icon}</span>
+            <span className={`text-sm font-medium ${statusStyle.text} uppercase`}>
+              {trader.status}
+            </span>
+          </div>
+          {trader.status === 'running' && trader.tradingTime === false && (
+            <div className="px-2 py-1 rounded-full bg-amber-500/20 text-amber-400 text-xs font-medium border border-amber-500/40 flex items-center gap-1">
+              🚦 Wartet
+            </div>
+          )}
         </div>
       </div>
+      
+      {/* Trading Time Warning - Show when running but not in trading hours */}
+      {trader.status === 'running' && trader.tradingTime === false && (
+        <div className="mb-4 bg-amber-500/20 border-2 border-amber-500/50 rounded-lg p-3 flex items-start gap-3">
+          <div className="text-2xl">🚦</div>
+          <div className="flex-1">
+            <div className="font-bold text-amber-400 mb-1">
+              Keine Handelszeit
+            </div>
+            <div className="text-sm text-gray-300">
+              Wartet auf Handelszeit - Trader ist inaktiv bis der Markt öffnet.
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Status Message */}
       {trader.statusMessage && (
