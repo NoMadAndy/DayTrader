@@ -119,6 +119,38 @@ AI Live Trader is now a complete autonomous trading system with real-time monito
 - **Signal Accuracy**: Real-time tracking of signal source performance (Phase 4)
 - **Adaptive Learning**: Automatic weight optimization based on accuracy (Phase 4)
 - **Analytics Dashboard**: Comprehensive reporting and insights interface (Phase 4)
+- **Trading Time Awareness**: Visual indicator when trader is running but market is closed
+  - Checks timezone-aware trading hours and days
+  - Shows clear warning: "🚦 Keine Handelszeit" when outside trading hours
+  - Respects schedule configuration (trading days, hours, and buffers)
+  - API field `tradingTime` (boolean) indicates if currently within trading hours
+
+### API Enhancement: Trading Time Field
+
+The AI Trader status API endpoints (`/api/ai-traders` and `/api/ai-traders/:id`) now include a `tradingTime` boolean field that indicates whether the trader is currently within its configured trading hours:
+
+```json
+{
+  "id": 1,
+  "status": "running",
+  "tradingTime": false,
+  "statusMessage": "Wartet auf Handelszeit",
+  "personality": {
+    "schedule": {
+      "enabled": true,
+      "tradingHoursOnly": true,
+      "timezone": "Europe/Berlin",
+      "tradingDays": ["mon", "tue", "wed", "thu", "fri"],
+      "tradingStart": "09:00",
+      "tradingEnd": "17:30",
+      "avoidMarketOpenMinutes": 15,
+      "avoidMarketCloseMinutes": 15
+    }
+  }
+}
+```
+
+When `status === "running"` and `tradingTime === false`, the frontend displays a prominent warning message to inform users that the trader is waiting for market hours.
 
 ## Trading Leaderboard
 
