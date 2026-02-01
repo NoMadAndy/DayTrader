@@ -9,6 +9,125 @@
 import { query, getClient } from './db.js';
 
 // ============================================================================
+// Trading Time Helper Functions
+// ============================================================================
+
+/**
+ * Check if current time is within trading hours for a given personality/schedule.
+ * Mirrors the logic from rl-trading-service/app/ai_trader_scheduler.py
+ * 
+ * @param {object} personality - Trader personality configuration
+ * @returns {boolean} True if within trading hours
+ */
+export function isWithinTradingTime(personality) {
+  const scheduleConfig = personality?.schedule || DEFAULT_PERSONALITY.schedule;
+  
+  // If scheduling is disabled, always return true
+  if (!scheduleConfig.enabled || !scheduleConfig.tradingHoursOnly) {
+    return true;
+  }
+  
+  try {
+    // Get current time in the configured timezone
+    const timezone = scheduleConfig.timezone || 'Europe/Berlin';
+    const now = new Date();
+    
+    // Convert to target timezone using Intl API
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    
+    const parts = formatter.formatToParts(now);
+    // weekday format from 'en-US' locale returns 'Mon', 'Tue', etc. (3 letters)
+    const weekdayRaw = parts.find(p => p.type === 'weekday')?.value || '';
+    const weekday = weekdayRaw.toLowerCase().substring(0, 3);
+    const hour = parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10);
+    const minute = parseInt(parts.find(p => p.type === 'minute')?.value || '0', 10);
+    
+    // Check day of week
+    const tradingDays = scheduleConfig.tradingDays || ['mon', 'tue', 'wed', 'thu', 'fri'];
+    if (!tradingDays.includes(weekday)) {
+      return false;
+    }
+    
+    // Parse trading hours with validation
+    const startTime = scheduleConfig.tradingStart || '09:00';
+    const endTime = scheduleConfig.tradingEnd || '17:30';
+    
+    if (!/^\d{1,2}:\d{2}$/.test(startTime) || !/^\d{1,2}:\d{2}$/.test(endTime)) {
+      console.error('Invalid time format in schedule config:', { startTime, endTime });
+      return false;
+    }
+    
+    const [startHour, startMinute] = startTime.split(':').map(Number);
+    const [endHour, endMinute] = endTime.split(':').map(Number);
+    
+    // Validate parsed time values
+    if (isNaN(startHour) || isNaN(startMinute) || isNaN(endHour) || isNaN(endMinute) ||
+        startHour < 0 || startHour > 23 || endHour < 0 || endHour > 23 ||
+        startMinute < 0 || startMinute > 59 || endMinute < 0 || endMinute > 59) {
+      console.error('Invalid time values in schedule config');
+      return false;
+    }
+    
+    // Add buffers (avoid market open/close) from personality
+    const avoidOpen = scheduleConfig.avoidMarketOpenMinutes || 15;
+    const avoidClose = scheduleConfig.avoidMarketCloseMinutes || 15;
+    
+    // Calculate start time with buffer
+    let effectiveStartMinute = startMinute + avoidOpen;
+    let effectiveStartHour = startHour;
+    if (effectiveStartMinute >= 60) {
+      effectiveStartHour += Math.floor(effectiveStartMinute / 60);
+      effectiveStartMinute = effectiveStartMinute % 60;
+    }
+    
+    // Calculate end time with buffer
+    let effectiveEndMinute = endMinute - avoidClose;
+    let effectiveEndHour = endHour;
+    if (effectiveEndMinute < 0) {
+      effectiveEndHour -= 1;
+      effectiveEndMinute += 60;
+    }
+    
+    // Convert current time to minutes since midnight
+    const currentMinutes = hour * 60 + minute;
+    const startMinutes = effectiveStartHour * 60 + effectiveStartMinute;
+    const endMinutes = effectiveEndHour * 60 + effectiveEndMinute;
+    
+    return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+  } catch (e) {
+    console.error('Error checking trading time:', e);
+    // On error, default to false for safety
+    return false;
+  }
+}
+
+/**
+ * Enhance trader object with trading_time field and status_message.
+ * 
+ * @param {object} trader - Trader object from database
+ * @returns {object} Enhanced trader object
+ */
+function enhanceTraderWithTradingTime(trader) {
+  if (!trader) return trader;
+  
+  // Add trading_time field based on current schedule
+  trader.trading_time = isWithinTradingTime(trader.personality);
+  
+  // Update status_message if running but not in trading time
+  if (trader.status === 'running' && !trader.trading_time && !trader.status_message) {
+    trader.status_message = 'Wartet auf Handelszeit';
+  }
+  
+  return trader;
+}
+
+// ============================================================================
 // Default Personality Configuration
 // ============================================================================
 
@@ -43,6 +162,11 @@ export const DEFAULT_PERSONALITY = {
     checkIntervalMinutes: 15,
     tradingHoursOnly: true,
     timezone: 'Europe/Berlin',
+    tradingDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
+    tradingStart: '09:00',
+    tradingEnd: '17:30',
+    avoidMarketOpenMinutes: 15,
+    avoidMarketCloseMinutes: 15,
   },
   watchlist: {
     symbols: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA'],
@@ -343,25 +467,28 @@ export async function createAITrader(name, description, personality = DEFAULT_PE
 /**
  * Get AI Trader by ID
  * @param {number} id - AI Trader ID
- * @returns {Promise<object|null>} AI trader or null
+ * @returns {Promise<object|null>} AI trader or null with trading_time field
  */
 export async function getAITrader(id) {
   const result = await query(
     'SELECT * FROM ai_traders WHERE id = $1',
     [id]
   );
-  return result.rows[0] || null;
+  const trader = result.rows[0] || null;
+  return enhanceTraderWithTradingTime(trader);
 }
 
 /**
  * Get all AI Traders
- * @returns {Promise<Array>} List of all AI traders
+ * @returns {Promise<Array>} List of all AI traders with trading_time field
  */
 export async function getAllAITraders() {
   const result = await query(
     'SELECT * FROM ai_traders ORDER BY created_at DESC'
   );
-  return result.rows;
+  
+  // Enhance each trader with trading_time field
+  return result.rows.map(trader => enhanceTraderWithTradingTime(trader));
 }
 
 /**
