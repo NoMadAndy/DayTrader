@@ -71,7 +71,7 @@ export default function AdaptiveWeightsPanel({ trader }: AdaptiveWeightsPanelPro
   ];
 
   return (
-    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
+    <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 p-6 rounded-lg shadow-lg">
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">
@@ -83,7 +83,7 @@ export default function AdaptiveWeightsPanel({ trader }: AdaptiveWeightsPanelPro
           )}
         </div>
         {autoAdjust && (
-          <p className="text-sm text-gray-600 dark:text-gray-400">
+          <p className="text-sm text-gray-400">
             Weights adjust automatically based on signal accuracy
           </p>
         )}
@@ -101,7 +101,7 @@ export default function AdaptiveWeightsPanel({ trader }: AdaptiveWeightsPanelPro
                   <span className={`font-medium ${signal.color}`}>{signal.label}</span>
                   <span className="text-lg font-bold">{formatPercent(weight)}</span>
                 </div>
-                <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
                   <div
                     className={`h-full ${getWeightColor(weight)} transition-all duration-300`}
                     style={{ width: formatPercent(weight) }}
@@ -121,7 +121,7 @@ export default function AdaptiveWeightsPanel({ trader }: AdaptiveWeightsPanelPro
             {history.map((entry) => (
               <div
                 key={entry.id}
-                className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600"
+                className="p-3 bg-slate-900/50 rounded-lg border border-slate-700"
               >
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium">{formatDate(entry.timestamp)}</span>
@@ -138,7 +138,7 @@ export default function AdaptiveWeightsPanel({ trader }: AdaptiveWeightsPanelPro
                     
                     return (
                       <div key={signal.key} className="text-center">
-                        <div className="text-gray-600 dark:text-gray-400">{signal.label}</div>
+                        <div className="text-gray-400">{signal.label}</div>
                         <div className="font-mono">
                           {formatPercent(oldWeight)}
                           {change !== 0 && (
@@ -161,7 +161,7 @@ export default function AdaptiveWeightsPanel({ trader }: AdaptiveWeightsPanelPro
       {/* Learning Settings Info */}
       {!learningEnabled && (
         <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-          <p className="text-sm text-gray-700 dark:text-gray-300">
+          <p className="text-sm text-gray-400">
             💡 Enable learning mode in trader settings to automatically adjust weights based on signal performance.
           </p>
         </div>
