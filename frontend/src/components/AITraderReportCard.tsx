@@ -38,7 +38,7 @@ export default function AITraderReportCard({ report }: AITraderReportCardProps) 
 
   const pnlColor = (pnl: number | null) => {
     if (pnl === null || pnl === 0) return 'text-gray-400';
-    return pnl > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400';
+    return pnl > 0 ? 'text-green-400' : 'text-red-400';
   };
 
   return (
