@@ -11,7 +11,7 @@ import { DataSourceSelector } from '../components/DataSourceSelector';
 import { ApiQuotaDisplay } from '../components/ApiQuotaDisplay';
 import { NewsApiQuotaDisplay } from '../components/NewsApiQuotaDisplay';
 import { SignalSourceSettingsPanel } from '../components/SignalSourceSettings';
-import { subscribeToAuth, getAuthState, logout, checkAuthStatus, type AuthState } from '../services/authService';
+import { subscribeToAuth, getAuthState, getAuthHeaders, logout, checkAuthStatus, type AuthState } from '../services/authService';
 import { getUserSettings, updateUserSettings, DEFAULT_ML_SETTINGS, type MLSettings } from '../services/userSettingsService';
 import { LoginForm } from '../components/LoginForm';
 import { RegisterForm } from '../components/RegisterForm';
@@ -80,7 +80,61 @@ function saveConfig(config: ApiConfig): void {
   }
 }
 
-type SettingsTab = 'api' | 'data-source' | 'ml' | 'signals' | 'auth' | 'preferences';
+type SettingsTab = 'api' | 'data-source' | 'ml' | 'signals' | 'auth' | 'preferences' | 'system';
+
+// ============================================================================
+// System Status Interfaces
+// ============================================================================
+
+interface CacheStats {
+  enabled: boolean;
+  message?: string;
+  totalEntries?: number;
+  hitRate?: number;
+  missRate?: number;
+  memoryUsage?: number;
+  oldestEntry?: string;
+  newestEntry?: string;
+}
+
+interface RateLimitStatus {
+  [provider: string]: {
+    remaining: number;
+    limit: number;
+    resetAt?: string;
+    windowMs?: number;
+  };
+}
+
+interface JobStatus {
+  quoteUpdate: {
+    lastRun?: string;
+    nextRun?: string;
+    isRunning: boolean;
+    lastResult?: string;
+    symbolsUpdated?: number;
+  };
+  cacheCleanup?: {
+    lastRun?: string;
+    nextRun?: string;
+  };
+}
+
+interface StreamStats {
+  activeConnections: number;
+  clients: Array<{
+    clientId: string;
+    symbols: string[];
+    connectedAt: string;
+  }>;
+}
+
+interface ServiceHealth {
+  status: 'healthy' | 'unhealthy' | 'unknown';
+  version?: string;
+  uptime?: number;
+  error?: string;
+}
 
 export function SettingsPage() {
   const { setConfig } = useDataService();
@@ -93,6 +147,16 @@ export function SettingsPage() {
   const [mlSettings, setMlSettings] = useState<MLSettings>({ ...DEFAULT_ML_SETTINGS });
   const [mlSettingsSaved, setMlSettingsSaved] = useState(false);
   const [prefsSaved, setPrefsSaved] = useState(false);
+  
+  // System Status State
+  const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
+  const [rateLimits, setRateLimits] = useState<RateLimitStatus | null>(null);
+  const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
+  const [streamStats, setStreamStats] = useState<StreamStats | null>(null);
+  const [mlHealth, setMlHealth] = useState<ServiceHealth | null>(null);
+  const [rlHealth, setRlHealth] = useState<ServiceHealth | null>(null);
+  const [systemLoading, setSystemLoading] = useState(false);
+  const [lastSystemRefresh, setLastSystemRefresh] = useState<Date | null>(null);
 
   // Subscribe to auth state changes
   useEffect(() => {
@@ -167,6 +231,130 @@ export function SettingsPage() {
     };
     setConfig(serviceConfig);
   }, [setConfig]);
+
+  // ============================================================================
+  // System Status Functions
+  // ============================================================================
+
+  const fetchSystemStats = useCallback(async () => {
+    setSystemLoading(true);
+    
+    try {
+      const [cacheRes, rateLimitRes, jobRes, streamRes, mlRes, rlRes] = await Promise.allSettled([
+        fetch('/api/cache/stats'),
+        fetch('/api/cache/rate-limits'),
+        fetch('/api/jobs/status'),
+        fetch('/api/stream/stats'),
+        fetch('/api/ml/health'),
+        fetch('/api/rl/health'),
+      ]);
+
+      if (cacheRes.status === 'fulfilled' && cacheRes.value.ok) {
+        setCacheStats(await cacheRes.value.json());
+      }
+      
+      if (rateLimitRes.status === 'fulfilled' && rateLimitRes.value.ok) {
+        setRateLimits(await rateLimitRes.value.json());
+      }
+      
+      if (jobRes.status === 'fulfilled' && jobRes.value.ok) {
+        setJobStatus(await jobRes.value.json());
+      }
+      
+      if (streamRes.status === 'fulfilled' && streamRes.value.ok) {
+        setStreamStats(await streamRes.value.json());
+      }
+      
+      if (mlRes.status === 'fulfilled') {
+        if (mlRes.value.ok) {
+          const data = await mlRes.value.json();
+          setMlHealth({ status: 'healthy', ...data });
+        } else {
+          setMlHealth({ status: 'unhealthy', error: `HTTP ${mlRes.value.status}` });
+        }
+      } else {
+        setMlHealth({ status: 'unknown', error: 'Service nicht erreichbar' });
+      }
+      
+      if (rlRes.status === 'fulfilled') {
+        if (rlRes.value.ok) {
+          const data = await rlRes.value.json();
+          setRlHealth({ status: 'healthy', ...data });
+        } else {
+          setRlHealth({ status: 'unhealthy', error: `HTTP ${rlRes.value.status}` });
+        }
+      } else {
+        setRlHealth({ status: 'unknown', error: 'Service nicht erreichbar' });
+      }
+      
+      setLastSystemRefresh(new Date());
+    } catch (error) {
+      console.error('Failed to fetch system stats:', error);
+    } finally {
+      setSystemLoading(false);
+    }
+  }, []);
+
+  const triggerQuoteUpdate = async () => {
+    if (!authState.user) {
+      alert('Bitte einloggen um diese Aktion auszuführen');
+      return;
+    }
+    try {
+      const response = await fetch('/api/jobs/update-quotes', {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
+      if (response.ok) {
+        setTimeout(fetchSystemStats, 1000);
+      } else if (response.status === 401) {
+        alert('Sitzung abgelaufen. Bitte neu einloggen.');
+      }
+    } catch (error) {
+      console.error('Failed to trigger quote update:', error);
+    }
+  };
+
+  // Load system stats when switching to system tab
+  useEffect(() => {
+    if (activeTab === 'system' && !lastSystemRefresh) {
+      fetchSystemStats();
+    }
+  }, [activeTab, lastSystemRefresh, fetchSystemStats]);
+
+  // Helper functions for system status display
+  const formatBytes = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const formatUptime = (seconds: number) => {
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${mins}m`;
+    return `${mins}m`;
+  };
+
+  const getHealthColor = (status: string) => {
+    switch (status) {
+      case 'healthy': return 'bg-green-500';
+      case 'unhealthy': return 'bg-red-500';
+      default: return 'bg-yellow-500';
+    }
+  };
+
+  const getHealthIcon = (status: string) => {
+    switch (status) {
+      case 'healthy': return '✅';
+      case 'unhealthy': return '❌';
+      default: return '⚠️';
+    }
+  };
 
   const handleSave = () => {
     saveConfig(localConfig);
@@ -314,6 +502,15 @@ export function SettingsPage() {
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+      ),
+    },
+    {
+      id: 'system',
+      label: t('settings.system') || 'System',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
         </svg>
       ),
     },
@@ -961,6 +1158,210 @@ export function SettingsPage() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* System Status Tab */}
+          {activeTab === 'system' && (
+            <div className="space-y-6">
+              {/* Header with refresh button */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-white">System Status</h3>
+                  <p className="text-sm text-gray-400">
+                    {lastSystemRefresh 
+                      ? `Letzte Aktualisierung: ${lastSystemRefresh.toLocaleTimeString('de-DE')}`
+                      : 'Noch nicht geladen'}
+                  </p>
+                </div>
+                <button
+                  onClick={fetchSystemStats}
+                  disabled={systemLoading}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 rounded-lg transition-colors flex items-center gap-2 text-sm"
+                >
+                  {systemLoading ? (
+                    <span className="animate-spin">⟳</span>
+                  ) : (
+                    <span>🔄</span>
+                  )}
+                  Aktualisieren
+                </button>
+              </div>
+
+              {/* Service Health Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* Backend Health */}
+                <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium text-gray-300">Backend API</h4>
+                    <div className={`w-2.5 h-2.5 rounded-full ${cacheStats ? 'bg-green-500' : 'bg-red-500'}`} />
+                  </div>
+                  <div className="text-lg">{cacheStats ? '✅' : '❌'}</div>
+                  <p className="text-xs text-gray-500">{cacheStats ? 'Erreichbar' : 'Nicht erreichbar'}</p>
+                </div>
+
+                {/* ML Service Health */}
+                <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium text-gray-300">ML Service</h4>
+                    <div className={`w-2.5 h-2.5 rounded-full ${getHealthColor(mlHealth?.status || 'unknown')}`} />
+                  </div>
+                  <div className="text-lg">{getHealthIcon(mlHealth?.status || 'unknown')}</div>
+                  <p className="text-xs text-gray-500">
+                    {mlHealth?.status === 'healthy' 
+                      ? mlHealth.uptime ? `Uptime: ${formatUptime(mlHealth.uptime)}` : 'Aktiv'
+                      : mlHealth?.error || 'Unbekannt'}
+                  </p>
+                </div>
+
+                {/* RL Service Health */}
+                <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium text-gray-300">RL Trading</h4>
+                    <div className={`w-2.5 h-2.5 rounded-full ${getHealthColor(rlHealth?.status || 'unknown')}`} />
+                  </div>
+                  <div className="text-lg">{getHealthIcon(rlHealth?.status || 'unknown')}</div>
+                  <p className="text-xs text-gray-500">
+                    {rlHealth?.status === 'healthy'
+                      ? rlHealth.uptime ? `Uptime: ${formatUptime(rlHealth.uptime)}` : 'Aktiv'
+                      : rlHealth?.error || 'Unbekannt'}
+                  </p>
+                </div>
+
+                {/* SSE Connections */}
+                <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium text-gray-300">Live-Verbindungen</h4>
+                    <div className={`w-2.5 h-2.5 rounded-full ${(streamStats?.activeConnections || 0) > 0 ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
+                  </div>
+                  <div className="text-lg">{streamStats?.activeConnections || 0}</div>
+                  <p className="text-xs text-gray-500">SSE Clients</p>
+                </div>
+              </div>
+
+              {/* Cache Statistics */}
+              <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
+                <h4 className="font-medium text-white mb-3 flex items-center gap-2">
+                  <span>💾</span> Cache-Statistiken
+                </h4>
+                
+                {cacheStats?.enabled === false ? (
+                  <div className="text-center py-4 text-gray-400">
+                    <span className="text-2xl mb-2 block">📭</span>
+                    <p className="text-sm">{cacheStats.message || 'Caching nicht aktiviert'}</p>
+                  </div>
+                ) : cacheStats ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-slate-800/50 rounded p-2">
+                      <div className="text-xs text-gray-400">Einträge</div>
+                      <div className="text-lg font-bold">{cacheStats.totalEntries?.toLocaleString() || 0}</div>
+                    </div>
+                    <div className="bg-slate-800/50 rounded p-2">
+                      <div className="text-xs text-gray-400">Speicher</div>
+                      <div className="text-lg font-bold">{cacheStats.memoryUsage ? formatBytes(cacheStats.memoryUsage) : 'N/A'}</div>
+                    </div>
+                    {cacheStats.hitRate !== undefined && (
+                      <div className="col-span-2">
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="text-gray-400">Hit Rate</span>
+                          <span className="text-green-400">{((cacheStats.hitRate || 0) * 100).toFixed(1)}%</span>
+                        </div>
+                        <div className="w-full bg-slate-700 rounded-full h-1.5">
+                          <div 
+                            className="bg-green-500 h-1.5 rounded-full"
+                            style={{ width: `${(cacheStats.hitRate || 0) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-gray-400 text-sm">Laden...</div>
+                )}
+              </div>
+
+              {/* Rate Limits */}
+              <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
+                <h4 className="font-medium text-white mb-3 flex items-center gap-2">
+                  <span>🚦</span> API Rate Limits
+                </h4>
+                
+                {rateLimits ? (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {Object.entries(rateLimits).map(([provider, limit]) => {
+                      const percentage = limit.limit > 0 ? (limit.remaining / limit.limit) * 100 : 100;
+                      const isLow = percentage < 20;
+                      
+                      return (
+                        <div key={provider} className="bg-slate-800/50 rounded p-2">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-sm font-medium capitalize">{provider}</span>
+                            <span className={`text-xs ${isLow ? 'text-red-400' : 'text-gray-400'}`}>
+                              {limit.remaining} / {limit.limit}
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-600 rounded-full h-1">
+                            <div 
+                              className={`h-1 rounded-full transition-all ${
+                                isLow ? 'bg-red-500' : percentage < 50 ? 'bg-yellow-500' : 'bg-green-500'
+                              }`}
+                              style={{ width: `${percentage}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-gray-400 text-sm">Laden...</div>
+                )}
+              </div>
+
+              {/* Background Jobs */}
+              <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
+                <h4 className="font-medium text-white mb-3 flex items-center gap-2">
+                  <span>⚙️</span> Background Jobs
+                </h4>
+                
+                {jobStatus ? (
+                  <div className="bg-slate-800/50 rounded p-3">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h5 className="text-sm font-medium">Quote Update Job</h5>
+                        <p className="text-xs text-gray-400">Aktualisiert Kursdaten</p>
+                      </div>
+                      <div className={`px-2 py-0.5 rounded text-xs ${
+                        jobStatus.quoteUpdate?.isRunning 
+                          ? 'bg-blue-500/20 text-blue-400' 
+                          : 'bg-gray-500/20 text-gray-400'
+                      }`}>
+                        {jobStatus.quoteUpdate?.isRunning ? '🔄 Läuft' : '⏸️ Wartend'}
+                      </div>
+                    </div>
+                    
+                    <div className="text-xs text-gray-400 space-y-1 mb-2">
+                      {jobStatus.quoteUpdate?.lastRun && (
+                        <p>Letzte: {new Date(jobStatus.quoteUpdate.lastRun).toLocaleString('de-DE')}</p>
+                      )}
+                      {jobStatus.quoteUpdate?.symbolsUpdated !== undefined && (
+                        <p>Symbole aktualisiert: {jobStatus.quoteUpdate.symbolsUpdated}</p>
+                      )}
+                    </div>
+                    
+                    {authState.user && (
+                      <button
+                        onClick={triggerQuoteUpdate}
+                        disabled={jobStatus.quoteUpdate?.isRunning}
+                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed rounded text-xs transition-colors"
+                      >
+                        Manuell ausführen
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-gray-400 text-sm">Laden...</div>
+                )}
+              </div>
             </div>
           )}
         </div>

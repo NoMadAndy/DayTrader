@@ -4,7 +4,7 @@
  * Full page view of the user's stock watchlist with trading signals.
  */
 
-import { WatchlistPanel } from '../components/WatchlistPanel';
+import { WatchlistPanel, ForexWidget } from '../components';
 import { useNavigate } from 'react-router-dom';
 import { useSettings } from '../contexts/SettingsContext';
 
@@ -15,19 +15,23 @@ export function WatchlistPage() {
   const handleSelectSymbol = (symbol: string) => {
     // Dispatch event for App to update selected symbol
     window.dispatchEvent(new CustomEvent('selectSymbol', { detail: symbol }));
-    navigate('/');
+    navigate('/dashboard');
   };
 
   return (
     <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 flex-1 flex flex-col">
-      <div className="mb-4 sm:mb-6 px-2 sm:px-0">
-        <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2 sm:gap-3">
-          <span className="text-2xl sm:text-3xl">📋</span>
-          {t('watchlistPage.title')}
-        </h1>
-        <p className="text-gray-400 mt-1 sm:mt-2 text-sm sm:text-base">
-          {t('watchlistPage.description')}
-        </p>
+      <div className="mb-4 sm:mb-6 px-2 sm:px-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2 sm:gap-3">
+            <span className="text-2xl sm:text-3xl">📋</span>
+            {t('watchlistPage.title')}
+          </h1>
+          <p className="text-gray-400 mt-1 sm:mt-2 text-sm sm:text-base">
+            {t('watchlistPage.description')}
+          </p>
+        </div>
+        {/* Forex Widget */}
+        <ForexWidget compact className="self-start sm:self-auto" />
       </div>
 
       <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-3 sm:p-6 flex-1 overflow-hidden">

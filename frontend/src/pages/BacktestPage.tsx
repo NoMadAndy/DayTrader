@@ -46,7 +46,7 @@ interface MLPrediction {
   change_pct: number;
 }
 
-export default function BacktestPage() {
+export function BacktestPage() {
   const [authState, setAuthState] = useState<AuthState>(getAuthState());
 
   // Sessions list

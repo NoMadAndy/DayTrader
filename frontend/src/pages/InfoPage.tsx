@@ -6,6 +6,9 @@
  */
 
 import { useState } from 'react';
+import { ChangelogPanel } from '../components/ChangelogPanel';
+
+type InfoTab = 'handbook' | 'changelog';
 
 // Collapsible Section Component
 function Section({ 
@@ -37,6 +40,8 @@ function Section({
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full p-4 sm:p-6 flex items-center justify-between text-left"
+        title={isOpen ? "Abschnitt zuklappen" : "Abschnitt aufklappen"}
+        aria-expanded={isOpen}
       >
         <h2 className="text-lg sm:text-xl font-semibold text-white flex items-center gap-2 sm:gap-3">
           <span className="text-xl sm:text-2xl">{icon}</span>
@@ -115,18 +120,57 @@ function VisualScale({
 }
 
 export function InfoPage() {
+  const [activeTab, setActiveTab] = useState<InfoTab>('handbook');
+  
   return (
-    <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 flex-1">
+    <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 flex-1 flex flex-col">
       {/* Header */}
-      <div className="mb-6 sm:mb-8">
+      <div className="mb-4 sm:mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-3">
           <span className="text-3xl sm:text-4xl">📚</span>
-          DayTrader AI - Handbuch
+          DayTrader AI - Hilfe & Info
         </h1>
         <p className="text-gray-400 mt-2 text-sm sm:text-base">
-          Alles was du wissen musst, um die App optimal zu nutzen - einfach erklärt.
+          Handbuch, Dokumentation und Änderungsprotokoll
         </p>
       </div>
+
+      {/* Tab Navigation */}
+      <div className="flex border-b border-slate-700 mb-4">
+        <button
+          onClick={() => setActiveTab('handbook')}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+            activeTab === 'handbook'
+              ? 'border-blue-400 text-blue-400'
+              : 'border-transparent text-gray-400 hover:text-white'
+          }`}
+        >
+          <span>📖</span>
+          <span>Handbuch</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('changelog')}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+            activeTab === 'changelog'
+              ? 'border-blue-400 text-blue-400'
+              : 'border-transparent text-gray-400 hover:text-white'
+          }`}
+        >
+          <span>📝</span>
+          <span>Changelog</span>
+        </button>
+      </div>
+
+      {/* Changelog Tab */}
+      {activeTab === 'changelog' && (
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-4 sm:p-6 flex-1 overflow-auto">
+          <ChangelogPanel />
+        </div>
+      )}
+
+      {/* Handbook Tab */}
+      {activeTab === 'handbook' && (
+      <div className="flex-1 overflow-auto">
 
       {/* Quick Overview */}
       <div className="bg-gradient-to-r from-blue-900/30 to-purple-900/30 rounded-xl border border-blue-500/30 p-4 sm:p-6 mb-6">
@@ -688,6 +732,8 @@ export function InfoPage() {
         </div>
 
       </div>
+      </div>
+      )}
     </div>
   );
 }

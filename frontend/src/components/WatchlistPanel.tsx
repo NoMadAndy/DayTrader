@@ -112,6 +112,9 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
   // Track expanded items for mobile detail view
   const [expandedSymbol, setExpandedSymbol] = useState<string | null>(null);
   
+  // Delete confirmation state
+  const [deleteConfirmSymbol, setDeleteConfirmSymbol] = useState<string | null>(null);
+  
   // Quick Trade State
   const [quickTradeSymbol, setQuickTradeSymbol] = useState<string | null>(null);
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
@@ -603,7 +606,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
     }
   }, [newSymbol, newName, fetchSymbolData, authState.isAuthenticated, watchlistItems]);
 
-  // Remove symbol (only for authenticated users)
+  // Remove symbol (only for authenticated users) - now with confirmation
   const handleRemoveSymbol = useCallback(async (symbol: string) => {
     if (!authState.isAuthenticated) return;
     
@@ -616,8 +619,19 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
     const success = await removeCustomSymbolFromServer(symbol);
     if (success) {
       setWatchlistItems(prev => prev.filter(item => item.symbol !== symbol));
+      setDeleteConfirmSymbol(null);
     }
   }, [authState.isAuthenticated, quickTradeSymbol]);
+  
+  // Show delete confirmation
+  const confirmDeleteSymbol = useCallback((symbol: string) => {
+    setDeleteConfirmSymbol(symbol);
+  }, []);
+  
+  // Cancel delete
+  const cancelDelete = useCallback(() => {
+    setDeleteConfirmSymbol(null);
+  }, []);
 
   // Helper: Check if a source is enabled in filters
   const isSourceEnabled = useCallback((source: string): boolean => {
@@ -936,6 +950,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
               filterPeriod={filterPeriod}
               onSelectSymbol={onSelectSymbol}
               onRemoveSymbol={handleRemoveSymbol}
+              onTradeSymbol={(symbol) => setQuickTradeSymbol(symbol)}
               onSetFilterPeriod={setFilterPeriod}
               getFilteredScoreForPeriod={getFilteredScoreForPeriod}
               getSignalDisplayFromScore={getSignalDisplayFromScore}
@@ -1008,13 +1023,14 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                 {!item.isLoading && !item.error && (
                   <div className="flex items-center gap-1">
                     <SignalBadge signal={item.signals} small />
-                    {/* Mobile expand indicator */}
+                    {/* Expand indicator - now visible on all screen sizes */}
                     <button 
-                      className="sm:hidden p-0.5 text-gray-500"
+                      className="p-0.5 text-gray-500 hover:text-gray-300 transition-colors"
                       onClick={(e) => {
                         e.stopPropagation();
                         setExpandedSymbol(isExpanded ? null : item.symbol);
                       }}
+                      title="Details anzeigen"
                     >
                       <svg className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -1023,26 +1039,26 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                   </div>
                 )}
 
-                {/* Quick Trade Button with Dropdown (only for authenticated users, on desktop) */}
+                {/* Quick Trade Button with Dropdown (only for authenticated users) */}
                 {authState.isAuthenticated && !item.isLoading && !item.error && (
-                  <div className="relative hidden sm:block">
+                  <div className="relative">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         setQuickTradeSymbol(quickTradeSymbol === item.symbol ? null : item.symbol);
                         setTradeResult(null);
                       }}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all text-sm font-medium ${
+                      className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg transition-all text-xs sm:text-sm font-medium ${
                         quickTradeSymbol === item.symbol 
                           ? 'bg-blue-600 text-white' 
                           : 'bg-green-600/20 hover:bg-green-600/40 text-green-400 border border-green-600/30'
                       }`}
                       title={t('dashboard.quickTrade')}
                     >
-                      <span className="text-base">💹</span>
-                      <span>Handeln</span>
+                      <span className="text-sm sm:text-base">💹</span>
+                      <span className="hidden xs:inline">Handeln</span>
                       <svg
-                        className={`w-3.5 h-3.5 transition-transform ${quickTradeSymbol === item.symbol ? 'rotate-180' : ''}`}
+                        className={`w-3 h-3 sm:w-3.5 sm:h-3.5 transition-transform ${quickTradeSymbol === item.symbol ? 'rotate-180' : ''}`}
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -1184,22 +1200,6 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                     )}
                   </div>
                 )}
-
-                {/* Remove Button (only for authenticated users) */}
-                {authState.isAuthenticated && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemoveSymbol(item.symbol);
-                    }}
-                    className="p-1 hover:bg-red-500/20 rounded text-gray-400 hover:text-red-400 transition-colors"
-                    title="Entfernen"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
               </div>
               </div>
             </div>
@@ -1245,27 +1245,54 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                   })}
                 </div>
                 
-                {/* Mobile-only: Quick action buttons */}
+                {/* Action buttons - visible in expanded view for all devices */}
                 {authState.isAuthenticated && (
-                  <div className="sm:hidden flex items-center gap-2 mt-2 pt-2 border-t border-slate-700/30">
+                  <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-700/30">
+                    {/* Trade button - now shown in dropdown above, so just link to full trading page */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         navigate(`/trading?symbol=${item.symbol}`);
                       }}
-                      className="flex-1 py-1.5 px-3 bg-green-600/20 hover:bg-green-600/40 rounded text-green-400 text-xs font-medium transition-colors"
+                      className="flex-1 py-1.5 px-3 bg-blue-600/20 hover:bg-blue-600/40 rounded text-blue-400 text-xs font-medium transition-colors"
                     >
-                      💰 Handeln
+                      📊 Zum Trading-Portfolio →
                     </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveSymbol(item.symbol);
-                      }}
-                      className="py-1.5 px-3 bg-red-600/20 hover:bg-red-600/40 rounded text-red-400 text-xs transition-colors"
-                    >
-                      ✕ Entfernen
-                    </button>
+                    
+                    {/* Delete with confirmation */}
+                    {deleteConfirmSymbol === item.symbol ? (
+                      <div className="flex items-center gap-1.5 bg-red-500/10 border border-red-500/30 rounded px-2 py-1">
+                        <span className="text-xs text-red-400">Löschen?</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveSymbol(item.symbol);
+                          }}
+                          className="px-2 py-0.5 bg-red-600 hover:bg-red-700 rounded text-white text-xs transition-colors"
+                        >
+                          Ja
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            cancelDelete();
+                          }}
+                          className="px-2 py-0.5 bg-slate-600 hover:bg-slate-500 rounded text-white text-xs transition-colors"
+                        >
+                          Nein
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          confirmDeleteSymbol(item.symbol);
+                        }}
+                        className="py-1.5 px-3 bg-red-600/20 hover:bg-red-600/40 rounded text-red-400 text-xs transition-colors"
+                      >
+                        🗑️ Entfernen
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

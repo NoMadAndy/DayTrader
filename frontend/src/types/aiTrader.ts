@@ -64,6 +64,7 @@ export interface AITraderSentimentConfig {
 export interface AITraderLearningConfig {
   enabled: boolean;
   updateWeights: boolean;
+  minSamples?: number;
 }
 
 export interface AITraderPersonality {
@@ -328,7 +329,8 @@ export interface AITraderNotificationPrefs {
 export type AITraderEventType = 
   | 'connected' 
   | 'heartbeat' 
-  | 'status_changed' 
+  | 'status_changed'
+  | 'status_update'  // Used by polling fallback
   | 'analyzing' 
   | 'decision_made' 
   | 'trade_executed' 

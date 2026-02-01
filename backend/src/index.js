@@ -3107,7 +3107,7 @@ app.delete('/api/trading/backtest/session/:id', authMiddleware, async (req, res)
 app.get('/api/ai-traders', async (req, res) => {
   try {
     const traders = await aiTrader.getAllAITraders();
-    res.json(traders);
+    res.json(traders.map(t => aiTrader.formatTraderForApi(t)));
   } catch (e) {
     console.error('Get AI traders error:', e);
     res.status(500).json({ error: 'Failed to fetch AI traders' });
@@ -3124,7 +3124,7 @@ app.get('/api/ai-traders/:id', async (req, res) => {
     if (!trader) {
       return res.status(404).json({ error: 'AI trader not found' });
     }
-    res.json(trader);
+    res.json(aiTrader.formatTraderForApi(trader));
   } catch (e) {
     console.error('Get AI trader error:', e);
     res.status(500).json({ error: 'Failed to fetch AI trader' });
@@ -3155,7 +3155,9 @@ app.post('/api/ai-traders', authMiddleware, async (req, res) => {
       await aiTrader.createAITraderPortfolio(trader.id, initialCapital);
     }
     
-    res.json(trader);
+    // Re-fetch to get complete data including portfolio_id
+    const completeTrader = await aiTrader.getAITrader(trader.id);
+    res.json(aiTrader.formatTraderForApi(completeTrader));
   } catch (e) {
     console.error('Create AI trader error:', e);
     if (e.message.includes('duplicate key')) {
@@ -3176,7 +3178,7 @@ app.put('/api/ai-traders/:id', authMiddleware, async (req, res) => {
       parseInt(req.params.id),
       req.body
     );
-    res.json(trader);
+    res.json(aiTrader.formatTraderForApi(trader));
   } catch (e) {
     console.error('Update AI trader error:', e);
     res.status(500).json({ error: 'Failed to update AI trader' });
@@ -3258,7 +3260,7 @@ app.post('/api/ai-traders/:id/start', authMiddleware, async (req, res) => {
     // Emit SSE event for status change
     emitStatusChanged(traderId, trader.name, traderBefore.status, trader.status, 'AI Trader started');
     
-    res.json(trader);
+    res.json(aiTrader.formatTraderForApi(trader));
   } catch (e) {
     console.error('Start AI trader error:', e);
     res.status(500).json({ error: 'Failed to start AI trader' });
@@ -3303,7 +3305,7 @@ app.post('/api/ai-traders/:id/stop', authMiddleware, async (req, res) => {
     // Emit SSE event for status change
     emitStatusChanged(traderId, trader.name, traderBefore.status, trader.status, 'AI Trader stopped');
     
-    res.json(trader);
+    res.json(aiTrader.formatTraderForApi(trader));
   } catch (e) {
     console.error('Stop AI trader error:', e);
     res.status(500).json({ error: 'Failed to stop AI trader' });
@@ -3348,7 +3350,7 @@ app.post('/api/ai-traders/:id/pause', authMiddleware, async (req, res) => {
     // Emit SSE event for status change
     emitStatusChanged(traderId, trader.name, traderBefore.status, trader.status, 'AI Trader paused');
     
-    res.json(trader);
+    res.json(aiTrader.formatTraderForApi(trader));
   } catch (e) {
     console.error('Pause AI trader error:', e);
     res.status(500).json({ error: 'Failed to pause AI trader' });

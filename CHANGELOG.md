@@ -7,7 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Dashboard + Backtest Unified** - Merged Dashboard and Backtest pages into a single page with mode toggle tabs (Live Trading / Backtest). The old `/backtest` URL now redirects to `/dashboard?mode=backtest`
+- **AI & Models Hub** - Consolidated ML Models, RL Agents, and Historical Data pages into a single unified page with tabs for better organization
+- **System Status → Settings** - Moved System Status monitoring into Settings page as a new "System" tab, reducing navigation clutter
+- **Navigation Simplified** - Reduced navigation from 11 to 7 items: removed ML Models, RL Agents, Historical Data, System Status, and Backtest as separate pages
+- **Homepage is now Watchlist** - Changed the default landing page from Dashboard to Watchlist for quicker access to stock overview
+- **Desktop Navigation Labels** - Added text labels next to the first 4 navigation icons (Watchlist, Dashboard, Live AI, Trading) visible on all desktop sizes
+- **Watchlist Inline Expand** - Replaced floating dropdown menu with inline expandable row showing additional stock details (sector, exchange, 52-week range) and action buttons (Trade, Remove)
+- **Info & Changelog Merged** - Combined Info and Changelog pages into single "Hilfe & Info" page with tabs for Handbook and Changelog
+
+### Removed
+- **Back Buttons** - Removed floating and menu back buttons on mobile; browser swipe gestures remain functional for navigation
+- **Backtest Separate Page** - Backtest functionality now accessible via Dashboard mode toggle
+
+### Added
+- **Dashboard Mode Toggle** - Tab-based toggle between Live Trading and Backtest modes in the unified Dashboard page
+- **New AI Models Hub Page** (`/ai-models`) - Unified management for:
+  - ML Models: View, train, and delete machine learning models
+  - RL Agents: Train and manage reinforcement learning agents (reuses RLAgentsPanel component)
+  - Historical Data: Check symbol availability, download/refresh training data
+- **System Status Tab in Settings** - Service health monitoring (Backend, ML, RL, SSE), cache statistics, API rate limits, and background jobs directly in Settings
+- **ForexWidget on Watchlist** - EUR/USD exchange rate widget now displayed in Watchlist page header
+- **Accessibility Improvements** - Added `title` and `aria-expanded` attributes to collapsible section buttons in Info page
+
 ### Fixed
+- **Watchlist Trade Button** - Desktop "Handeln" button now correctly navigates to the Trading page with the selected symbol pre-filled
+- **Watchlist → Dashboard Navigation** - Clicking a stock row in Watchlist now correctly navigates to `/dashboard` (was broken after homepage change)
+- **Historical Data Refresh** - Fixed 400 error when refreshing historical data; now sends required date range (1 year default) in request body
+- **SSE Reverse Proxy Compatibility** - Enhanced Server-Sent Events (SSE) implementation to work reliably behind reverse proxies (GitHub Codespaces, Cloudflare, AWS ALB, etc.):
+  - Added named event types (`event: heartbeat`, `event: message`) for better proxy compatibility
+  - Increased heartbeat frequency from 30s to 15s to prevent proxy timeouts
+  - Added additional SSE headers (`X-Content-Type-Options`, `Access-Control-Expose-Headers`)
+  - Frontend now monitors heartbeats and detects stale connections
+  - **Automatic polling fallback** - If SSE fails 3 times, automatically switches to polling mode
+  - Connection status shows mode: "Live" (SSE), "Polling" (fallback), or "Verbinde..."
+  - Click on connection status to manually reconnect
+- **AI Trader Trading Time Display** - Fixed critical bug where `tradingTime` field wasn't being sent correctly from backend API (was using snake_case `trading_time` instead of camelCase). Added `formatTraderForApi()` function to properly convert all AI Trader fields to camelCase for API responses. The AI Trader Dashboard now correctly shows "Keine Handelszeit" (No Trading Time) indicator when market is closed.
+- **AI Trader Detail Page Layout** - Fixed inconsistent padding and navigation. Changed back button to navigate to `/ai-traders` instead of `/leaderboard`. Made header responsive with `flex-wrap`.
 - **AI Trader Start/Stop/Pause Now Actually Works** - Fixed critical bug where clicking "Start" on an AI Trader only updated the database status but didn't start the actual trading loop. The backend now calls the RL Trading Service to start/stop/pause the trading loop, and emits SSE events for real-time status updates in the frontend.
 - **AI Trader SSE Stream Timeout** - Fixed 504 Gateway Timeout on `/api/stream/ai-trader/:id` endpoints by adding SSE-specific Nginx configuration with 24-hour timeouts, `proxy_buffering off`, `proxy_cache off`, and proper `Connection` header handling. AI Trader Dashboard now correctly shows "Live" status instead of "Disconnected"
 - **AI Trader P&L Display Bug** - Fixed `TypeError: Cannot read properties of undefined (reading 'toFixed')` on AI Traders list page when `totalPnl` is undefined

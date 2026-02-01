@@ -14,3 +14,8 @@ export { LeaderboardPage } from './LeaderboardPage';
 export { default as RLAgentsPage } from './RLAgentsPage';
 export { AITraderPage } from './AITraderPage';
 export { default as AITradersPage } from './AITradersPage';
+// BacktestPage now integrated into DashboardPage with mode toggle
+export { SystemStatusPage } from './SystemStatusPage';
+export { MLModelsPage } from './MLModelsPage';
+export { HistoricalDataPage } from './HistoricalDataPage';
+export { AIModelsHubPage } from './AIModelsHubPage';

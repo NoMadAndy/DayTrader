@@ -127,6 +127,43 @@ function enhanceTraderWithTradingTime(trader) {
   return trader;
 }
 
+/**
+ * Format trader object for API response (snake_case to camelCase).
+ * 
+ * @param {object} trader - Trader object from database
+ * @returns {object} Formatted trader object for API response
+ */
+export function formatTraderForApi(trader) {
+  if (!trader) return null;
+  
+  return {
+    id: trader.id,
+    portfolioId: trader.portfolio_id,
+    name: trader.name,
+    avatar: trader.avatar || '🤖',
+    description: trader.description,
+    personality: trader.personality,
+    status: trader.status,
+    statusMessage: trader.status_message,
+    tradingTime: trader.trading_time,
+    createdAt: trader.created_at,
+    updatedAt: trader.updated_at,
+    startedAt: trader.started_at,
+    stoppedAt: trader.stopped_at,
+    lastDecisionAt: trader.last_decision_at,
+    lastTradeAt: trader.last_trade_at,
+    totalDecisions: trader.total_decisions || 0,
+    tradesExecuted: trader.trades_executed || 0,
+    winningTrades: trader.winning_trades || 0,
+    losingTrades: trader.losing_trades || 0,
+    totalPnl: parseFloat(trader.total_pnl || 0),
+    bestTradePnl: trader.best_trade_pnl ? parseFloat(trader.best_trade_pnl) : null,
+    worstTradePnl: trader.worst_trade_pnl ? parseFloat(trader.worst_trade_pnl) : null,
+    currentStreak: trader.current_streak || 0,
+    maxDrawdown: parseFloat(trader.max_drawdown || 0),
+  };
+}
+
 // ============================================================================
 // Default Personality Configuration
 // ============================================================================

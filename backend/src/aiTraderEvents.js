@@ -2,6 +2,7 @@
  * AI Trader SSE Event Broadcasting Service
  * 
  * Broadcasts real-time events to connected clients via Server-Sent Events.
+ * Enhanced for reverse proxy compatibility (Cloudflare, AWS ALB, GitHub Codespaces, etc.)
  */
 
 import { EventEmitter } from 'events';
@@ -13,27 +14,44 @@ class AITraderEventEmitter extends EventEmitter {
   }
 
   /**
-   * Add a new SSE client
+   * Add a new SSE client with enhanced reverse proxy support
    */
   addClient(clientId, res, traderIds = []) {
-    // Setup SSE headers
+    // Setup SSE headers - optimized for reverse proxies
     res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
+    res.setHeader('X-Accel-Buffering', 'no'); // Nginx
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     
-    // Keep connection alive
+    // Additional headers for various proxies
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Type');
+    
+    // Disable response buffering at Node.js level
+    res.flushHeaders();
+    
+    // Send initial comment to establish connection
     res.write(':ok\n\n');
+    
+    // Send immediate heartbeat to confirm connection
+    const connectEvent = `event: heartbeat\ndata: ${JSON.stringify({ type: 'heartbeat', timestamp: new Date().toISOString(), connected: true })}\n\n`;
+    res.write(connectEvent);
     
     this.clients.set(clientId, {
       res,
       subscribedTraders: new Set(traderIds),
+      lastActivity: Date.now(),
     });
     
     console.log(`[SSE] Client ${clientId} connected, subscribed to traders: ${traderIds}`);
     
     // Handle client disconnect
     res.on('close', () => {
+      this.removeClient(clientId);
+    });
+    
+    res.on('error', () => {
       this.removeClient(clientId);
     });
   }
@@ -50,12 +68,14 @@ class AITraderEventEmitter extends EventEmitter {
    * Broadcast event to all clients subscribed to a trader
    */
   broadcast(traderId, event) {
-    const eventString = `data: ${JSON.stringify({ traderId, ...event })}\n\n`;
+    // Use named event for better parsing
+    const eventString = `event: message\ndata: ${JSON.stringify({ traderId, ...event })}\n\n`;
     
     for (const [clientId, client] of this.clients) {
       if (client.subscribedTraders.has(traderId) || client.subscribedTraders.size === 0) {
         try {
           client.res.write(eventString);
+          client.lastActivity = Date.now();
         } catch (e) {
           console.error(`[SSE] Error sending to client ${clientId}:`, e);
           this.removeClient(clientId);
@@ -65,25 +85,42 @@ class AITraderEventEmitter extends EventEmitter {
   }
 
   /**
-   * Send heartbeat to all clients
+   * Send heartbeat to all clients - critical for reverse proxy keep-alive
    */
   heartbeat() {
-    const heartbeatEvent = `data: ${JSON.stringify({ type: 'heartbeat', timestamp: new Date().toISOString() })}\n\n`;
+    const timestamp = new Date().toISOString();
+    // Use named event type for heartbeat
+    const heartbeatEvent = `event: heartbeat\ndata: ${JSON.stringify({ type: 'heartbeat', timestamp })}\n\n`;
     
     for (const [clientId, client] of this.clients) {
       try {
         client.res.write(heartbeatEvent);
+        client.lastActivity = Date.now();
       } catch (e) {
         this.removeClient(clientId);
       }
     }
   }
+  
+  /**
+   * Get connection statistics
+   */
+  getStats() {
+    return {
+      activeClients: this.clients.size,
+      clients: Array.from(this.clients.entries()).map(([id, client]) => ({
+        id,
+        subscribedTraders: Array.from(client.subscribedTraders),
+        lastActivity: client.lastActivity,
+      })),
+    };
+  }
 }
 
 export const aiTraderEvents = new AITraderEventEmitter();
 
-// Heartbeat every 30 seconds
-setInterval(() => aiTraderEvents.heartbeat(), 30000);
+// Heartbeat every 15 seconds - more frequent for reverse proxy compatibility
+setInterval(() => aiTraderEvents.heartbeat(), 15000);
 
 // Event type emitters
 export function emitStatusChanged(traderId, traderName, oldStatus, newStatus, message) {

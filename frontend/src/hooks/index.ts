@@ -23,3 +23,6 @@ export {
   useBackgroundJobsStatus,
 } from './useRealTimeQuotes';
 export { useSimpleAutoRefresh } from './useSimpleAutoRefresh';
+
+export { useAITraderStream } from './useAITraderStream';
+export { useAITraderReports } from './useAITraderReports';

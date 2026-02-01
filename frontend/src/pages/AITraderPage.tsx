@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AITraderCard } from '../components/AITraderCard';
 import { AITraderActivityFeed } from '../components/AITraderActivityFeed';
+import { AITraderSettingsModal } from '../components/AITraderSettingsModal';
 import { TradeReasoningCard } from '../components/TradeReasoningCard';
 import AITraderReportCard from '../components/AITraderReportCard';
 import AITraderInsights from '../components/AITraderInsights';
@@ -23,6 +24,7 @@ export function AITraderPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [trader, setTrader] = useState<AITrader | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
   const [decisions, setDecisions] = useState<AITraderDecision[]>([]);
   const [positions, setPositions] = useState<PositionWithPnL[]>([]);
   const [portfolio, setPortfolio] = useState<{ cash: number; totalValue: number; pnl: number } | null>(null);
@@ -31,7 +33,7 @@ export function AITraderPage() {
   const [activeTab, setActiveTab] = useState<'activity' | 'reports' | 'analytics'>('activity');
   
   const traderId = id ? parseInt(id) : undefined;
-  const { events, connected } = useAITraderStream({ 
+  const { events, connected, mode, reconnect } = useAITraderStream({ 
     traderId,
     enabled: !!traderId,
   });
@@ -124,7 +126,7 @@ export function AITraderPage() {
   
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 py-6 flex items-center justify-center min-h-[400px]">
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 flex items-center justify-center min-h-[400px]">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-400">Loading AI Trader...</p>
@@ -135,15 +137,15 @@ export function AITraderPage() {
   
   if (error || !trader) {
     return (
-      <div className="max-w-7xl mx-auto px-4 py-6">
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6">
         <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 text-center">
           <div className="text-2xl mb-2">❌</div>
           <div className="font-medium">{error || 'AI Trader not found'}</div>
           <button
-            onClick={() => navigate('/leaderboard')}
+            onClick={() => navigate('/ai-traders')}
             className="mt-4 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
           >
-            Back to Leaderboard
+            Zurück zur Übersicht
           </button>
         </div>
       </div>
@@ -151,45 +153,77 @@ export function AITraderPage() {
   }
   
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate('/leaderboard')}
+            onClick={() => navigate('/ai-traders')}
             className="p-2 hover:bg-slate-700/50 rounded-lg transition-colors"
+            title="Zurück zur AI Traders Übersicht"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <h1 className="text-2xl font-bold">AI Trader Dashboard</h1>
+          <h1 className="text-xl sm:text-2xl font-bold">AI Trader Dashboard</h1>
         </div>
         
-        <div className="flex items-center gap-4">
-          {/* Trading Hours Indicator */}
-          {trader.tradingTime !== undefined && (
-            <div className={`px-3 py-1.5 rounded-lg flex items-center gap-2 ${
-              trader.tradingTime 
-                ? 'bg-green-500/20 border border-green-500/50' 
-                : 'bg-slate-700/50 border border-slate-600'
-            }`}>
-              <span className="text-lg">{trader.tradingTime ? '🟢' : '🕐'}</span>
-              <span className="text-sm font-medium">
-                {trader.tradingTime ? 'Markt offen' : 'Markt geschlossen'}
-              </span>
-            </div>
-          )}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Settings Button */}
+          <button
+            onClick={() => setShowSettings(true)}
+            className="px-3 py-1.5 rounded-lg bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600 transition-colors flex items-center gap-2"
+            title="Einstellungen bearbeiten"
+          >
+            <span>⚙️</span>
+            <span className="text-sm font-medium hidden sm:inline">Einstellungen</span>
+          </button>
           
-          {/* Connection Status */}
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-            <span className="text-sm text-gray-400">
-              {connected ? 'Live' : 'Disconnected'}
+          {/* Trading Hours Indicator - Always show current market status */}
+          <div className={`px-3 py-1.5 rounded-lg flex items-center gap-2 ${
+            trader.tradingTime 
+              ? 'bg-green-500/20 border border-green-500/50' 
+              : 'bg-amber-500/20 border border-amber-500/50'
+          }`}>
+            <span className="text-lg">{trader.tradingTime ? '🟢' : '🚦'}</span>
+            <span className="text-sm font-medium">
+              {trader.tradingTime ? 'Markt offen' : 'Keine Handelszeit'}
             </span>
           </div>
+          
+          {/* Connection Status */}
+          <button
+            onClick={reconnect}
+            className={`flex items-center gap-2 px-2 py-1 rounded-lg transition-colors ${
+              connected ? 'hover:bg-slate-700/50' : 'bg-red-500/20 hover:bg-red-500/30'
+            }`}
+            title={connected ? `Verbunden via ${mode === 'sse' ? 'SSE' : 'Polling'}` : 'Klicken zum Neu verbinden'}
+          >
+            <div className={`w-2 h-2 rounded-full ${
+              connected 
+                ? mode === 'sse' ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'
+                : 'bg-red-500'
+            }`} />
+            <span className="text-sm text-gray-400">
+              {connected 
+                ? mode === 'sse' ? 'Live' : 'Polling'
+                : mode === 'connecting' ? 'Verbinde...' : 'Getrennt'
+              }
+            </span>
+          </button>
         </div>
       </div>
+      
+      {/* Settings Modal */}
+      {trader && (
+        <AITraderSettingsModal
+          trader={trader}
+          isOpen={showSettings}
+          onClose={() => setShowSettings(false)}
+          onUpdated={(updated) => setTrader(updated)}
+        />
+      )}
       
       {/* Main Card */}
       <AITraderCard
@@ -280,12 +314,11 @@ export function AITraderPage() {
       
       {/* Tab Content */}
       {activeTab === 'activity' && (
-        <div className="space-y-6">
-          {/* Activity Feed */}
-          <AITraderActivityFeed events={events} maxHeight="600px" autoScroll={true} />
-          
-          {/* Positions & Decisions */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left Column: Activity Feed */}
+          <div className="space-y-6">
+            <AITraderActivityFeed events={events} maxHeight="500px" autoScroll={true} />
+            
             {/* Open Positions */}
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
               <div className="px-4 py-3 border-b border-slate-700/50">
@@ -325,24 +358,24 @@ export function AITraderPage() {
                 )}
               </div>
             </div>
-            
-            {/* Recent Decisions */}
-            <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
-              <div className="px-4 py-3 border-b border-slate-700/50">
-                <h3 className="font-bold">🧠 Recent Decisions</h3>
-              </div>
-              <div className="p-4 space-y-3">
-                {decisions.length === 0 ? (
-                  <div className="text-center text-gray-500 py-8">
-                    <div className="text-2xl mb-2">🤔</div>
-                    <div>No decisions yet</div>
-                  </div>
-                ) : (
-                  decisions.map((decision) => (
-                    <TradeReasoningCard key={decision.id} decision={decision} />
-                  ))
-                )}
-              </div>
+          </div>
+          
+          {/* Right Column: Recent Decisions */}
+          <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
+            <div className="px-4 py-3 border-b border-slate-700/50">
+              <h3 className="font-bold">🧠 Recent Decisions</h3>
+            </div>
+            <div className="p-4 space-y-3 max-h-[700px] overflow-y-auto">
+              {decisions.length === 0 ? (
+                <div className="text-center text-gray-500 py-8">
+                  <div className="text-2xl mb-2">🤔</div>
+                  <div>No decisions yet</div>
+                </div>
+              ) : (
+                decisions.map((decision) => (
+                  <TradeReasoningCard key={decision.id} decision={decision} />
+                ))
+              )}
             </div>
           </div>
         </div>

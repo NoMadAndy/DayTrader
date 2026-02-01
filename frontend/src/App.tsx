@@ -10,12 +10,11 @@
  */
 
 import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { DataServiceProvider, useServiceWorker } from './hooks';
 import { SettingsProvider, useSettings } from './contexts';
 import { Navigation } from './components/Navigation';
-import { DashboardPage, WatchlistPage, SettingsPage, ChangelogPage, InfoPage, TradingPortfolioPage, LeaderboardPage, RLAgentsPage, AITraderPage, AITradersPage } from './pages';
-import BacktestPage from './pages/BacktestPage';
+import { DashboardPage, WatchlistPage, SettingsPage, InfoPage, TradingPortfolioPage, LeaderboardPage, AITraderPage, AITradersPage, AIModelsHubPage } from './pages';
 import { initializeAuth, subscribeToAuth } from './services/authService';
 import { getBestSymbolFromWatchlist, clearBestSymbolCache } from './services/bestSymbolService';
 
@@ -87,8 +86,9 @@ function AppContent() {
         {/* Routes */}
         <main className="flex-1 flex flex-col">
           <Routes>
+            <Route path="/" element={<WatchlistPage />} />
             <Route 
-              path="/" 
+              path="/dashboard" 
               element={
                 isLoadingBestSymbol || !selectedSymbol ? (
                   <div className="flex items-center justify-center flex-1">
@@ -110,12 +110,20 @@ function AppContent() {
             <Route path="/leaderboard" element={<LeaderboardPage />} />
             <Route path="/ai-traders" element={<AITradersPage />} />
             <Route path="/ai-trader/:id" element={<AITraderPage />} />
-            <Route path="/backtest" element={<BacktestPage />} />
-            <Route path="/rl-agents" element={<RLAgentsPage />} />
-            <Route path="/watchlist" element={<WatchlistPage />} />
+            {/* Backtest now integrated into Dashboard - redirect with mode param */}
+            <Route path="/backtest" element={<Navigate to="/dashboard?mode=backtest" replace />} />
+            {/* AI Models Hub - unified page for ML, RL, and Historical Data */}
+            <Route path="/ai-models" element={<AIModelsHubPage />} />
+            {/* Legacy redirects to AI Models Hub */}
+            <Route path="/rl-agents" element={<AIModelsHubPage />} />
+            <Route path="/ml-models" element={<AIModelsHubPage />} />
+            <Route path="/historical-data" element={<AIModelsHubPage />} />
+            {/* System Status now in Settings tab */}
+            <Route path="/system-status" element={<SettingsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/info" element={<InfoPage />} />
-            <Route path="/changelog" element={<ChangelogPage />} />
+            {/* Redirect old changelog URL to info page */}
+            <Route path="/changelog" element={<InfoPage />} />
           </Routes>
         </main>
 

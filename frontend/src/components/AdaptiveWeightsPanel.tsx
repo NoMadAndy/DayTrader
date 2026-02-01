@@ -160,9 +160,9 @@ export default function AdaptiveWeightsPanel({ trader }: AdaptiveWeightsPanelPro
 
       {/* Learning Settings Info */}
       {!learningEnabled && (
-        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-          <p className="text-sm text-gray-400">
-            💡 Enable learning mode in trader settings to automatically adjust weights based on signal performance.
+        <div className="p-4 bg-slate-700/50 rounded-lg border border-slate-600">
+          <p className="text-sm text-gray-300">
+            💡 Aktiviere den Learning-Modus in den Trader-Einstellungen (⚙️), um Gewichtungen automatisch basierend auf der Signal-Performance anzupassen.
           </p>
         </div>
       )}

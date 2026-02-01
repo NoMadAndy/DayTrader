@@ -24,9 +24,15 @@ export { SignalSourceSettingsPanel } from './SignalSourceSettings';
 export { TrainingConsole } from './TrainingConsole';
 export { AITraderCard } from './AITraderCard';
 export { AITraderActivityFeed } from './AITraderActivityFeed';
+export { AITraderSettingsModal } from './AITraderSettingsModal';
+export { AITraderDecisionModal } from './AITraderDecisionModal';
+export { AITraderWeightHistoryChart } from './AITraderWeightHistoryChart';
+export { RLAgentDetailModal } from './RLAgentDetailModal';
+export { ForexWidget } from './ForexWidget';
 export { TradeReasoningCard } from './TradeReasoningCard';
 export { SignalBreakdown } from './SignalBreakdown';
 export { default as AITraderReportCard } from './AITraderReportCard';
 export { default as AITraderInsights } from './AITraderInsights';
 export { default as SignalAccuracyChart } from './SignalAccuracyChart';
 export { default as AdaptiveWeightsPanel } from './AdaptiveWeightsPanel';
+
