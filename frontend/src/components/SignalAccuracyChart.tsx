@@ -35,7 +35,7 @@ export default function SignalAccuracyChart({ traderId, days = 30 }: SignalAccur
 
   if (loading) {
     return (
-      <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+      <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 p-4 rounded-lg shadow">
         <h3 className="text-lg font-semibold mb-4">Signal Accuracy ({days} Days)</h3>
         <div className="text-gray-500">Loading accuracy data...</div>
       </div>
@@ -44,7 +44,7 @@ export default function SignalAccuracyChart({ traderId, days = 30 }: SignalAccur
 
   if (!accuracy) {
     return (
-      <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+      <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 p-4 rounded-lg shadow">
         <h3 className="text-lg font-semibold mb-4">Signal Accuracy ({days} Days)</h3>
         <div className="text-gray-500">No accuracy data available</div>
       </div>
@@ -59,19 +59,19 @@ export default function SignalAccuracyChart({ traderId, days = 30 }: SignalAccur
   ];
 
   return (
-    <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+    <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 p-4 rounded-lg shadow">
       <h3 className="text-lg font-semibold mb-4">Signal Accuracy ({days} Days)</h3>
       
       {/* Overall Accuracy */}
       {accuracy.overall.accuracy !== null && (
-        <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+        <div className="mb-6 p-4 bg-slate-900/50 rounded-lg">
           <div className="flex items-center justify-between mb-2">
             <span className="font-semibold">Overall Accuracy</span>
             <span className="text-2xl font-bold">
               {(accuracy.overall.accuracy * 100).toFixed(1)}%
             </span>
           </div>
-          <div className="text-sm text-gray-600 dark:text-gray-400">
+          <div className="text-sm text-gray-400">
             {accuracy.overall.correct} correct / {accuracy.overall.totalTrades} trades
           </div>
         </div>
@@ -104,7 +104,7 @@ export default function SignalAccuracyChart({ traderId, days = 30 }: SignalAccur
             {signal.data.accuracy !== null && (
               <>
                 {/* Progress Bar */}
-                <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
                   <div
                     className={`h-full ${signal.color} transition-all duration-300`}
                     style={{ width: `${signal.data.accuracy * 100}%` }}
@@ -112,7 +112,7 @@ export default function SignalAccuracyChart({ traderId, days = 30 }: SignalAccur
                 </div>
                 
                 {/* Stats */}
-                <div className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                <div className="mt-1 text-xs text-gray-400">
                   {signal.data.correct} correct / {signal.data.totalSignals} signals
                 </div>
               </>
@@ -122,8 +122,8 @@ export default function SignalAccuracyChart({ traderId, days = 30 }: SignalAccur
       </div>
 
       {/* Legend */}
-      <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-        <div className="text-xs text-gray-600 dark:text-gray-400">
+      <div className="mt-6 pt-4 border-t border-slate-700">
+        <div className="text-xs text-gray-400">
           <p className="mb-1">
             <span className="text-green-500">↑</span> Accuracy {'>'} 60%
           </p>

@@ -33,7 +33,7 @@ export default function AITraderInsights({ traderId }: AITraderInsightsProps) {
 
   if (loading) {
     return (
-      <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+      <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 p-4 rounded-lg shadow">
         <h3 className="text-lg font-semibold mb-4">🔍 Insights</h3>
         <div className="text-gray-500">Loading insights...</div>
       </div>
@@ -42,7 +42,7 @@ export default function AITraderInsights({ traderId }: AITraderInsightsProps) {
 
   if (insights.length === 0) {
     return (
-      <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+      <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 p-4 rounded-lg shadow">
         <h3 className="text-lg font-semibold mb-4">🔍 Insights</h3>
         <div className="text-gray-500">No insights available yet. Keep trading to generate insights!</div>
       </div>
@@ -60,12 +60,12 @@ export default function AITraderInsights({ traderId }: AITraderInsightsProps) {
     } else if (insight.includes('📰') || insight.includes('📊')) {
       return 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800';
     } else {
-      return 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600';
+      return 'bg-slate-900/50 border-slate-700';
     }
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+    <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 p-4 rounded-lg shadow">
       <h3 className="text-lg font-semibold mb-4">🔍 Insights & Recommendations</h3>
       
       <div className="space-y-3">
@@ -79,8 +79,8 @@ export default function AITraderInsights({ traderId }: AITraderInsightsProps) {
         ))}
       </div>
 
-      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-        <p className="text-xs text-gray-600 dark:text-gray-400">
+      <div className="mt-4 pt-4 border-t border-slate-700">
+        <p className="text-xs text-gray-400">
           Insights are automatically generated based on trading performance and signal accuracy.
         </p>
       </div>

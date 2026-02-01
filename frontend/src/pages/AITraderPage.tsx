@@ -166,11 +166,28 @@ export function AITraderPage() {
           <h1 className="text-2xl font-bold">AI Trader Dashboard</h1>
         </div>
         
-        <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-          <span className="text-sm text-gray-400">
-            {connected ? 'Live' : 'Disconnected'}
-          </span>
+        <div className="flex items-center gap-4">
+          {/* Trading Hours Indicator */}
+          {trader.tradingTime !== undefined && (
+            <div className={`px-3 py-1.5 rounded-lg flex items-center gap-2 ${
+              trader.tradingTime 
+                ? 'bg-green-500/20 border border-green-500/50' 
+                : 'bg-slate-700/50 border border-slate-600'
+            }`}>
+              <span className="text-lg">{trader.tradingTime ? '🟢' : '🕐'}</span>
+              <span className="text-sm font-medium">
+                {trader.tradingTime ? 'Markt offen' : 'Markt geschlossen'}
+              </span>
+            </div>
+          )}
+          
+          {/* Connection Status */}
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+            <span className="text-sm text-gray-400">
+              {connected ? 'Live' : 'Disconnected'}
+            </span>
+          </div>
         </div>
       </div>
       
@@ -182,17 +199,22 @@ export function AITraderPage() {
         onPause={handlePause}
       />
       
-      {/* Trading Time Warning - Show when running but not in trading hours */}
-      {trader.status === 'running' && trader.tradingTime === false && (
-        <div className="bg-amber-500/20 border-2 border-amber-500/50 rounded-lg p-4 flex items-start gap-3 motion-safe:animate-pulse">
+      {/* Trading Time Warning - Show when market is closed */}
+      {trader.tradingTime === false && (
+        <div className="bg-amber-500/20 border-2 border-amber-500/50 rounded-lg p-4 flex items-start gap-3">
           <div className="text-3xl">🚦</div>
           <div className="flex-1">
             <div className="font-bold text-amber-400 text-lg mb-1">
               Keine Handelszeit
             </div>
             <div className="text-gray-300">
-              Es ist aktuell keine Handelszeit. Der Trader bleibt solange inaktiv, bis der Markt öffnet.
+              Es ist aktuell keine Handelszeit. Der Markt ist geschlossen. Handelszeiten: Mo-Fr 15:30-22:00 MEZ
             </div>
+            {trader.status === 'running' && (
+              <div className="text-sm text-amber-300 mt-2 italic">
+                Der Trader bleibt solange inaktiv, bis der Markt öffnet.
+              </div>
+            )}
             {trader.statusMessage && (
               <div className="text-sm text-amber-300 mt-2 italic">
                 Status: {trader.statusMessage}
@@ -258,12 +280,12 @@ export function AITraderPage() {
       
       {/* Tab Content */}
       {activeTab === 'activity' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left Column: Activity Feed */}
+        <div className="space-y-6">
+          {/* Activity Feed */}
           <AITraderActivityFeed events={events} maxHeight="600px" autoScroll={true} />
           
-          {/* Right Column: Positions & Decisions */}
-          <div className="space-y-6">
+          {/* Positions & Decisions */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Open Positions */}
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
               <div className="px-4 py-3 border-b border-slate-700/50">
@@ -333,9 +355,9 @@ export function AITraderPage() {
             {reports.length > 0 ? (
               <AITraderReportCard report={reports[0]} />
             ) : (
-              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow text-center">
+              <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-6 shadow text-center">
                 <div className="text-4xl mb-2">📊</div>
-                <p className="text-gray-600 dark:text-gray-400">
+                <p className="text-gray-400">
                   No reports available yet. Reports are generated daily after market close.
                 </p>
               </div>
