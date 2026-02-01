@@ -44,6 +44,11 @@ export interface AITraderScheduleConfig {
   checkIntervalMinutes: number;
   tradingHoursOnly: boolean;
   timezone: string;
+  tradingDays?: string[];
+  tradingStart?: string;
+  tradingEnd?: string;
+  avoidMarketOpenMinutes?: number;
+  avoidMarketCloseMinutes?: number;
 }
 
 export interface AITraderWatchlistConfig {
@@ -87,6 +92,7 @@ export interface AITrader {
   personality: AITraderPersonality;
   status: AITraderStatus;
   statusMessage: string | null;
+  tradingTime?: boolean; // Whether currently within trading hours
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;

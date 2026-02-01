@@ -742,6 +742,11 @@ export default function AITradersPage() {
                               <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text}`}>
                                 {statusStyle.icon} {trader.status}
                               </div>
+                              {trader.status === 'running' && trader.tradingTime === false && (
+                                <div className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                                  🚦 Wartet auf Handelszeit
+                                </div>
+                              )}
                             </div>
                             {trader.description && (
                               <p className="text-sm text-gray-400 mt-1 truncate">{trader.description}</p>

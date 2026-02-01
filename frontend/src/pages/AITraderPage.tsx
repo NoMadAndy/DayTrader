@@ -182,6 +182,26 @@ export function AITraderPage() {
         onPause={handlePause}
       />
       
+      {/* Trading Time Warning - Show when running but not in trading hours */}
+      {trader.status === 'running' && trader.tradingTime === false && (
+        <div className="bg-amber-500/20 border-2 border-amber-500/50 rounded-lg p-4 flex items-start gap-3 animate-pulse">
+          <div className="text-3xl">🚦</div>
+          <div className="flex-1">
+            <div className="font-bold text-amber-400 text-lg mb-1">
+              Keine Handelszeit
+            </div>
+            <div className="text-gray-300">
+              Es ist aktuell keine Handelszeit. Der Trader bleibt solange inaktiv, bis der Markt öffnet.
+            </div>
+            {trader.statusMessage && (
+              <div className="text-sm text-amber-300 mt-2 italic">
+                Status: {trader.statusMessage}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      
       {/* Portfolio Overview */}
       {portfolio && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
