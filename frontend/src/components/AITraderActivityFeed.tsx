@@ -29,10 +29,6 @@ const DECISION_TYPE_COLORS: Record<string, string> = {
   hold: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
 };
 
-// Beep sound as Base64 data URI (short notification sound)
-const BEEP_SOUND = 'data:audio/wav;base64,UklGRl9vT19teleXAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU' + 
-  'BAAEAAQABAEBAEBAQEBAQABAAABAAABAAABAAAAAAAAAAAAAAAA';
-
 export function AITraderActivityFeed({ 
   events, 
   maxHeight = '400px', 
@@ -148,7 +144,7 @@ export function AITraderActivityFeed({
       // Check for very important events (executed trades)
       const hasVeryImportantEvent = newEvents.some(
         e => ['trade_executed', 'position_closed'].includes(e.type) ||
-             (e.type === 'decision_made' && e.data?.decisionType && ['buy', 'sell'].includes(e.data.decisionType) && e.data?.executed)
+             (e.type === 'decision_made' && e.data?.decisionType && ['buy', 'sell'].includes(String(e.data.decisionType)) && e.data?.executed)
       );
       
       // Sound notification for important events
@@ -248,7 +244,7 @@ export function AITraderActivityFeed({
       case 'trade_executed': {
         const action = String(event.data?.action || '').toUpperCase();
         const symbol = String(event.data?.symbol || '');
-        const quantity = event.data?.quantity;
+        const quantity = Number(event.data?.quantity || 0);
         const price = event.data?.price;
         const isBuy = action === 'BUY';
         

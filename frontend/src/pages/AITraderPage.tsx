@@ -17,6 +17,7 @@ import AdaptiveWeightsPanel from '../components/AdaptiveWeightsPanel';
 import { useAITraderStream } from '../hooks/useAITraderStream';
 import { useAITraderReports } from '../hooks/useAITraderReports';
 import { useNotificationFeedback } from '../hooks/useNotificationFeedback';
+import { useWakeLock } from '../hooks/useWakeLock';
 import { startAITrader, stopAITrader, pauseAITrader } from '../services/aiTraderService';
 import type { AITrader, AITraderDecision, AITraderEvent } from '../types/aiTrader';
 import type { PositionWithPnL } from '../types/trading';
@@ -30,18 +31,23 @@ export function AITraderPage() {
   const [trader, setTrader] = useState<AITrader | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [decisions, setDecisions] = useState<AITraderDecision[]>([]);
+  const [importantDecisions, setImportantDecisions] = useState<AITraderDecision[]>([]);
   const [positions, setPositions] = useState<PositionWithPnL[]>([]);
   const [portfolio, setPortfolio] = useState<{ cash: number; totalValue: number; pnl: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'activity' | 'reports' | 'analytics'>('activity');
   const lastRefreshRef = useRef<number>(0);
+  const [activityPanelExpanded, setActivityPanelExpanded] = useState(false);
   
   // Notification settings (persisted in localStorage)
   const [notificationSettings, setNotificationSettings] = useState(() => {
     const saved = localStorage.getItem('aiTraderNotifications');
     return saved ? JSON.parse(saved) : { sound: false, vibration: false, flash: true };
   });
+  
+  // Screen Wake Lock for mobile devices
+  const wakeLock = useWakeLock();
   
   // Track previous decisions for detecting new ones
   const prevDecisionIdsRef = useRef<Set<number>>(new Set());
@@ -134,13 +140,19 @@ export function AITraderPage() {
       setTrader(traderData);
       
       // Fetch decisions (with cache-busting timestamp to ensure fresh data)
-      const decisionsRes = await fetch(`/api/ai-traders/${traderId}/decisions?limit=10&_t=${Date.now()}`, {
+      const decisionsRes = await fetch(`/api/ai-traders/${traderId}/decisions?limit=50&_t=${Date.now()}`, {
         cache: 'no-store'
       });
       if (decisionsRes.ok) {
         const decisionsData = await decisionsRes.json();
         const transformedDecisions = (Array.isArray(decisionsData) ? decisionsData : []).map(transformDecision);
         setDecisions(transformedDecisions);
+        
+        // Extract important decisions (executed buy/sell/close/short)
+        const important = transformedDecisions.filter(
+          (d: AITraderDecision) => d.executed && ['buy', 'sell', 'close', 'short'].includes(d.decisionType)
+        );
+        setImportantDecisions(important);
       }
       
       // Fetch positions (with cache-busting)
@@ -171,6 +183,27 @@ export function AITraderPage() {
       }
     }
   }, [traderId, transformDecision]);
+  
+  // Delete a decision
+  const handleDeleteDecision = useCallback(async (decisionId: number) => {
+    if (!traderId) return;
+    
+    try {
+      const res = await fetch(`/api/ai-traders/${traderId}/decisions/${decisionId}`, {
+        method: 'DELETE',
+      });
+      
+      if (res.ok) {
+        // Remove from both lists
+        setDecisions(prev => prev.filter(d => d.id !== decisionId));
+        setImportantDecisions(prev => prev.filter(d => d.id !== decisionId));
+      } else {
+        console.error('Failed to delete decision');
+      }
+    } catch (err) {
+      console.error('Error deleting decision:', err);
+    }
+  }, [traderId]);
   
   // Initial load
   useEffect(() => {
@@ -488,55 +521,18 @@ export function AITraderPage() {
       {/* Tab Content */}
       {activeTab === 'activity' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left Column: Activity Feed */}
+          {/* Left Column: Recent Decisions (Primary Content) */}
           <div className="space-y-4">
-            {/* Notification Settings Mini-Toolbar */}
-            <div className="flex items-center justify-between bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
-              <span className="text-xs text-gray-400 px-2">Benachrichtigungen:</span>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setNotificationSettings((s: { sound: boolean; vibration: boolean; flash: boolean }) => ({ ...s, flash: !s.flash }))}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${notificationSettings.flash ? 'bg-yellow-500/30 text-yellow-400' : 'bg-slate-700/50 text-gray-500'}`}
-                  title="Visueller Effekt"
-                >
-                  ✨ Flash
-                </button>
-                <button
-                  onClick={() => setNotificationSettings((s: { sound: boolean; vibration: boolean; flash: boolean }) => ({ ...s, sound: !s.sound }))}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${notificationSettings.sound ? 'bg-green-500/30 text-green-400' : 'bg-slate-700/50 text-gray-500'}`}
-                  title="Ton bei wichtigen Ereignissen"
-                >
-                  🔔 Ton
-                </button>
-                <button
-                  onClick={() => setNotificationSettings((s: { sound: boolean; vibration: boolean; flash: boolean }) => ({ ...s, vibration: !s.vibration }))}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${notificationSettings.vibration ? 'bg-purple-500/30 text-purple-400' : 'bg-slate-700/50 text-gray-500'}`}
-                  title="Vibration auf Mobilgeräten"
-                >
-                  📳 Vibration
-                </button>
-              </div>
-            </div>
-            
-            <AITraderActivityFeed 
-              events={allEvents} 
-              maxHeight="500px" 
-              autoScroll={true}
-              enableFlash={notificationSettings.flash}
-              enableSound={notificationSettings.sound}
-              enableVibration={notificationSettings.vibration}
-            />
-            
-            {/* Open Positions */}
+            {/* Open Positions - First */}
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
               <div className="px-4 py-3 border-b border-slate-700/50">
                 <h3 className="font-bold">📍 Open Positions ({positions.length})</h3>
               </div>
               <div className="p-4">
                 {positions.length === 0 ? (
-                  <div className="text-center text-gray-500 py-8">
-                    <div className="text-2xl mb-2">📭</div>
-                    <div>No open positions</div>
+                  <div className="text-center text-gray-500 py-4">
+                    <div className="text-xl mb-1">📭</div>
+                    <div className="text-sm">No open positions</div>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -566,27 +562,145 @@ export function AITraderPage() {
                 )}
               </div>
             </div>
+            
+            {/* Important Decisions Panel - Manually Manageable */}
+            {importantDecisions.length > 0 && (
+              <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-blue-500/50 border-l-4 border-l-blue-500">
+                <div className="px-4 py-3 border-b border-slate-700/50 flex items-center justify-between">
+                  <h3 className="font-bold text-blue-300">⚡ Wichtige Entscheidungen ({importantDecisions.length})</h3>
+                  <span className="text-xs text-gray-500">Klick auf ✕ zum Löschen</span>
+                </div>
+                <div className="p-2 space-y-2 max-h-[600px] overflow-y-auto">
+                  {importantDecisions.map((decision) => (
+                    <div key={decision.id} className="relative group">
+                      {/* Delete Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`Entscheidung "${decision.symbol} ${decision.decisionType}" wirklich löschen?`)) {
+                            handleDeleteDecision(decision.id);
+                          }
+                        }}
+                        className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/40 flex items-center justify-center opacity-50 group-hover:opacity-100 transition-opacity"
+                        title="Entscheidung löschen"
+                      >
+                        ✕
+                      </button>
+                      <TradeReasoningCard 
+                        decision={decision} 
+                        expanded={true}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Recent Decisions */}
+            <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
+              <div className="px-4 py-3 border-b border-slate-700/50">
+                <h3 className="font-bold">🧠 Recent Decisions</h3>
+              </div>
+              <div className="p-2 space-y-1 max-h-[500px] overflow-y-auto">
+                {decisions.length === 0 ? (
+                  <div className="text-center text-gray-500 py-8">
+                    <div className="text-2xl mb-2">🤔</div>
+                    <div>No decisions yet</div>
+                  </div>
+                ) : (
+                  decisions.map((decision) => (
+                    <TradeReasoningCard 
+                      key={decision.id} 
+                      decision={decision} 
+                      isNew={notificationSettings.flash && newDecisionIds.has(decision.id)}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
           </div>
           
-          {/* Right Column: Recent Decisions */}
-          <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
-            <div className="px-4 py-3 border-b border-slate-700/50">
-              <h3 className="font-bold">🧠 Recent Decisions</h3>
-            </div>
-            <div className="p-2 space-y-1 max-h-[700px] overflow-y-auto">
-              {decisions.length === 0 ? (
-                <div className="text-center text-gray-500 py-8">
-                  <div className="text-2xl mb-2">🤔</div>
-                  <div>No decisions yet</div>
+          {/* Right Column: Notification Settings + Activity Feed */}
+          <div className="space-y-4">
+            {/* Notification & Display Settings Panel */}
+            <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-3 space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <span className="text-sm font-medium text-gray-300">🔔 Benachrichtigungen</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setNotificationSettings((s: { sound: boolean; vibration: boolean; flash: boolean }) => ({ ...s, flash: !s.flash }))}
+                    className={`px-2 py-1 text-xs rounded transition-colors ${notificationSettings.flash ? 'bg-yellow-500/30 text-yellow-400' : 'bg-slate-700/50 text-gray-500'}`}
+                    title="Visueller Effekt bei neuen Entscheidungen"
+                  >
+                    ✨ Flash
+                  </button>
+                  <button
+                    onClick={() => setNotificationSettings((s: { sound: boolean; vibration: boolean; flash: boolean }) => ({ ...s, sound: !s.sound }))}
+                    className={`px-2 py-1 text-xs rounded transition-colors ${notificationSettings.sound ? 'bg-green-500/30 text-green-400' : 'bg-slate-700/50 text-gray-500'}`}
+                    title="Ton bei wichtigen Ereignissen"
+                  >
+                    🔔 Ton
+                  </button>
+                  <button
+                    onClick={() => setNotificationSettings((s: { sound: boolean; vibration: boolean; flash: boolean }) => ({ ...s, vibration: !s.vibration }))}
+                    className={`px-2 py-1 text-xs rounded transition-colors ${notificationSettings.vibration ? 'bg-purple-500/30 text-purple-400' : 'bg-slate-700/50 text-gray-500'}`}
+                    title="Vibration auf Mobilgeräten"
+                  >
+                    📳 Vibration
+                  </button>
                 </div>
-              ) : (
-                decisions.map((decision) => (
-                  <TradeReasoningCard 
-                    key={decision.id} 
-                    decision={decision} 
-                    isNew={notificationSettings.flash && newDecisionIds.has(decision.id)}
+              </div>
+              
+              {/* Wake Lock - Keep Screen On */}
+              {wakeLock.isSupported && (
+                <div className="flex items-center justify-between pt-2 border-t border-slate-700/50">
+                  <span className="text-sm text-gray-400">📱 Display anlassen</span>
+                  <button
+                    onClick={() => wakeLock.toggle()}
+                    className={`px-3 py-1 text-xs rounded-full transition-all duration-200 ${
+                      wakeLock.isActive 
+                        ? 'bg-cyan-500/30 text-cyan-400 ring-1 ring-cyan-500/50' 
+                        : 'bg-slate-700/50 text-gray-500 hover:bg-slate-700'
+                    }`}
+                    title="Verhindert, dass das Display bei Inaktivität ausgeht (iOS/Android)"
+                  >
+                    {wakeLock.isActive ? '☀️ AN' : '🌙 AUS'}
+                  </button>
+                </div>
+              )}
+            </div>
+            
+            {/* Live Activity Feed - Collapsible */}
+            <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
+              <div
+                onClick={() => setActivityPanelExpanded(!activityPanelExpanded)}
+                className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-700/30 transition-colors rounded-t-lg cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-bold">🔴 Live Activity</span>
+                  <span className="text-xs text-gray-500">({allEvents.length} events)</span>
+                </div>
+                <svg 
+                  className={`w-5 h-5 text-gray-400 transition-transform ${activityPanelExpanded ? 'rotate-180' : ''}`}
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+              
+              {activityPanelExpanded && (
+                <div className="border-t border-slate-700/50">
+                  <AITraderActivityFeed 
+                    events={allEvents} 
+                    maxHeight="400px" 
+                    autoScroll={true}
+                    enableFlash={notificationSettings.flash}
+                    enableSound={notificationSettings.sound}
+                    enableVibration={notificationSettings.vibration}
                   />
-                ))
+                </div>
               )}
             </div>
           </div>

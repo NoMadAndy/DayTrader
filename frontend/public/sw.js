@@ -235,32 +235,63 @@ self.addEventListener('fetch', (event) => {
   
   const url = new URL(event.request.url);
   
-  // Cache API responses for stock data
-  if (url.hostname.includes('yahoo') || 
+  // Check if this is an API request we want to cache
+  const isApiRequest = url.pathname.startsWith('/api/') ||
+      url.hostname.includes('yahoo') || 
       url.hostname.includes('finnhub') || 
-      url.hostname.includes('alphavantage')) {
+      url.hostname.includes('alphavantage') ||
+      url.hostname.includes('twelvedata');
+  
+  if (isApiRequest) {
     event.respondWith(
-      caches.open(QUOTE_CACHE_NAME).then(async (cache) => {
+      (async () => {
         try {
           const response = await fetch(event.request);
-          // Cache for 1 minute
+          // Only cache successful responses
           if (response.ok) {
-            cache.put(event.request, response.clone());
+            try {
+              const cache = await caches.open(QUOTE_CACHE_NAME);
+              cache.put(event.request, response.clone());
+            } catch (cacheError) {
+              console.warn('[SW] Failed to cache response:', cacheError);
+            }
           }
           return response;
-        } catch (e) {
-          // Return cached version if network fails
-          const cached = await cache.match(event.request);
-          if (cached) return cached;
-          throw e;
+        } catch (networkError) {
+          // Try to return cached version if network fails
+          try {
+            const cache = await caches.open(QUOTE_CACHE_NAME);
+            const cached = await cache.match(event.request);
+            if (cached) {
+              console.log('[SW] Returning cached response for:', event.request.url);
+              return cached;
+            }
+          } catch (cacheError) {
+            console.warn('[SW] Cache lookup failed:', cacheError);
+          }
+          // Return a proper error response instead of throwing
+          return new Response(JSON.stringify({ error: 'Network error', offline: true }), {
+            status: 503,
+            statusText: 'Service Unavailable',
+            headers: { 'Content-Type': 'application/json' }
+          });
         }
-      })
+      })()
     );
     return;
   }
   
-  // Network-first for other requests
+  // Network-first for other requests with fallback
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    (async () => {
+      try {
+        return await fetch(event.request);
+      } catch (e) {
+        const cached = await caches.match(event.request);
+        if (cached) return cached;
+        // Return a proper error response for non-API requests
+        return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
+      }
+    })()
   );
 });

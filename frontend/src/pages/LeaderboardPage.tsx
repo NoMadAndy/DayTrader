@@ -180,7 +180,7 @@ export function LeaderboardPage() {
               <p>{t('leaderboard.noTraders')}</p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-700/50">
+            <div className="divide-y divide-slate-700/50 overflow-x-auto">
               {leaderboard.map((entry) => {
                 const isClickable = entry.isAITrader && entry.aiTraderId;
                 

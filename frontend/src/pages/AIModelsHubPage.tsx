@@ -110,7 +110,18 @@ export function AIModelsHubPage() {
 
       if (modelsRes.status === 'fulfilled' && modelsRes.value.ok) {
         const data = await modelsRes.value.json();
-        setModels(data.models || []);
+        // Map API response to MLModel interface
+        const mappedModels: MLModel[] = (data.models || []).map((m: Record<string, unknown>) => ({
+          symbol: m.symbol as string,
+          modelType: 'LSTM',
+          trainedAt: (m.metadata as Record<string, unknown>)?.trained_at as string | undefined,
+          accuracy: (m.metadata as Record<string, unknown>)?.accuracy as number | undefined,
+          mse: (m.metadata as Record<string, unknown>)?.final_val_loss as number | undefined,
+          epochs: (m.metadata as Record<string, unknown>)?.epochs_completed as number | undefined,
+          dataPoints: (m.metadata as Record<string, unknown>)?.data_points as number | undefined,
+          status: m.is_trained ? 'ready' : 'not_found',
+        }));
+        setModels(mappedModels);
       }
 
       if (healthRes.status === 'fulfilled' && healthRes.value.ok) {

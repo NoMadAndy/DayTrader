@@ -3,6 +3,7 @@ AI Trader Scheduler
 
 Manages scheduled trading checks and executions for AI traders.
 Runs trading loops at specified intervals and manages multiple traders.
+Includes self-training capability during idle periods.
 """
 
 import asyncio
@@ -12,10 +13,11 @@ import httpx
 import pytz
 
 from .ai_trader_engine import AITraderEngine, AITraderConfig, TradingDecision
+from .trainer import TradingAgentTrainer
 
 
 class AITraderScheduler:
-    """Scheduler for AI trading operations"""
+    """Scheduler for AI trading operations with self-training capability"""
     
     def __init__(self, backend_url: str = "http://backend:3001"):
         """
@@ -28,6 +30,9 @@ class AITraderScheduler:
         self.http_client = httpx.AsyncClient(timeout=30.0)
         self.engines: Dict[int, AITraderEngine] = {}
         self.running_tasks: Dict[int, asyncio.Task] = {}
+        self.training_tasks: Dict[int, asyncio.Task] = {}
+        self.last_training_time: Dict[int, datetime] = {}
+        self.trainer = TradingAgentTrainer()
         self._shutdown = False
     
     async def start_trader(self, trader_id: int, config: AITraderConfig):
@@ -103,6 +108,9 @@ class AITraderScheduler:
             while not self._shutdown:
                 # Check if it's trading time
                 if not self._is_trading_time(config):
+                    # Not trading time - opportunity for self-training
+                    if config.self_training_enabled:
+                        await self._maybe_self_train(trader_id, config)
                     await asyncio.sleep(60)  # Check again in 1 minute
                     continue
                 
@@ -188,6 +196,106 @@ class AITraderScheduler:
         except Exception as e:
             print(f"Error checking trading time: {e}")
             return False
+    
+    async def _maybe_self_train(self, trader_id: int, config: AITraderConfig):
+        """
+        Perform self-training during idle periods.
+        
+        Args:
+            trader_id: Trader ID
+            config: AITraderConfig instance
+        """
+        # Check if enough time has passed since last training
+        now = datetime.now()
+        last_train = self.last_training_time.get(trader_id)
+        
+        if last_train:
+            minutes_since_train = (now - last_train).total_seconds() / 60
+            if minutes_since_train < config.self_training_interval_minutes:
+                return  # Not time yet
+        
+        # Check if already training
+        if trader_id in self.training_tasks and not self.training_tasks[trader_id].done():
+            return  # Already training
+        
+        # Start self-training
+        print(f"🎓 Trader {trader_id} starting self-training (idle period)...")
+        self.last_training_time[trader_id] = now
+        
+        try:
+            # Fetch historical data for all symbols
+            import pandas as pd
+            from .agent_config import AgentConfig
+            from .indicators import prepare_data_for_training
+            
+            training_data = {}
+            
+            for symbol in config.symbols[:3]:  # Limit to 3 symbols for quick training
+                try:
+                    response = await self.http_client.get(
+                        f"{self.backend_url}/api/yahoo/chart/{symbol}",
+                        params={'period': '2y', 'interval': '1d'}
+                    )
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        quotes = data.get('quotes', [])
+                        if len(quotes) >= 200:
+                            df = prepare_data_for_training(quotes)
+                            if df is not None and len(df) >= 200:
+                                training_data[symbol] = df
+                                print(f"   📊 Loaded {len(df)} data points for {symbol}")
+                except Exception as e:
+                    print(f"   ⚠️ Failed to load data for {symbol}: {e}")
+                    continue
+            
+            if not training_data:
+                print(f"   ❌ No training data available for trader {trader_id}")
+                return
+            
+            # Create agent config
+            agent_name = config.rl_agent_name or f"trader_{trader_id}_agent"
+            agent_config = AgentConfig(
+                name=agent_name,
+                initial_balance=config.initial_budget,
+                max_position_size=config.max_position_size,
+                stop_loss_pct=config.stop_loss_percent,
+                take_profit_pct=config.take_profit_percent,
+            )
+            
+            # Run training
+            result = await self.trainer.train_agent(
+                agent_name=agent_name,
+                config=agent_config,
+                training_data=training_data,
+                total_timesteps=config.self_training_timesteps,
+            )
+            
+            if result.get('success', False):
+                reward = result.get('final_reward', 0)
+                print(f"   ✅ Trader {trader_id} self-training complete! Final reward: {reward:.2f}")
+                
+                # Notify backend about the training
+                try:
+                    await self.http_client.post(
+                        f"{self.backend_url}/api/ai-traders/{trader_id}/events",
+                        json={
+                            'event_type': 'self_training_complete',
+                            'message': f'Self-training complete. Reward: {reward:.2f}',
+                            'data': {
+                                'agent_name': agent_name,
+                                'timesteps': config.self_training_timesteps,
+                                'final_reward': reward,
+                            }
+                        }
+                    )
+                except Exception:
+                    pass  # Ignore notification errors
+            else:
+                print(f"   ❌ Trader {trader_id} self-training failed: {result.get('error', 'Unknown error')}")
+                
+        except Exception as e:
+            print(f"   ❌ Error during self-training for trader {trader_id}: {e}")
     
     async def _fetch_market_data(self, symbol: str) -> Optional[Dict]:
         """

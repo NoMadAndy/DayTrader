@@ -18,13 +18,17 @@ interface TradeReasoningCardProps {
 const SIGNAL_COLORS: Record<DecisionType, { bg: string; text: string; emoji: string }> = {
   buy: { bg: 'bg-green-500/15', text: 'text-green-400', emoji: '📈' },
   sell: { bg: 'bg-red-500/15', text: 'text-red-400', emoji: '📉' },
+  short: { bg: 'bg-purple-500/15', text: 'text-purple-400', emoji: '📉🔻' },
   hold: { bg: 'bg-yellow-500/15', text: 'text-yellow-400', emoji: '➖' },
   close: { bg: 'bg-orange-500/15', text: 'text-orange-400', emoji: '🔒' },
   skip: { bg: 'bg-gray-500/15', text: 'text-gray-400', emoji: '⏭️' },
 };
 
 export function TradeReasoningCard({ decision, expanded: controlledExpanded, onToggle, isNew = false }: TradeReasoningCardProps) {
-  const [internalExpanded, setInternalExpanded] = useState(false);
+  // Important decisions (executed buy/sell/close/short) should be expanded by default
+  const isImportantDecision = decision.executed && ['buy', 'sell', 'close', 'short'].includes(decision.decisionType);
+  
+  const [internalExpanded, setInternalExpanded] = useState(isImportantDecision);
   
   // Use controlled expansion if provided, otherwise use internal state
   const isExpanded = controlledExpanded !== undefined ? controlledExpanded : internalExpanded;
@@ -34,7 +38,6 @@ export function TradeReasoningCard({ decision, expanded: controlledExpanded, onT
   const timestamp = new Date(decision.timestamp).toLocaleString('de-DE', {
     day: '2-digit',
     month: '2-digit',
-    year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -44,48 +47,88 @@ export function TradeReasoningCard({ decision, expanded: controlledExpanded, onT
     ? 'animate-pulse ring-2 ring-yellow-400/60 shadow-lg shadow-yellow-400/20' 
     : '';
   
+  // Important decision styling - highlighted border
+  const importantClass = isImportantDecision 
+    ? 'border-l-4 border-l-blue-500 bg-slate-800/70' 
+    : '';
+  
+  // Extract signal scores for compact display
+  const signals = decision.reasoning?.signals;
+  const getSignalColor = (score: number) => {
+    if (score >= 0.3) return 'text-green-400';
+    if (score <= -0.3) return 'text-red-400';
+    return 'text-gray-400';
+  };
+  const formatScore = (score: number) => score >= 0 ? `+${score.toFixed(2)}` : score.toFixed(2);
+  
   return (
-    <div className={`bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 transition-all duration-500 ${flashClass}`}>
-      {/* Header - Always visible - Compact version */}
+    <div className={`bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 transition-all duration-500 ${flashClass} ${importantClass}`}>
+      {/* Header - Compact single line with signal markers */}
       <button
         onClick={handleToggle}
-        className="w-full px-3 py-2 flex items-center justify-between hover:bg-slate-700/30 transition-colors rounded-t-lg"
+        className="w-full px-2 py-1.5 flex items-center gap-1 sm:gap-2 hover:bg-slate-700/30 transition-colors rounded-lg text-xs"
       >
-        <div className="flex items-center gap-2">
-          <span className="text-lg">{signalStyle.emoji}</span>
-          <div className="text-left">
-            <div className="flex items-center gap-2">
-              <span className="font-bold">{decision.symbol}</span>
-              <span className={`px-1.5 py-0.5 rounded text-xs font-medium uppercase ${signalStyle.bg} ${signalStyle.text}`}>
-                {decision.decisionType}
-              </span>
-              {decision.executed && (
-                <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-blue-500/20 text-blue-400">
-                  ✓
-                </span>
-              )}
-            </div>
-            <div className="text-xs text-gray-500">
-              {timestamp} • {((decision.confidence || 0) * 100).toFixed(0)}%
-            </div>
-          </div>
-        </div>
+        {/* Symbol & Decision */}
+        <span className="text-base">{signalStyle.emoji}</span>
+        <span className="font-bold text-sm">{decision.symbol}</span>
+        <span className={`px-1 py-0.5 rounded text-[10px] font-bold uppercase ${signalStyle.bg} ${signalStyle.text}`}>
+          {decision.decisionType}
+        </span>
         
-        <div className="flex items-center gap-2">
-          {decision.summaryShort && (
-            <span className="text-sm text-gray-400 hidden md:block max-w-md truncate">
-              {decision.summaryShort}
-            </span>
-          )}
-          <svg 
-            className={`w-5 h-5 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-            fill="none" 
-            stroke="currentColor" 
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </div>
+        {/* Signal Markers - Hidden on mobile */}
+        {signals && (
+          <div className="hidden sm:flex items-center gap-1 text-[10px] font-mono">
+            {signals.ml !== undefined && (
+              <span className={`px-1 rounded ${getSignalColor(signals.ml.score)}`} title={`ML: ${formatScore(signals.ml.score)}`}>
+                ML{formatScore(signals.ml.score)}
+              </span>
+            )}
+            {signals.rl !== undefined && (
+              <span className={`px-1 rounded ${getSignalColor(signals.rl.score)}`} title={`RL: ${formatScore(signals.rl.score)}`}>
+                RL{formatScore(signals.rl.score)}
+              </span>
+            )}
+            {signals.sentiment !== undefined && (
+              <span className={`px-1 rounded ${getSignalColor(signals.sentiment.score)}`} title={`Sentiment: ${formatScore(signals.sentiment.score)}`}>
+                S{formatScore(signals.sentiment.score)}
+              </span>
+            )}
+            {signals.technical !== undefined && (
+              <span className={`px-1 rounded ${getSignalColor(signals.technical.score)}`} title={`Technical: ${formatScore(signals.technical.score)}`}>
+                T{formatScore(signals.technical.score)}
+              </span>
+            )}
+          </div>
+        )}
+        
+        {/* Weighted Score & Confidence */}
+        <span className="hidden sm:inline text-gray-500">→</span>
+        <span className={`font-bold ${(decision.weightedScore || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+          {(decision.weightedScore || 0) >= 0 ? '+' : ''}{(decision.weightedScore || 0).toFixed(2)}
+        </span>
+        <span className="hidden sm:inline text-gray-500 text-[10px]">{((decision.confidence || 0) * 100).toFixed(0)}%</span>
+        
+        {/* Important/Executed badge */}
+        {isImportantDecision ? (
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/30 text-blue-300 border border-blue-500/50">
+            ⚡ AUSGEFÜHRT
+          </span>
+        ) : decision.executed && (
+          <span className="hidden sm:inline px-1 py-0.5 rounded text-[10px] font-medium bg-blue-500/20 text-blue-400">✓</span>
+        )}
+        
+        {/* Timestamp - pushed to right */}
+        <span className="ml-auto text-gray-500">{timestamp}</span>
+        
+        {/* Expand arrow */}
+        <svg 
+          className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
+          fill="none" 
+          stroke="currentColor" 
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
       </button>
       
       {/* Expanded Content */}

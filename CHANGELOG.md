@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Execute Endpoint repariert** - AI Trader kann jetzt wieder Trades ausführen:
+  - `/api/ai-traders/:id/execute` Endpoint komplett neu geschrieben mit direkten SQL-Abfragen
+  - Behebt "trading.openPosition is not a function" Fehler
+  - Unterstützt buy, sell, short, close Aktionen korrekt
+  - Korrektes P&L-Berechnung für Long und Short Positionen
+- **VIX-Abfrage repariert** - Volatilitätsindex wird jetzt korrekt geholt:
+  - Wechsel von `/api/yahoo/quote/` zu `/api/yahoo/chart/` Endpoint
+  - VIX-Daten wurden 404 zurückgegeben, jetzt funktioniert die Abfrage
+  - Risk-Checks zeigen jetzt korrekte VIX-Werte an
+- **Service Worker Fehlerbehandlung** - Keine "Failed to convert value to 'Response'" Fehler mehr:
+  - Alle Error-Cases geben jetzt valide Response-Objekte zurück
+  - Try/catch um Cache-Operationen
+  - Ordentliche 503-Responses mit JSON bei Netzwerkfehlern
+- **Sentiment Score zeigt nicht mehr 0** - Neutrale Sentiments nutzen jetzt Raw-Score:
+  - Vorher wurde bei "neutral" Sentiment immer Score=0 zurückgegeben
+  - Jetzt wird der tatsächliche API-Score verwendet
+- **SignalBreakdown zeigt Weight** - Signal-Gewichte werden korrekt angezeigt:
+  - Zeigt jetzt `weight` statt `confidence` Feld an
+
 ### Added
 - **Sentiment für internationale Symbole** - Verbesserte News-Suche für nicht-US Aktien:
   - Internationale Symbole (z.B. MRK.DE, SAP.DE) werden jetzt korrekt unterstützt

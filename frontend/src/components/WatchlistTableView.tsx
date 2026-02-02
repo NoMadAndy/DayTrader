@@ -77,15 +77,17 @@ export function WatchlistTableView({
   return (
     <div className="hidden lg:block">
       {/* Table Header */}
-      <div className="grid grid-cols-[50px_minmax(200px,1fr)_140px_120px_200px_240px_50px] gap-3 px-3 py-2 text-xs font-medium text-gray-400 border-b border-slate-700/50 mb-1 sticky top-0 bg-slate-900/80 backdrop-blur-sm z-10">
-        <div></div>
-        <div>Symbol / Unternehmen</div>
-        <div className="text-right">Kurs</div>
-        <div className="text-center">Signal</div>
-        <div>Quellen</div>
-        <div className="text-center">Perioden</div>
-        <div></div>
-      </div>
+      <div className="overflow-x-auto">
+        <div className="min-w-[900px]">
+          <div className="grid grid-cols-[50px_minmax(200px,1fr)_140px_120px_200px_240px_50px] gap-3 px-3 py-2 text-xs font-medium text-gray-400 border-b border-slate-700/50 mb-1 sticky top-0 bg-slate-900/80 backdrop-blur-sm z-10">
+            <div></div>
+            <div>Symbol / Unternehmen</div>
+            <div className="text-right">Kurs</div>
+            <div className="text-center">Signal</div>
+            <div>Quellen</div>
+            <div className="text-center">Perioden</div>
+            <div></div>
+          </div>
       
       {/* Table Body */}
       <div className="space-y-0.5">
@@ -329,6 +331,8 @@ export function WatchlistTableView({
         </div>
         );
         })}
+      </div>
+        </div>
       </div>
     </div>
   );

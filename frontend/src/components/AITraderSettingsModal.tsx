@@ -71,6 +71,11 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
   // ML Auto-Training
   const [autoTrainML, setAutoTrainML] = useState(trader.personality?.ml?.autoTrain ?? true);
   
+  // Short Selling
+  const [allowShortSelling, setAllowShortSelling] = useState(trader.personality?.risk?.allowShortSelling ?? false);
+  const [maxShortPositions, setMaxShortPositions] = useState(trader.personality?.risk?.maxShortPositions || 3);
+  const [maxShortExposure, setMaxShortExposure] = useState((trader.personality?.risk?.maxShortExposure || 0.3) * 100);
+  
   // RL Agent
   const [rlAgentName, setRlAgentName] = useState(trader.personality?.rlAgentName || '');
   const [availableRLAgents, setAvailableRLAgents] = useState<RLAgentStatus[]>([]);
@@ -131,6 +136,9 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
       setUpdateWeights(trader.personality?.learning?.updateWeights ?? false);
       setMinSamples(trader.personality?.learning?.minSamples || 5);
       setAutoTrainML(trader.personality?.ml?.autoTrain ?? true);
+      setAllowShortSelling(trader.personality?.risk?.allowShortSelling ?? false);
+      setMaxShortPositions(trader.personality?.risk?.maxShortPositions || 3);
+      setMaxShortExposure((trader.personality?.risk?.maxShortExposure || 0.3) * 100);
       setRlAgentName(trader.personality?.rlAgentName || '');
       setError(null);
     }
@@ -160,6 +168,9 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
           maxDrawdown,
           stopLossPercent: stopLoss,
           takeProfitPercent: takeProfit,
+          allowShortSelling,
+          maxShortPositions,
+          maxShortExposure: maxShortExposure / 100,
         },
         signals: {
           weights: {
@@ -315,7 +326,7 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
               <label className="block text-sm font-medium text-gray-300 mb-2">
                 Risikotoleranz
               </label>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {RISK_OPTIONS.map((option) => (
                   <button
                     key={option.value}
@@ -374,6 +385,69 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
                   className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
                 />
               </div>
+            </div>
+            
+            {/* Short Selling */}
+            <div className="p-4 bg-slate-700/30 rounded-lg border border-slate-600">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">📉</span>
+                  <h4 className="font-medium text-white">Short-Selling</h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAllowShortSelling(!allowShortSelling)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    allowShortSelling ? 'bg-purple-600' : 'bg-slate-600'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      allowShortSelling ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              
+              {allowShortSelling && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Max. Short-Positionen
+                    </label>
+                    <input
+                      type="number"
+                      value={maxShortPositions}
+                      onChange={(e) => setMaxShortPositions(Number(e.target.value))}
+                      min={1}
+                      max={10}
+                      className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Maximal gleichzeitige Shorts</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Max. Short-Exposure ({maxShortExposure}%)
+                    </label>
+                    <input
+                      type="range"
+                      value={maxShortExposure}
+                      onChange={(e) => setMaxShortExposure(Number(e.target.value))}
+                      min={10}
+                      max={50}
+                      step={5}
+                      className="w-full accent-purple-500"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Anteil des Kapitals für Shorts</p>
+                  </div>
+                </div>
+              )}
+              
+              <p className="text-xs text-gray-500 mt-3">
+                {allowShortSelling 
+                  ? '⚠️ Short-Selling aktiviert - der AI-Trader kann auf fallende Kurse setzen'
+                  : 'Short-Selling deaktiviert - nur Long-Positionen möglich'}
+              </p>
             </div>
           </div>
           

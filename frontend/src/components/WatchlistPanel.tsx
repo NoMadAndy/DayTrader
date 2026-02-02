@@ -53,7 +53,6 @@ import {
   EXCHANGE_REGIONS, 
   POPULAR_SYMBOLS,
   formatSymbolForExchange,
-  detectExchange,
   getExchangeStatus
 } from '../utils/exchanges';
 
@@ -1215,7 +1214,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                       title={t('dashboard.quickTrade')}
                     >
                       <span className="text-sm sm:text-base">💹</span>
-                      <span className="hidden xs:inline">Handeln</span>
+                      <span className="hidden sm:inline">Handeln</span>
                       <svg
                         className={`w-3 h-3 sm:w-3.5 sm:h-3.5 transition-transform ${quickTradeSymbol === item.symbol ? 'rotate-180' : ''}`}
                         fill="none"

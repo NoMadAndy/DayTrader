@@ -29,15 +29,27 @@ const AGREEMENT_STYLES: Record<SignalAgreement, { indicator: string; color: stri
 };
 
 export function SignalBreakdown({ signals, aggregation }: SignalBreakdownProps) {
-  const agreementStyle = AGREEMENT_STYLES[aggregation.signalAgreement];
+  const agreementStyle = AGREEMENT_STYLES[aggregation.signalAgreement] || AGREEMENT_STYLES.mixed;
+  
+  // Safely extract aggregation values
+  const weightedScore = typeof aggregation.weightedScore === 'number' && isFinite(aggregation.weightedScore) 
+    ? aggregation.weightedScore : 0;
+  const threshold = typeof aggregation.threshold === 'number' && isFinite(aggregation.threshold) 
+    ? aggregation.threshold : 0.5;
+  const confidence = typeof aggregation.confidence === 'number' && isFinite(aggregation.confidence) 
+    ? aggregation.confidence : 0;
   
   const renderSignalBar = (label: string, signal?: SignalDetail) => {
     if (!signal) return null;
     
-    const scorePercent = ((signal.score + 1) / 2) * 100; // Convert -1..1 to 0..100
-    const isPositive = signal.score > 0;
-    const isNegative = signal.score < 0;
-    const isNeutral = Math.abs(signal.score) < 0.1;
+    // Safely extract values with defaults
+    const score = typeof signal.score === 'number' && isFinite(signal.score) ? signal.score : 0;
+    const weight = typeof signal.weight === 'number' && isFinite(signal.weight) ? signal.weight : 0;
+    
+    const scorePercent = ((score + 1) / 2) * 100; // Convert -1..1 to 0..100
+    const isPositive = score > 0;
+    const isNegative = score < 0;
+    const isNeutral = Math.abs(score) < 0.1;
     
     const colorClass = isNeutral 
       ? 'bg-gray-500' 
@@ -51,10 +63,10 @@ export function SignalBreakdown({ signals, aggregation }: SignalBreakdownProps) 
           <span className="font-medium">{label}</span>
           <div className="flex items-center gap-2">
             <span className={isPositive ? 'text-green-400' : isNegative ? 'text-red-400' : 'text-gray-400'}>
-              {signal.score > 0 ? '+' : ''}{signal.score.toFixed(2)}
+              {score > 0 ? '+' : ''}{score.toFixed(2)}
             </span>
-            <span className="text-gray-500 text-xs">
-              {(signal.confidence * 100).toFixed(0)}%
+            <span className="text-gray-500 text-xs" title="Gewichtung">
+              {(weight * 100).toFixed(0)}%
             </span>
           </div>
         </div>
@@ -95,16 +107,16 @@ export function SignalBreakdown({ signals, aggregation }: SignalBreakdownProps) 
           <span className="font-bold">Weighted Score</span>
           <div className="flex items-center gap-2">
             <span className={`font-bold ${
-              aggregation.weightedScore > aggregation.threshold 
+              weightedScore > threshold 
                 ? 'text-green-400' 
-                : aggregation.weightedScore < -aggregation.threshold
+                : weightedScore < -threshold
                   ? 'text-red-400'
                   : 'text-gray-400'
             }`}>
-              {aggregation.weightedScore > 0 ? '+' : ''}{aggregation.weightedScore.toFixed(3)}
+              {weightedScore > 0 ? '+' : ''}{weightedScore.toFixed(3)}
             </span>
             <span className="text-xs text-gray-500">
-              (Threshold: ±{aggregation.threshold.toFixed(2)})
+              (Threshold: ±{threshold.toFixed(2)})
             </span>
           </div>
         </div>
@@ -113,12 +125,12 @@ export function SignalBreakdown({ signals, aggregation }: SignalBreakdownProps) 
         <div className="space-y-1">
           <div className="flex items-center justify-between text-xs text-gray-400">
             <span>Overall Confidence</span>
-            <span>{(aggregation.confidence * 100).toFixed(0)}%</span>
+            <span>{(confidence * 100).toFixed(0)}%</span>
           </div>
           <div className="w-full bg-slate-700/50 rounded-full h-2 overflow-hidden">
             <div 
               className="h-full bg-blue-500 transition-all duration-300"
-              style={{ width: `${aggregation.confidence * 100}%` }}
+              style={{ width: `${confidence * 100}%` }}
             />
           </div>
         </div>

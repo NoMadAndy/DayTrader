@@ -79,12 +79,32 @@ class SignalAggregator:
         sentiment_score = sentiment_result.get('score', 0.0)
         technical_score = technical_result.get('score', 0.0)
         
-        # Calculate weighted score
+        # Calculate weighted score with adaptive weighting
+        # If a signal has very low confidence or error, reduce its weight
+        ml_conf = ml_result.get('confidence', 0.5)
+        rl_conf = rl_result.get('confidence', 0.5)
+        sentiment_conf = sentiment_result.get('confidence', 0.5)
+        technical_conf = technical_result.get('confidence', 0.5)
+        
+        # Adjust weights based on signal availability/confidence
+        effective_ml_weight = self.config.ml_weight * (ml_conf if ml_conf > 0.1 else 0.1)
+        effective_rl_weight = self.config.rl_weight * (rl_conf if rl_conf > 0.1 else 0.1)
+        effective_sentiment_weight = self.config.sentiment_weight * (sentiment_conf if sentiment_conf > 0.1 else 0.1)
+        effective_technical_weight = self.config.technical_weight * (technical_conf if technical_conf > 0.1 else 0.1)
+        
+        # Normalize weights
+        total_weight = effective_ml_weight + effective_rl_weight + effective_sentiment_weight + effective_technical_weight
+        if total_weight > 0:
+            effective_ml_weight /= total_weight
+            effective_rl_weight /= total_weight
+            effective_sentiment_weight /= total_weight
+            effective_technical_weight /= total_weight
+        
         weighted_score = (
-            ml_score * self.config.ml_weight +
-            rl_score * self.config.rl_weight +
-            sentiment_score * self.config.sentiment_weight +
-            technical_score * self.config.technical_weight
+            ml_score * effective_ml_weight +
+            rl_score * effective_rl_weight +
+            sentiment_score * effective_sentiment_weight +
+            technical_score * effective_technical_weight
         )
         
         # Calculate agreement level
@@ -92,12 +112,7 @@ class SignalAggregator:
         agreement = self._calculate_agreement(scores)
         
         # Calculate confidence based on agreement and individual confidences
-        confidences = [
-            ml_result.get('confidence', 0.5),
-            rl_result.get('confidence', 0.5),
-            sentiment_result.get('confidence', 0.5),
-            technical_result.get('confidence', 0.5)
-        ]
+        confidences = [ml_conf, rl_conf, sentiment_conf, technical_conf]
         avg_confidence = np.mean(confidences)
         
         # Adjust confidence based on agreement
@@ -472,21 +487,23 @@ class SignalAggregator:
                 
                 # Extract sentiment
                 sentiment = data.get('sentiment', 'neutral')
-                sentiment_score = data.get('score', 0.0)
+                raw_score = data.get('score', 0.0)
                 
-                # Map sentiment to -1 to +1 score
-                if sentiment == 'positive':
-                    score = sentiment_score
-                elif sentiment == 'negative':
-                    score = -sentiment_score
-                else:  # neutral
-                    score = 0.0
+                # Use the raw score directly - it's already in -1 to +1 range
+                # The 'sentiment' field is just a label, don't override the numeric score
+                score = raw_score if raw_score != 0 else 0.0
+                
+                # Ensure score reflects sentiment direction
+                if sentiment == 'negative' and score > 0:
+                    score = -score
+                elif sentiment == 'positive' and score < 0:
+                    score = abs(score)
                 
                 return {
                     'score': score,
                     'confidence': data.get('confidence', 0.5),
                     'sentiment': sentiment,
-                    'sentiment_score': sentiment_score,
+                    'sentiment_score': raw_score,
                     'news_count': data.get('news_count', 0),
                     'sources': data.get('sources', [])
                 }

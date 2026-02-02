@@ -8,8 +8,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useDataService } from '../hooks';
 import { useSettings, type Language, type Currency } from '../contexts';
 import { DataSourceSelector } from '../components/DataSourceSelector';
-import { ApiQuotaDisplay } from '../components/ApiQuotaDisplay';
-import { NewsApiQuotaDisplay } from '../components/NewsApiQuotaDisplay';
 import { SignalSourceSettingsPanel } from '../components/SignalSourceSettings';
 import { subscribeToAuth, getAuthState, getAuthHeaders, logout, checkAuthStatus, type AuthState } from '../services/authService';
 import { getUserSettings, updateUserSettings, DEFAULT_ML_SETTINGS, type MLSettings } from '../services/userSettingsService';
@@ -80,7 +78,7 @@ function saveConfig(config: ApiConfig): void {
   }
 }
 
-type SettingsTab = 'api' | 'data-source' | 'ml' | 'signals' | 'auth' | 'preferences' | 'system';
+type SettingsTab = 'api' | 'ml' | 'signals' | 'auth' | 'preferences' | 'system';
 
 // ============================================================================
 // System Status Interfaces
@@ -89,44 +87,69 @@ type SettingsTab = 'api' | 'data-source' | 'ml' | 'signals' | 'auth' | 'preferen
 interface CacheStats {
   enabled: boolean;
   message?: string;
-  totalEntries?: number;
-  hitRate?: number;
-  missRate?: number;
-  memoryUsage?: number;
-  oldestEntry?: string;
-  newestEntry?: string;
+  total?: {
+    total_entries: string;
+    total_hits: string;
+    cache_size: string;
+  };
+  byType?: Array<{
+    cache_type: string;
+    entries: string;
+    total_hits: string;
+  }>;
+  rateLimits?: RateLimitStatus;
 }
 
 interface RateLimitStatus {
   [provider: string]: {
-    remaining: number;
-    limit: number;
-    resetAt?: string;
-    windowMs?: number;
+    requestsToday: number;
+    requestsThisMinute: number;
+    limitsPerDay: number | null;
+    limitsPerMinute: number;
+    remainingToday: number | null;
+    remainingThisMinute: number;
+    canRequest: boolean;
   };
 }
 
 interface JobStatus {
-  quoteUpdate: {
-    lastRun?: string;
-    nextRun?: string;
-    isRunning: boolean;
-    lastResult?: string;
-    symbolsUpdated?: number;
+  isRunning: boolean;
+  lastQuoteUpdate?: string;
+  lastCacheCleanup?: string;
+  nextQuoteUpdate?: string;
+  config?: {
+    quoteUpdateIntervalSeconds: number;
+    cacheCleanupIntervalSeconds: number;
+    quoteBatchSize: number;
+    maxSymbolsPerCycle: number;
+    defaultSymbols: string[];
   };
-  cacheCleanup?: {
-    lastRun?: string;
-    nextRun?: string;
+  stats?: {
+    cycleCount: number;
+    successfulUpdates: number;
+    failedUpdates: number;
+    lastError: string | null;
   };
 }
 
 interface StreamStats {
   activeConnections: number;
-  clients: Array<{
-    clientId: string;
-    symbols: string[];
-    connectedAt: string;
-  }>;
+  quoteStreams?: {
+    count: number;
+    clients: Array<{
+      clientId: string;
+      symbols: string[];
+      connectedAt: string;
+    }>;
+  };
+  aiTraderStreams?: {
+    count: number;
+    clients: Array<{
+      id: string;
+      subscribedTraders: number[];
+      lastActivity: number;
+    }>;
+  };
 }
 
 interface ServiceHealth {
@@ -240,9 +263,8 @@ export function SettingsPage() {
     setSystemLoading(true);
     
     try {
-      const [cacheRes, rateLimitRes, jobRes, streamRes, mlRes, rlRes] = await Promise.allSettled([
+      const [cacheRes, jobRes, streamRes, mlRes, rlRes] = await Promise.allSettled([
         fetch('/api/cache/stats'),
-        fetch('/api/cache/rate-limits'),
         fetch('/api/jobs/status'),
         fetch('/api/stream/stats'),
         fetch('/api/ml/health'),
@@ -250,11 +272,12 @@ export function SettingsPage() {
       ]);
 
       if (cacheRes.status === 'fulfilled' && cacheRes.value.ok) {
-        setCacheStats(await cacheRes.value.json());
-      }
-      
-      if (rateLimitRes.status === 'fulfilled' && rateLimitRes.value.ok) {
-        setRateLimits(await rateLimitRes.value.json());
+        const data = await cacheRes.value.json();
+        setCacheStats(data);
+        // Rate limits are included in cache stats response
+        if (data.rateLimits) {
+          setRateLimits(data.rateLimits);
+        }
       }
       
       if (jobRes.status === 'fulfilled' && jobRes.value.ok) {
@@ -324,13 +347,14 @@ export function SettingsPage() {
     }
   }, [activeTab, lastSystemRefresh, fetchSystemStats]);
 
-  // Helper functions for system status display
-  const formatBytes = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
+  // Load rate limits when switching to API tab
+  useEffect(() => {
+    if (activeTab === 'api' && !rateLimits) {
+      fetchSystemStats();
+    }
+  }, [activeTab, rateLimits, fetchSystemStats]);
 
+  // Helper functions for system status display
   const formatUptime = (seconds: number) => {
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
@@ -471,19 +495,10 @@ export function SettingsPage() {
     },
     {
       id: 'api',
-      label: t('settings.apiKeys'),
+      label: t('settings.apiKeys') + ' & ' + t('settings.dataSources'),
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-        </svg>
-      ),
-    },
-    {
-      id: 'data-source',
-      label: t('settings.dataSources'),
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
         </svg>
       ),
     },
@@ -909,6 +924,61 @@ export function SettingsPage() {
                 </label>
               </div>
 
+              {/* API Rate Limits - Live Status */}
+              <div className="border-t border-slate-700 pt-4">
+                <h4 className="text-sm font-medium text-white mb-4 flex items-center">
+                  <span className="w-2 h-2 bg-yellow-500 rounded-full mr-2"></span>
+                  🚦 API Rate Limits
+                  <button
+                    onClick={fetchSystemStats}
+                    className="ml-auto text-xs text-blue-400 hover:text-blue-300"
+                  >
+                    ↻ Aktualisieren
+                  </button>
+                </h4>
+                
+                {rateLimits ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.entries(rateLimits).map(([provider, limit]) => {
+                      const remaining = limit.remainingThisMinute;
+                      const total = limit.limitsPerMinute;
+                      const percentage = total > 0 ? (remaining / total) * 100 : 100;
+                      const isLow = percentage < 20;
+                      
+                      return (
+                        <div key={provider} className="bg-slate-900/50 rounded p-2 border border-slate-700">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-xs font-medium capitalize">{provider}</span>
+                            <span className={`text-[10px] ${isLow ? 'text-red-400' : 'text-gray-400'}`}>
+                              {remaining}/{total}/min
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-700 rounded-full h-1">
+                            <div 
+                              className={`h-1 rounded-full transition-all ${
+                                isLow ? 'bg-red-500' : percentage < 50 ? 'bg-yellow-500' : 'bg-green-500'
+                              }`}
+                              style={{ width: `${percentage}%` }}
+                            />
+                          </div>
+                          {limit.limitsPerDay && (
+                            <div className="text-[10px] text-gray-500 mt-0.5">
+                              Tag: {limit.remainingToday}/{limit.limitsPerDay}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-2 text-gray-500 text-xs">
+                    <button onClick={fetchSystemStats} className="text-blue-400 hover:text-blue-300">
+                      Klicken zum Laden
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={handleClear}
@@ -927,27 +997,14 @@ export function SettingsPage() {
               <p className="text-xs text-gray-500 mt-4">
                 {t('settings.keysStoredLocally')}
               </p>
-            </div>
-          )}
-
-          {/* Data Source Tab */}
-          {activeTab === 'data-source' && (
-            <div className="space-y-6">
-              <p className="text-gray-400 mb-4">
-                {t('settings.selectDataSource')}
-              </p>
-              <DataSourceSelector />
               
-              {/* API Quota Display */}
-              <div className="mt-6">
-                <h3 className="text-lg font-medium text-white mb-3">{t('settings.apiUsage')}</h3>
+              {/* Data Sources Section */}
+              <div className="mt-8 pt-6 border-t border-slate-700">
+                <h3 className="text-lg font-medium text-white mb-3">{t('settings.dataSources')}</h3>
                 <p className="text-gray-400 text-sm mb-4">
-                  {t('settings.apiUsageDesc')}
+                  {t('settings.selectDataSource')}
                 </p>
-                <div className="space-y-4">
-                  <ApiQuotaDisplay />
-                  <NewsApiQuotaDisplay />
-                </div>
+                <DataSourceSelector />
               </div>
             </div>
           )}
@@ -1229,13 +1286,15 @@ export function SettingsPage() {
                 </div>
 
                 {/* SSE Connections */}
-                <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700">
+                <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700" title="Anzahl Browser-Tabs mit aktiver SSE-Verbindung">
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-medium text-gray-300">Live-Verbindungen</h4>
+                    <h4 className="text-sm font-medium text-gray-300">Live-Streams</h4>
                     <div className={`w-2.5 h-2.5 rounded-full ${(streamStats?.activeConnections || 0) > 0 ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
                   </div>
                   <div className="text-lg">{streamStats?.activeConnections || 0}</div>
-                  <p className="text-xs text-gray-500">SSE Clients</p>
+                  <p className="text-xs text-gray-500">
+                    {streamStats?.aiTraderStreams?.count || 0} AI Trader, {streamStats?.quoteStreams?.count || 0} Quotes
+                  </p>
                 </div>
               </div>
 
@@ -1250,67 +1309,27 @@ export function SettingsPage() {
                     <span className="text-2xl mb-2 block">📭</span>
                     <p className="text-sm">{cacheStats.message || 'Caching nicht aktiviert'}</p>
                   </div>
-                ) : cacheStats ? (
+                ) : cacheStats?.total ? (
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-slate-800/50 rounded p-2">
                       <div className="text-xs text-gray-400">Einträge</div>
-                      <div className="text-lg font-bold">{cacheStats.totalEntries?.toLocaleString() || 0}</div>
+                      <div className="text-lg font-bold">{parseInt(cacheStats.total.total_entries).toLocaleString()}</div>
                     </div>
                     <div className="bg-slate-800/50 rounded p-2">
                       <div className="text-xs text-gray-400">Speicher</div>
-                      <div className="text-lg font-bold">{cacheStats.memoryUsage ? formatBytes(cacheStats.memoryUsage) : 'N/A'}</div>
+                      <div className="text-lg font-bold">{cacheStats.total.cache_size}</div>
                     </div>
-                    {cacheStats.hitRate !== undefined && (
-                      <div className="col-span-2">
-                        <div className="flex justify-between text-xs mb-1">
-                          <span className="text-gray-400">Hit Rate</span>
-                          <span className="text-green-400">{((cacheStats.hitRate || 0) * 100).toFixed(1)}%</span>
-                        </div>
-                        <div className="w-full bg-slate-700 rounded-full h-1.5">
-                          <div 
-                            className="bg-green-500 h-1.5 rounded-full"
-                            style={{ width: `${(cacheStats.hitRate || 0) * 100}%` }}
-                          />
-                        </div>
+                    <div className="bg-slate-800/50 rounded p-2">
+                      <div className="text-xs text-gray-400">Cache Hits</div>
+                      <div className="text-lg font-bold text-green-400">{parseInt(cacheStats.total.total_hits).toLocaleString()}</div>
+                    </div>
+                    <div className="bg-slate-800/50 rounded p-2" title={cacheStats.byType?.map(t => t.cache_type).join(', ') || 'Keine'}>
+                      <div className="text-xs text-gray-400">Cache-Typen</div>
+                      <div className="text-lg font-bold">{cacheStats.byType?.length || 0}</div>
+                      <div className="text-[10px] text-gray-500 truncate">
+                        {cacheStats.byType?.map(t => t.cache_type).join(', ') || '-'}
                       </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-center py-4 text-gray-400 text-sm">Laden...</div>
-                )}
-              </div>
-
-              {/* Rate Limits */}
-              <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
-                <h4 className="font-medium text-white mb-3 flex items-center gap-2">
-                  <span>🚦</span> API Rate Limits
-                </h4>
-                
-                {rateLimits ? (
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {Object.entries(rateLimits).map(([provider, limit]) => {
-                      const percentage = limit.limit > 0 ? (limit.remaining / limit.limit) * 100 : 100;
-                      const isLow = percentage < 20;
-                      
-                      return (
-                        <div key={provider} className="bg-slate-800/50 rounded p-2">
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="text-sm font-medium capitalize">{provider}</span>
-                            <span className={`text-xs ${isLow ? 'text-red-400' : 'text-gray-400'}`}>
-                              {limit.remaining} / {limit.limit}
-                            </span>
-                          </div>
-                          <div className="w-full bg-slate-600 rounded-full h-1">
-                            <div 
-                              className={`h-1 rounded-full transition-all ${
-                                isLow ? 'bg-red-500' : percentage < 50 ? 'bg-yellow-500' : 'bg-green-500'
-                              }`}
-                              style={{ width: `${percentage}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
+                    </div>
                   </div>
                 ) : (
                   <div className="text-center py-4 text-gray-400 text-sm">Laden...</div>
@@ -1328,33 +1347,36 @@ export function SettingsPage() {
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <h5 className="text-sm font-medium">Quote Update Job</h5>
-                        <p className="text-xs text-gray-400">Aktualisiert Kursdaten</p>
+                        <p className="text-xs text-gray-400">Aktualisiert Kursdaten alle {jobStatus.config?.quoteUpdateIntervalSeconds || 60}s</p>
                       </div>
                       <div className={`px-2 py-0.5 rounded text-xs ${
-                        jobStatus.quoteUpdate?.isRunning 
-                          ? 'bg-blue-500/20 text-blue-400' 
+                        jobStatus.isRunning 
+                          ? 'bg-green-500/20 text-green-400' 
                           : 'bg-gray-500/20 text-gray-400'
                       }`}>
-                        {jobStatus.quoteUpdate?.isRunning ? '🔄 Läuft' : '⏸️ Wartend'}
+                        {jobStatus.isRunning ? '✓ Aktiv' : '⏸️ Gestoppt'}
                       </div>
                     </div>
                     
                     <div className="text-xs text-gray-400 space-y-1 mb-2">
-                      {jobStatus.quoteUpdate?.lastRun && (
-                        <p>Letzte: {new Date(jobStatus.quoteUpdate.lastRun).toLocaleString('de-DE')}</p>
+                      {jobStatus.lastQuoteUpdate && (
+                        <p>Letzte: {new Date(jobStatus.lastQuoteUpdate).toLocaleString('de-DE')}</p>
                       )}
-                      {jobStatus.quoteUpdate?.symbolsUpdated !== undefined && (
-                        <p>Symbole aktualisiert: {jobStatus.quoteUpdate.symbolsUpdated}</p>
+                      {jobStatus.stats && (
+                        <p>Updates: {jobStatus.stats.successfulUpdates?.toLocaleString()} erfolgreich, {jobStatus.stats.failedUpdates || 0} fehlgeschlagen</p>
+                      )}
+                      {jobStatus.nextQuoteUpdate && (
+                        <p>Nächste: {new Date(jobStatus.nextQuoteUpdate).toLocaleTimeString('de-DE')}</p>
                       )}
                     </div>
                     
                     {authState.user && (
                       <button
                         onClick={triggerQuoteUpdate}
-                        disabled={jobStatus.quoteUpdate?.isRunning}
-                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed rounded text-xs transition-colors"
+                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs transition-colors"
+                        title="Löst sofort ein Kurs-Update für alle Watchlist-Symbole aus"
                       >
-                        Manuell ausführen
+                        🔄 Jetzt Kurse aktualisieren
                       </button>
                     )}
                   </div>

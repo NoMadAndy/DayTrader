@@ -364,14 +364,18 @@ class RiskManager:
     async def _check_vix(self) -> RiskCheck:
         """Check VIX level (market volatility)"""
         try:
-            # Fetch VIX from backend
+            # Fetch VIX from backend using chart endpoint (quote doesn't work for VIX)
+            import urllib.parse
+            vix_symbol = urllib.parse.quote("^VIX", safe='')
             response = await self.http_client.get(
-                f"{self.backend_url}/api/yahoo/quote/^VIX"
+                f"{self.backend_url}/api/yahoo/chart/{vix_symbol}?period=1d"
             )
             
             if response.status_code == 200:
                 data = response.json()
-                vix_level = data.get('regularMarketPrice', 0)
+                # Chart endpoint returns data in chart.result[0].meta.regularMarketPrice
+                chart_data = data.get('chart', {}).get('result', [{}])[0]
+                vix_level = chart_data.get('meta', {}).get('regularMarketPrice', 0)
                 
                 passed = vix_level < self.config.pause_on_high_vix
                 

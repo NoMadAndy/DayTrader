@@ -8,7 +8,7 @@
  * - Navigate to individual AI trader dashboards
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getAuthState, subscribeToAuth, type AuthState } from '../services/authService';
 import { 
@@ -548,7 +548,7 @@ export default function AITradersPage() {
                     {t('aiTraders.form.signalSources')}
                   </label>
                   <p className="text-xs text-gray-500 mb-3">{t('aiTraders.form.signalSourcesHint')}</p>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <button
                       type="button"
                       onClick={() => setFormUseML(!formUseML)}

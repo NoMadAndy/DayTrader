@@ -59,9 +59,19 @@ class AITraderConfig:
     take_profit_percent: float = 0.10  # 10% take profit
     max_holding_days: Optional[int] = 30
     
+    # Short Selling
+    allow_short_selling: bool = False  # Enable short selling (sell without position)
+    max_short_positions: int = 3  # Maximum number of short positions
+    max_short_exposure: float = 0.30  # Max 30% of portfolio in short positions
+    
     # ML Auto-Training
     auto_train_ml: bool = True  # Automatically train ML models if missing
     ml_training_period: str = "2y"  # Period of data to use for training
+    
+    # Self-Training during Idle
+    self_training_enabled: bool = True  # Enable self-training when idle
+    self_training_interval_minutes: int = 60  # How often to self-train (when idle)
+    self_training_timesteps: int = 10000  # Training steps per self-training session
     
     # Schedule
     schedule_enabled: bool = True
@@ -84,7 +94,7 @@ class AITraderConfig:
 class TradingDecision:
     """Result of a trading decision"""
     symbol: str
-    decision_type: str  # 'buy', 'sell', 'hold', 'close', 'skip'
+    decision_type: str  # 'buy', 'sell', 'hold', 'close', 'skip', 'short'
     confidence: float
     weighted_score: float
     
@@ -317,14 +327,17 @@ class AITraderEngine:
             symbol: Trading symbol
             
         Returns:
-            Decision type: 'buy', 'sell', 'hold', 'close', 'skip'
+            Decision type: 'buy', 'sell', 'hold', 'close', 'skip', 'short'
         """
         score = aggregated.weighted_score
         confidence = aggregated.confidence
         
         # Check if we have an existing position
         positions = portfolio_state.get('positions', {})
-        has_position = symbol in positions and positions[symbol].get('quantity', 0) > 0
+        position = positions.get(symbol, {})
+        position_quantity = position.get('quantity', 0)
+        has_long_position = position_quantity > 0
+        has_short_position = position_quantity < 0
         
         # If confidence below threshold, skip
         if confidence < threshold:
@@ -339,26 +352,78 @@ class AITraderEngine:
             if actual_level < min_level:
                 return 'skip'
         
-        # Make decision based on score
-        if has_position:
-            # We have a position - consider selling
-            if score < -0.3:  # Strong sell signal
-                return 'sell'
-            elif score < 0:  # Weak sell signal
+        # Make decision based on score and position
+        if has_long_position:
+            # We have a LONG position
+            if score < -0.3:  # Strong bearish signal
+                return 'sell'  # Sell the long position
+            elif score < 0:  # Weak bearish signal
                 return 'close'  # Just close position
             else:
-                return 'hold'  # Keep position
+                return 'hold'  # Keep long position
+                
+        elif has_short_position:
+            # We have a SHORT position
+            if score > 0.3:  # Strong bullish signal - bad for short
+                return 'close'  # Close the short (buy to cover)
+            elif score > 0:  # Weak bullish signal
+                return 'close'  # Close to limit losses
+            else:
+                return 'hold'  # Keep short position
+                
         else:
-            # No position - consider buying
-            if score > 0.3:  # Strong buy signal
+            # NO position - consider opening one
+            if score > 0.3:  # Strong bullish signal
                 return 'buy'
-            elif score > 0:  # Weak buy signal but above threshold
+            elif score > 0:  # Weak bullish signal
                 if confidence > threshold + 0.10:  # Need higher confidence
                     return 'buy'
                 else:
                     return 'hold'
+            elif score < -0.3:  # Strong bearish signal
+                # Check if short selling is allowed
+                if self.config.allow_short_selling:
+                    if self._can_open_short(portfolio_state, symbol):
+                        return 'short'  # Open short position
+                return 'hold'
+            elif score < -0.1:  # Moderate bearish signal
+                if self.config.allow_short_selling and confidence > threshold + 0.15:
+                    if self._can_open_short(portfolio_state, symbol):
+                        return 'short'
+                return 'hold'
             else:
                 return 'hold'
+    
+    def _can_open_short(self, portfolio_state: Dict, symbol: str) -> bool:
+        """
+        Check if we can open a new short position.
+        
+        Args:
+            portfolio_state: Current portfolio state
+            symbol: Symbol to short
+            
+        Returns:
+            True if short position can be opened
+        """
+        positions = portfolio_state.get('positions', {})
+        
+        # Count existing short positions
+        short_count = sum(1 for p in positions.values() if p.get('quantity', 0) < 0)
+        if short_count >= self.config.max_short_positions:
+            return False
+        
+        # Check short exposure
+        total_value = portfolio_state.get('total_value', 100000)
+        short_exposure = sum(
+            abs(p.get('market_value', 0)) 
+            for p in positions.values() 
+            if p.get('quantity', 0) < 0
+        )
+        
+        if short_exposure / total_value > self.config.max_short_exposure:
+            return False
+        
+        return True
     
     def _calculate_position_size(
         self,
@@ -378,8 +443,9 @@ class AITraderEngine:
             
         Returns:
             Tuple of (position_size_dollars, quantity_shares)
+            For short positions, quantity is negative.
         """
-        if decision_type not in ['buy', 'sell']:
+        if decision_type not in ['buy', 'sell', 'short']:
             return (0, 0)
         
         if current_price <= 0:
@@ -413,6 +479,10 @@ class AITraderEngine:
         else:
             position_size = self.config.initial_budget * self.config.fixed_position_percent
         
+        # For short positions, use a smaller position size (more conservative)
+        if decision_type == 'short':
+            position_size = position_size * 0.7  # 30% smaller than long positions
+        
         # Ensure position size doesn't exceed available cash
         position_size = min(position_size, cash * 0.95)  # Keep some buffer
         
@@ -423,8 +493,12 @@ class AITraderEngine:
         # Calculate quantity
         quantity = int(position_size / current_price)
         
+        # For short positions, return negative quantity
+        if decision_type == 'short':
+            quantity = -quantity
+        
         # Recalculate actual position size based on whole shares
-        actual_position_size = quantity * current_price
+        actual_position_size = abs(quantity) * current_price
         
         return (actual_position_size, quantity)
     
@@ -443,17 +517,24 @@ class AITraderEngine:
         Returns:
             Tuple of (stop_loss, take_profit)
         """
-        if decision_type not in ['buy']:
+        if decision_type not in ['buy', 'short']:
             return (None, None)
         
         stop_loss = None
         take_profit = None
         
-        if self.config.use_stop_loss:
-            stop_loss = current_price * (1 - self.config.stop_loss_percent)
-        
-        if self.config.use_take_profit:
-            take_profit = current_price * (1 + self.config.take_profit_percent)
+        if decision_type == 'buy':
+            # Long position: stop-loss below, take-profit above
+            if self.config.use_stop_loss:
+                stop_loss = current_price * (1 - self.config.stop_loss_percent)
+            if self.config.use_take_profit:
+                take_profit = current_price * (1 + self.config.take_profit_percent)
+        elif decision_type == 'short':
+            # Short position: stop-loss above, take-profit below (inverted)
+            if self.config.use_stop_loss:
+                stop_loss = current_price * (1 + self.config.stop_loss_percent)  # Stop above
+            if self.config.use_take_profit:
+                take_profit = current_price * (1 - self.config.take_profit_percent)  # Target below
         
         return (stop_loss, take_profit)
     
@@ -544,15 +625,21 @@ class AITraderEngine:
         
         elif decision_type == 'buy':
             if risk_result.all_passed:
-                return f"{symbol}: BUY - Strong signals ({aggregated.agreement} agreement, {aggregated.confidence:.0%} confidence)"
+                return f"{symbol}: BUY - Strong bullish signals ({aggregated.agreement} agreement, {aggregated.confidence:.0%} confidence)"
             else:
                 return f"{symbol}: BUY blocked - Risk checks failed"
         
+        elif decision_type == 'short':
+            if risk_result.all_passed:
+                return f"{symbol}: SHORT - Strong bearish signals ({aggregated.agreement} agreement, {aggregated.confidence:.0%} confidence)"
+            else:
+                return f"{symbol}: SHORT blocked - Risk checks failed"
+        
         elif decision_type == 'sell':
-            return f"{symbol}: SELL - Negative signals ({aggregated.agreement} agreement)"
+            return f"{symbol}: SELL - Closing long position due to bearish signals ({aggregated.agreement} agreement)"
         
         elif decision_type == 'close':
-            return f"{symbol}: CLOSE position - Weak sell signal"
+            return f"{symbol}: CLOSE position - Weak opposing signal"
         
         else:  # hold
             return f"{symbol}: HOLD - No strong signal"

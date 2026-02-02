@@ -19,6 +19,10 @@ export interface AITraderRiskConfig {
   maxDrawdown: number;
   stopLossPercent: number;
   takeProfitPercent: number;
+  /** Allow short selling (betting on price decrease) */
+  allowShortSelling?: boolean;
+  maxShortPositions?: number;
+  maxShortExposure?: number;
 }
 
 export interface AITraderSignalWeights {
@@ -41,7 +45,8 @@ export interface AITraderTradingConfig {
 
 export interface AITraderScheduleConfig {
   enabled: boolean;
-  checkIntervalMinutes: number;
+  checkIntervalMinutes?: number;
+  checkIntervalSeconds?: number;  // Alternative: interval in seconds
   tradingHoursOnly: boolean;
   timezone: string;
   tradingDays?: string[];
@@ -68,6 +73,16 @@ export interface AITraderLearningConfig {
   minSamples?: number;
 }
 
+export interface AITraderMLConfig {
+  autoTrain?: boolean;
+}
+
+export interface AITraderSelfTrainingConfig {
+  enabled: boolean;
+  intervalMinutes: number;
+  timesteps: number;
+}
+
 export interface AITraderPersonality {
   capital: AITraderCapitalConfig;
   risk: AITraderRiskConfig;
@@ -77,6 +92,10 @@ export interface AITraderPersonality {
   watchlist: AITraderWatchlistConfig;
   sentiment: AITraderSentimentConfig;
   learning: AITraderLearningConfig;
+  /** ML service configuration */
+  ml?: AITraderMLConfig;
+  /** Self-training configuration */
+  selfTraining?: AITraderSelfTrainingConfig;
   /** Name of the RL agent to use for signals (optional) */
   rlAgentName?: string;
 }
@@ -118,7 +137,7 @@ export interface AITrader {
 // Decision & Reasoning Types
 // ============================================================================
 
-export type DecisionType = 'buy' | 'sell' | 'hold' | 'close' | 'skip';
+export type DecisionType = 'buy' | 'sell' | 'hold' | 'close' | 'skip' | 'short';
 export type SignalAgreement = 'strong' | 'moderate' | 'weak' | 'mixed';
 
 export interface TradeReasoning {
@@ -363,6 +382,7 @@ export interface AITraderEvent {
 export interface SignalDetail {
   score: number;
   confidence: number;
+  weight?: number;
   prediction?: string;
   action?: string;
   sentiment?: string;

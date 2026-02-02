@@ -652,7 +652,7 @@ export function TradingPortfolioPage() {
             }`}
           >
             <span>{tab.icon}</span>
-            <span className="hidden xs:inline">{tab.label}</span>
+            <span className="hidden sm:inline">{tab.label}</span>
             {tab.badge && (
               <span className="px-1 py-0.5 text-[10px] bg-blue-500 rounded-full min-w-[16px]">{tab.badge}</span>
             )}
@@ -666,7 +666,7 @@ export function TradingPortfolioPage() {
         {activeTab === 'trading' && (
           <div className="w-full space-y-3 sm:space-y-4">
             {/* Top Row: Order Panel + Pending Orders + Quick Stats */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
               {/* Order Panel */}
               <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4 space-y-3 sm:space-y-4">
                 <h2 className="text-base sm:text-lg font-semibold">Neue Order</h2>

@@ -386,17 +386,29 @@ export { broadcastQuoteUpdate };
  * GET /api/stream/stats
  */
 app.get('/api/stream/stats', (req, res) => {
-  const clients = [];
+  // Quote stream clients
+  const quoteClients = [];
   for (const [clientId, client] of sseClients.entries()) {
-    clients.push({
+    quoteClients.push({
       clientId,
       symbols: client.symbols,
       connectedAt: client.connectedAt,
     });
   }
+  
+  // AI Trader stream clients
+  const aiTraderStats = aiTraderEvents.getStats();
+  
   res.json({ 
-    activeConnections: sseClients.size,
-    clients,
+    activeConnections: sseClients.size + aiTraderStats.activeClients,
+    quoteStreams: {
+      count: sseClients.size,
+      clients: quoteClients,
+    },
+    aiTraderStreams: {
+      count: aiTraderStats.activeClients,
+      clients: aiTraderStats.clients,
+    },
   });
 });
 
@@ -2077,11 +2089,39 @@ app.post('/api/ml/sentiment/analyze/batch', express.json({ limit: '5mb' }), asyn
  * 
  * Fetches news for a symbol and analyzes sentiment using FinBERT.
  * Used by AI Trader for sentiment signals.
+ * Falls back to sentiment archive if no fresh data available.
  * 
  * GET /api/ml/sentiment/:symbol
  */
 app.get('/api/ml/sentiment/:symbol', async (req, res) => {
   const { symbol } = req.params;
+  
+  // Helper to get archived sentiment as fallback
+  const getArchivedFallback = async () => {
+    try {
+      const archived = await sentimentArchive.getLatestSentiment(symbol);
+      if (archived && archived.score !== undefined) {
+        const ageMinutes = (Date.now() - new Date(archived.analyzedAt).getTime()) / (1000 * 60);
+        // Use archive if less than 24 hours old
+        if (ageMinutes < 60 * 24) {
+          console.log(`[Sentiment] Using archived sentiment for ${symbol} (${Math.round(ageMinutes)} min old)`);
+          return {
+            symbol: symbol.toUpperCase(),
+            sentiment: archived.sentiment,
+            score: archived.score,
+            confidence: archived.confidence * 0.9, // Slightly reduce confidence for archived data
+            news_count: archived.newsCount,
+            sources: archived.sources || [],
+            message: `Using archived sentiment (${Math.round(ageMinutes)} min old)`,
+            is_archived: true
+          };
+        }
+      }
+    } catch (archiveErr) {
+      console.warn(`[Sentiment] Archive fallback error:`, archiveErr.message);
+    }
+    return null;
+  };
   
   try {
     // Check cache first
@@ -2214,8 +2254,13 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
       }
     }
     
-    // If no news found, return neutral sentiment
+    // If no news found, try archived sentiment first
     if (newsTexts.length === 0) {
+      const archivedFallback = await getArchivedFallback();
+      if (archivedFallback) {
+        return res.json(archivedFallback);
+      }
+      
       const neutralResult = {
         symbol: symbol.toUpperCase(),
         sentiment: 'neutral',
@@ -2225,8 +2270,8 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
         sources: [],
         message: 'No recent news found for sentiment analysis (no API keys or no news available)'
       };
-      // Cache for 60 minutes (was 10 min)
-      await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), neutralResult, 'combined', 3600);
+      // Cache for only 15 minutes if no news (try again sooner)
+      await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), neutralResult, 'combined', 900);
       return res.json(neutralResult);
     }
     
@@ -2242,9 +2287,15 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
       console.warn(`[Sentiment] ML service status check failed:`, statusErr.message);
     }
     
-    // If ML model not loaded, return neutral with news count
+    // If ML model not loaded, try archived sentiment first
     if (!mlModelLoaded) {
-      console.warn(`[Sentiment] FinBERT model not loaded, returning neutral sentiment for ${symbol}`);
+      console.warn(`[Sentiment] FinBERT model not loaded for ${symbol}`);
+      
+      const archivedFallback = await getArchivedFallback();
+      if (archivedFallback) {
+        return res.json(archivedFallback);
+      }
+      
       const neutralResult = {
         symbol: symbol.toUpperCase(),
         sentiment: 'neutral',
@@ -2254,8 +2305,8 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
         sources: sources.slice(0, 5),
         message: 'Sentiment model not available (FinBERT not loaded)'
       };
-      // Cache for 60 minutes (was 5 min)
-      await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), neutralResult, 'combined', 3600);
+      // Cache for only 10 minutes (model might load soon)
+      await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), neutralResult, 'combined', 600);
       return res.json(neutralResult);
     }
     
@@ -2273,8 +2324,13 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
     const mlData = await mlResponse.json();
     const results = (mlData.results || []).filter(r => r !== null);
     
-    // If all results failed, return neutral
+    // If all results failed, try archived sentiment
     if (results.length === 0) {
+      const archivedFallback = await getArchivedFallback();
+      if (archivedFallback) {
+        return res.json(archivedFallback);
+      }
+      
       const neutralResult = {
         symbol: symbol.toUpperCase(),
         sentiment: 'neutral',
@@ -2284,8 +2340,8 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
         sources: sources.slice(0, 5),
         message: 'Sentiment analysis returned no valid results'
       };
-      // Cache for 60 minutes (was 5 min)
-      await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), neutralResult, 'combined', 3600);
+      // Cache for only 15 minutes
+      await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), neutralResult, 'combined', 900);
       return res.json(neutralResult);
     }
     
@@ -2339,6 +2395,15 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
     
   } catch (error) {
     console.error(`[Sentiment] Error analyzing ${symbol}:`, error.message);
+    
+    // Try archived sentiment as final fallback
+    const archivedFallback = await getArchivedFallback();
+    if (archivedFallback) {
+      archivedFallback.error_recovered = true;
+      archivedFallback.original_error = error.message;
+      return res.json(archivedFallback);
+    }
+    
     res.status(500).json({
       symbol: symbol.toUpperCase(),
       sentiment: 'neutral',
@@ -4026,6 +4091,32 @@ app.get('/api/ai-traders/:id/decisions/:did', async (req, res) => {
 });
 
 /**
+ * Delete AI trader decision
+ * DELETE /api/ai-traders/:id/decisions/:did
+ */
+app.delete('/api/ai-traders/:id/decisions/:did', async (req, res) => {
+  try {
+    const traderId = parseInt(req.params.id);
+    const decisionId = parseInt(req.params.did);
+    
+    // Verify the decision belongs to this trader
+    const decision = await aiTrader.getDecision(decisionId);
+    if (!decision || decision.ai_trader_id !== traderId) {
+      return res.status(404).json({ error: 'Decision not found' });
+    }
+    
+    // Delete the decision
+    await query('DELETE FROM ai_trader_decisions WHERE id = $1', [decisionId]);
+    
+    console.log(`[AI Trader] Deleted decision ${decisionId} for trader ${traderId}`);
+    res.json({ success: true, message: 'Decision deleted' });
+  } catch (e) {
+    console.error('Delete decision error:', e);
+    res.status(500).json({ error: 'Failed to delete decision' });
+  }
+});
+
+/**
  * Get AI trader portfolio summary
  * GET /api/ai-traders/:id/portfolio
  */
@@ -4115,82 +4206,151 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
       portfolio = await aiTrader.createAITraderPortfolio(traderId, initialCapital);
     }
     
-    if (action === 'buy') {
-      // Check if we have enough cash
-      const cost = quantity * price;
-      if (cost > portfolio.cash_balance) {
-        return res.status(400).json({ error: 'Insufficient funds', required: cost, available: portfolio.cash_balance });
+    // Use direct SQL queries for AI trader position management
+    const client = await db.getClient();
+    
+    try {
+      await client.query('BEGIN');
+      
+      if (action === 'buy' || action === 'short') {
+        // Check if we have enough cash
+        const cost = Math.abs(quantity) * price;
+        if (cost > parseFloat(portfolio.cash_balance)) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'Insufficient funds', required: cost, available: portfolio.cash_balance });
+        }
+        
+        // Check if position already exists
+        const existingPos = await client.query(
+          `SELECT * FROM positions WHERE portfolio_id = $1 AND symbol = $2 AND is_open = true`,
+          [portfolio.id, symbol]
+        );
+        
+        let position;
+        const side = action === 'short' ? 'short' : 'long';
+        
+        if (existingPos.rows.length > 0 && existingPos.rows[0].side === side) {
+          // Add to existing position (average up/down)
+          const existing = existingPos.rows[0];
+          const newQuantity = parseFloat(existing.quantity) + Math.abs(quantity);
+          const newAvgPrice = ((parseFloat(existing.quantity) * parseFloat(existing.entry_price)) + (Math.abs(quantity) * price)) / newQuantity;
+          
+          const updateResult = await client.query(
+            `UPDATE positions SET quantity = $1, entry_price = $2, updated_at = NOW()
+             WHERE id = $3 RETURNING *`,
+            [newQuantity, newAvgPrice, existing.id]
+          );
+          position = updateResult.rows[0];
+        } else {
+          // Create new position
+          const insertResult = await client.query(
+            `INSERT INTO positions (portfolio_id, symbol, side, quantity, entry_price, current_price, 
+             stop_loss, take_profit, product_type, is_open, close_reason, opened_at)
+             VALUES ($1, $2, $3, $4, $5, $5, $6, $7, 'stock', true, $8, NOW())
+             RETURNING *`,
+            [portfolio.id, symbol, side, Math.abs(quantity), price, stop_loss, take_profit, reasoning]
+          );
+          position = insertResult.rows[0];
+        }
+        
+        // Update portfolio cash
+        await client.query(
+          `UPDATE portfolios SET cash_balance = cash_balance - $1, updated_at = NOW() WHERE id = $2`,
+          [cost, portfolio.id]
+        );
+        
+        await client.query('COMMIT');
+        
+        // Update trader stats
+        await aiTrader.updateAITrader(traderId, {
+          status_message: `${action === 'short' ? 'Shorted' : 'Bought'} ${quantity} ${symbol} @ $${price.toFixed(2)}`
+        });
+        
+        // Emit SSE event for real-time UI updates
+        emitTradeExecuted(traderId, traderName, {
+          symbol,
+          action,
+          quantity,
+          price,
+          cost,
+        });
+        
+        res.status(201).json({ success: true, position, action });
+        
+      } else if (action === 'sell' || action === 'close') {
+        // Get existing position
+        const positionsResult = await client.query(
+          `SELECT * FROM positions WHERE portfolio_id = $1 AND symbol = $2 AND is_open = true`,
+          [portfolio.id, symbol]
+        );
+        
+        if (positionsResult.rows.length === 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'No position to sell' });
+        }
+        
+        const position = positionsResult.rows[0];
+        const entryPrice = parseFloat(position.entry_price);
+        const positionQty = parseFloat(position.quantity);
+        
+        // Calculate P&L based on position side
+        let pnl, pnlPercent;
+        if (position.side === 'short') {
+          // Short position: profit when price goes down
+          pnl = (entryPrice - price) * positionQty;
+          pnlPercent = ((entryPrice - price) / entryPrice * 100);
+        } else {
+          // Long position: profit when price goes up
+          pnl = (price - entryPrice) * positionQty;
+          pnlPercent = ((price - entryPrice) / entryPrice * 100);
+        }
+        
+        // Close position
+        await client.query(
+          `UPDATE positions SET is_open = false, close_price = $1, closed_at = NOW(),
+           realized_pnl = $2, close_reason = $3
+           WHERE id = $4`,
+          [price, pnl, reasoning || action, position.id]
+        );
+        
+        // Update portfolio cash (add back margin + P&L)
+        const proceeds = (entryPrice * positionQty) + pnl;
+        await client.query(
+          `UPDATE portfolios SET cash_balance = cash_balance + $1, updated_at = NOW() WHERE id = $2`,
+          [proceeds, portfolio.id]
+        );
+        
+        await client.query('COMMIT');
+        
+        // Update trader stats
+        await aiTrader.updateAITrader(traderId, {
+          status_message: `Closed ${position.side} ${positionQty} ${symbol} @ $${price.toFixed(2)} (${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%)`
+        });
+        
+        // Emit SSE event for real-time UI updates
+        emitTradeExecuted(traderId, traderName, {
+          symbol,
+          action: action === 'close' ? 'close' : 'sell',
+          quantity: positionQty,
+          price,
+          proceeds,
+          pnl: pnlPercent.toFixed(2),
+        });
+        
+        res.status(200).json({ success: true, position: { ...position, close_price: price, realized_pnl: pnl }, action, pnl, pnlPercent });
+      } else {
+        await client.query('ROLLBACK');
+        res.status(400).json({ error: 'Invalid action. Use buy, sell, short, or close.' });
       }
-      
-      // Create or update position
-      const position = await trading.openPosition(portfolio.id, {
-        symbol,
-        quantity,
-        entryPrice: price,
-        stopLoss: stop_loss,
-        takeProfit: take_profit,
-        notes: reasoning
-      });
-      
-      // Update portfolio cash
-      await trading.updatePortfolioCash(portfolio.id, -cost);
-      
-      // Update trader stats
-      await aiTrader.updateAITrader(traderId, {
-        status_message: `Bought ${quantity} ${symbol} @ $${price.toFixed(2)}`
-      });
-      
-      // Emit SSE event for real-time UI updates
-      emitTradeExecuted(traderId, traderName, {
-        symbol,
-        action: 'buy',
-        quantity,
-        price,
-        cost,
-      });
-      
-      res.status(201).json({ success: true, position, action: 'buy' });
-    } else if (action === 'sell' || action === 'close') {
-      // Get existing position
-      const positions = await trading.getOpenPositionsByPortfolio(portfolio.id);
-      const position = positions.find(p => p.symbol === symbol);
-      
-      if (!position) {
-        return res.status(400).json({ error: 'No position to sell' });
-      }
-      
-      // Close position
-      const closedPosition = await trading.closePosition(position.id, price, 'AI Trader decision: ' + (reasoning || action));
-      
-      // Update portfolio cash
-      const proceeds = quantity * price;
-      await trading.updatePortfolioCash(portfolio.id, proceeds);
-      
-      // Calculate P&L
-      const pnl = ((price - position.entry_price) / position.entry_price * 100).toFixed(2);
-      
-      // Update trader stats
-      await aiTrader.updateAITrader(traderId, {
-        status_message: `Sold ${quantity} ${symbol} @ $${price.toFixed(2)}`
-      });
-      
-      // Emit SSE event for real-time UI updates
-      emitTradeExecuted(traderId, traderName, {
-        symbol,
-        action: action === 'close' ? 'close' : 'sell',
-        quantity,
-        price,
-        proceeds,
-        pnl,
-      });
-      
-      res.status(200).json({ success: true, position: closedPosition, action });
-    } else {
-      res.status(400).json({ error: 'Invalid action. Use buy, sell, or close.' });
+    } catch (txError) {
+      await client.query('ROLLBACK');
+      throw txError;
+    } finally {
+      client.release();
     }
   } catch (e) {
     console.error('Execute trade error:', e);
-    res.status(500).json({ error: 'Failed to execute trade' });
+    res.status(500).json({ error: 'Failed to execute trade', details: e.message });
   }
 });
 
