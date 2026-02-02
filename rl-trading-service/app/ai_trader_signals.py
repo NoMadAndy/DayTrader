@@ -112,8 +112,14 @@ class SignalAggregator:
         agreement = self._calculate_agreement(scores)
         
         # Calculate confidence based on agreement and individual confidences
+        # Only consider signals with valid confidence (> 0.05)
         confidences = [ml_conf, rl_conf, sentiment_conf, technical_conf]
-        avg_confidence = np.mean(confidences)
+        valid_confidences = [c for c in confidences if c > 0.05]
+        
+        if valid_confidences:
+            avg_confidence = np.mean(valid_confidences)
+        else:
+            avg_confidence = 0.3  # Fallback if no valid confidences
         
         # Adjust confidence based on agreement
         if agreement == 'strong':
@@ -121,9 +127,9 @@ class SignalAggregator:
         elif agreement == 'moderate':
             confidence = avg_confidence
         elif agreement == 'weak':
-            confidence = avg_confidence * 0.8
+            confidence = avg_confidence * 0.85  # Less harsh penalty
         else:  # mixed
-            confidence = avg_confidence * 0.6
+            confidence = avg_confidence * 0.7  # Less harsh penalty
         
         # Build market context
         market_context = {

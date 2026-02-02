@@ -120,6 +120,8 @@ async def resume_running_traders():
                         'sentiment_weight': signal_weights.get('sentiment', 0.25),
                         'technical_weight': signal_weights.get('technical', 0.25),
                         'min_confidence': personality.get('trading', {}).get('minConfidence', 0.65),
+                        'require_multiple_confirmation': personality.get('signals', {}).get('requireMultipleConfirmation', False),
+                        'min_signal_agreement': 'weak',  # Allow weak agreement
                         'rl_agent_name': personality.get('rlAgentName'),
                         # Additional config from personality
                         'schedule_enabled': personality.get('schedule', {}).get('enabled', True),
@@ -128,6 +130,10 @@ async def resume_running_traders():
                         'self_training_enabled': personality.get('rl', {}).get('selfTrainingEnabled', True),
                         'self_training_interval_minutes': personality.get('rl', {}).get('selfTrainingIntervalMinutes', 60),
                         'self_training_timesteps': personality.get('rl', {}).get('selfTrainingTimesteps', 10000),
+                        # Short selling config
+                        'allow_short_selling': personality.get('risk', {}).get('allowShortSelling', False),
+                        'max_short_positions': personality.get('risk', {}).get('maxShortPositions', 3),
+                        'max_short_exposure': personality.get('risk', {}).get('maxShortExposure', 0.30),
                     }
                     
                     logger.info(f"resume_running_traders: Config for trader {trader_id}: rl_agent_name={config.get('rl_agent_name')}, symbols={len(config.get('symbols', []))} items")

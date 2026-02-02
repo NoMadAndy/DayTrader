@@ -3830,6 +3830,9 @@ app.post('/api/ai-traders/:id/start', authMiddleware, async (req, res) => {
       // Trading settings
       min_confidence: p.trading?.minConfidence || 0.6,
       max_positions: p.trading?.maxOpenPositions || 5,
+      // Signal agreement settings
+      require_multiple_confirmation: p.signals?.requireMultipleConfirmation ?? false,  // Disable by default for now
+      min_signal_agreement: 'weak',  // Allow weak agreement
       // Risk settings
       risk_tolerance: p.risk?.tolerance || 'moderate',
       max_drawdown: (p.risk?.maxDrawdown || 15) / 100,
@@ -3855,6 +3858,10 @@ app.post('/api/ai-traders/:id/start', authMiddleware, async (req, res) => {
       self_training_enabled: p.rl?.selfTrainingEnabled ?? true,
       self_training_interval_minutes: p.rl?.selfTrainingIntervalMinutes || 60,
       self_training_timesteps: p.rl?.selfTrainingTimesteps || 10000,
+      // Short Selling
+      allow_short_selling: p.risk?.allowShortSelling ?? false,
+      max_short_positions: p.risk?.maxShortPositions || 3,
+      max_short_exposure: p.risk?.maxShortExposure || 0.30,
     };
     
     // Log the config being sent (for debugging)
