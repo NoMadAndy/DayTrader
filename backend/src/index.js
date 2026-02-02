@@ -18,7 +18,7 @@ import { registerUser, loginUser, logoutUser, authMiddleware, optionalAuthMiddle
 import { getUserSettings, updateUserSettings, getCustomSymbols, addCustomSymbol, removeCustomSymbol, syncCustomSymbols } from './userSettings.js';
 import * as trading from './trading.js';
 import * as aiTrader from './aiTrader.js';
-import { aiTraderEvents, emitStatusChanged, emitError } from './aiTraderEvents.js';
+import { aiTraderEvents, emitStatusChanged, emitDecisionMade, emitAnalyzing, emitTradeExecuted, emitError } from './aiTraderEvents.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -56,6 +56,15 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
+
+// Disable caching for all API endpoints to ensure fresh data
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  next();
+});
 
 // Request logging
 app.use((req, res, next) => {
@@ -1875,6 +1884,217 @@ app.post('/api/ml/sentiment/analyze/batch', express.json({ limit: '5mb' }), asyn
   }
 });
 
+/**
+ * Combined Sentiment Analysis for Symbol
+ * 
+ * Fetches news for a symbol and analyzes sentiment using FinBERT.
+ * Used by AI Trader for sentiment signals.
+ * 
+ * GET /api/ml/sentiment/:symbol
+ */
+app.get('/api/ml/sentiment/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  
+  try {
+    // Check cache first
+    const cacheKey = `sentiment:combined:${symbol.toUpperCase()}`;
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached && cached.data) {
+      console.log(`[Sentiment] Cache hit for ${symbol}`);
+      return res.json(cached.data);
+    }
+    
+    // Fetch news from multiple sources
+    const newsTexts = [];
+    const sources = [];
+    
+    // Get API keys from any user settings (for internal AI Trader use)
+    let finnhubApiKey = null;
+    let marketauxApiKey = null;
+    
+    try {
+      const apiKeyResult = await db.query(
+        `SELECT api_keys FROM user_settings WHERE api_keys IS NOT NULL LIMIT 1`
+      );
+      if (apiKeyResult.rows.length > 0) {
+        const apiKeys = apiKeyResult.rows[0].api_keys || {};
+        finnhubApiKey = apiKeys.finnhub || null;
+        marketauxApiKey = apiKeys.marketaux || null;
+      }
+    } catch (dbErr) {
+      console.warn(`[Sentiment] Could not fetch API keys from DB:`, dbErr.message);
+    }
+    
+    // Try Finnhub first
+    if (finnhubApiKey) {
+      try {
+        const to = new Date().toISOString().split('T')[0];
+        const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const finnhubUrl = `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(symbol)}&from=${from}&to=${to}&token=${finnhubApiKey}`;
+        const response = await fetch(finnhubUrl);
+        if (response.ok) {
+          const news = await response.json();
+          if (Array.isArray(news)) {
+            news.slice(0, 10).forEach(item => {
+              if (item.headline) {
+                newsTexts.push(item.headline);
+                sources.push({ source: 'finnhub', headline: item.headline });
+              }
+            });
+          }
+        }
+      } catch (err) {
+        console.warn(`[Sentiment] Finnhub error for ${symbol}:`, err.message);
+      }
+    }
+    
+    // Try Marketaux as backup
+    if (marketauxApiKey && newsTexts.length < 5) {
+      try {
+        const marketauxUrl = `https://api.marketaux.com/v1/news/all?symbols=${encodeURIComponent(symbol)}&filter_entities=true&language=en&api_token=${marketauxApiKey}`;
+        const response = await fetch(marketauxUrl);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.data && Array.isArray(data.data)) {
+            data.data.slice(0, 10).forEach(item => {
+              if (item.title && !newsTexts.includes(item.title)) {
+                newsTexts.push(item.title);
+                sources.push({ source: 'marketaux', headline: item.title });
+              }
+            });
+          }
+        }
+      } catch (err) {
+        console.warn(`[Sentiment] Marketaux error for ${symbol}:`, err.message);
+      }
+    }
+    
+    // If no news found, return neutral sentiment
+    if (newsTexts.length === 0) {
+      const neutralResult = {
+        symbol: symbol.toUpperCase(),
+        sentiment: 'neutral',
+        score: 0,
+        confidence: 0,
+        news_count: 0,
+        sources: [],
+        message: 'No recent news found for sentiment analysis (no API keys or no news available)'
+      };
+      await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), neutralResult, 'combined', 600);
+      return res.json(neutralResult);
+    }
+    
+    // Check if ML service sentiment model is loaded first
+    let mlModelLoaded = false;
+    try {
+      const statusResponse = await fetch(`${ML_SERVICE_URL}/api/ml/sentiment/status`);
+      if (statusResponse.ok) {
+        const statusData = await statusResponse.json();
+        mlModelLoaded = statusData.loaded === true;
+      }
+    } catch (statusErr) {
+      console.warn(`[Sentiment] ML service status check failed:`, statusErr.message);
+    }
+    
+    // If ML model not loaded, return neutral with news count
+    if (!mlModelLoaded) {
+      console.warn(`[Sentiment] FinBERT model not loaded, returning neutral sentiment for ${symbol}`);
+      const neutralResult = {
+        symbol: symbol.toUpperCase(),
+        sentiment: 'neutral',
+        score: 0,
+        confidence: 0.3,
+        news_count: newsTexts.length,
+        sources: sources.slice(0, 5),
+        message: 'Sentiment model not available (FinBERT not loaded)'
+      };
+      await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), neutralResult, 'combined', 300);
+      return res.json(neutralResult);
+    }
+    
+    // Analyze sentiment using ML service batch endpoint
+    const mlResponse = await fetch(`${ML_SERVICE_URL}/api/ml/sentiment/analyze/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texts: newsTexts })
+    });
+    
+    if (!mlResponse.ok) {
+      throw new Error(`ML Service returned ${mlResponse.status}`);
+    }
+    
+    const mlData = await mlResponse.json();
+    const results = (mlData.results || []).filter(r => r !== null);
+    
+    // If all results failed, return neutral
+    if (results.length === 0) {
+      const neutralResult = {
+        symbol: symbol.toUpperCase(),
+        sentiment: 'neutral',
+        score: 0,
+        confidence: 0.3,
+        news_count: newsTexts.length,
+        sources: sources.slice(0, 5),
+        message: 'Sentiment analysis returned no valid results'
+      };
+      await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), neutralResult, 'combined', 300);
+      return res.json(neutralResult);
+    }
+    
+    // Aggregate sentiment scores
+    let totalScore = 0;
+    let totalConfidence = 0;
+    let positiveCount = 0;
+    let negativeCount = 0;
+    let neutralCount = 0;
+    
+    results.forEach(r => {
+      totalScore += r.score || 0;
+      totalConfidence += r.confidence || 0;
+      if (r.sentiment === 'positive') positiveCount++;
+      else if (r.sentiment === 'negative') negativeCount++;
+      else neutralCount++;
+    });
+    
+    const avgScore = results.length > 0 ? totalScore / results.length : 0;
+    const avgConfidence = results.length > 0 ? totalConfidence / results.length : 0;
+    
+    // Determine overall sentiment
+    let overallSentiment = 'neutral';
+    if (avgScore > 0.1) overallSentiment = 'positive';
+    else if (avgScore < -0.1) overallSentiment = 'negative';
+    
+    const result = {
+      symbol: symbol.toUpperCase(),
+      sentiment: overallSentiment,
+      score: parseFloat(avgScore.toFixed(4)),
+      confidence: parseFloat(avgConfidence.toFixed(4)),
+      news_count: newsTexts.length,
+      positive_count: positiveCount,
+      negative_count: negativeCount,
+      neutral_count: neutralCount,
+      sources: sources.slice(0, 5)  // Limit to first 5 sources
+    };
+    
+    // Cache for 10 minutes
+    await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), result, 'combined', 600);
+    console.log(`[Sentiment] Analyzed ${newsTexts.length} news items for ${symbol}: ${overallSentiment} (${avgScore.toFixed(3)})`);
+    
+    res.json(result);
+    
+  } catch (error) {
+    console.error(`[Sentiment] Error analyzing ${symbol}:`, error.message);
+    res.status(500).json({
+      symbol: symbol.toUpperCase(),
+      sentiment: 'neutral',
+      score: 0,
+      confidence: 0,
+      news_count: 0,
+      error: error.message
+    });
+  }
+});
+
 // ============================================================================
 // RL Trading Service proxy endpoints
 // ============================================================================
@@ -3219,22 +3439,40 @@ app.post('/api/ai-traders/:id/start', authMiddleware, async (req, res) => {
     // Update status in database
     const trader = await aiTrader.startAITrader(traderId);
     
-    // Build config from trader.personality
+    // Build config from trader.personality (nested structure)
+    const p = trader.personality || {};
     const config = {
       name: trader.name,
-      initial_budget: trader.personality?.initialBudget || 100000,
-      symbols: trader.personality?.symbols || ['AAPL', 'MSFT', 'GOOGL'],
-      rl_agent_name: trader.personality?.rlAgentName || null,
-      check_interval: trader.personality?.checkInterval || 5,
-      min_confidence: trader.personality?.minConfidence || 0.6,
-      risk_tolerance: trader.personality?.riskTolerance || 'moderate',
-      position_sizing: trader.personality?.positionSizing || 'fixed',
-      max_position_pct: trader.personality?.maxPositionPct || 0.1,
-      max_portfolio_risk: trader.personality?.maxPortfolioRisk || 0.2,
-      schedule_enabled: trader.personality?.scheduleEnabled ?? true,
-      trading_start: trader.personality?.tradingStart || '09:30',
-      trading_end: trader.personality?.tradingEnd || '16:00',
-      timezone: trader.personality?.timezone || 'America/New_York',
+      // Capital
+      initial_budget: p.capital?.initialBudget || 100000,
+      max_position_size: (p.capital?.maxPositionSize || 25) / 100, // Convert percent to decimal
+      reserve_cash: (p.capital?.reserveCashPercent || 10) / 100,
+      // Symbols from watchlist
+      symbols: p.watchlist?.symbols || ['AAPL', 'MSFT', 'GOOGL'],
+      // RL agent
+      rl_agent_name: p.rlAgentName || null,
+      // Trading settings
+      min_confidence: p.trading?.minConfidence || 0.6,
+      max_positions: p.trading?.maxOpenPositions || 5,
+      // Risk settings
+      risk_tolerance: p.risk?.tolerance || 'moderate',
+      max_drawdown: (p.risk?.maxDrawdown || 15) / 100,
+      stop_loss_percent: (p.risk?.stopLossPercent || 5) / 100,
+      take_profit_percent: (p.risk?.takeProfitPercent || 10) / 100,
+      // Signal weights
+      ml_weight: p.signals?.weights?.ml || 0.25,
+      rl_weight: p.signals?.weights?.rl || 0.25,
+      sentiment_weight: p.signals?.weights?.sentiment || 0.25,
+      technical_weight: p.signals?.weights?.technical || 0.25,
+      // Schedule settings
+      schedule_enabled: p.schedule?.enabled ?? true,
+      check_interval: p.schedule?.checkIntervalMinutes || 15,
+      trading_start: p.schedule?.tradingStart || '09:00',
+      trading_end: p.schedule?.tradingEnd || '17:30',
+      timezone: p.schedule?.timezone || 'Europe/Berlin',
+      trading_days: p.schedule?.tradingDays || ['mon', 'tue', 'wed', 'thu', 'fri'],
+      avoid_market_open: p.schedule?.avoidMarketOpenMinutes || 15,
+      avoid_market_close: p.schedule?.avoidMarketCloseMinutes || 15,
     };
     
     // Call RL Trading Service to start the trading loop
@@ -3377,6 +3615,80 @@ app.get('/api/ai-traders/:id/decisions', async (req, res) => {
 });
 
 /**
+ * Record AI trader decision (from RL service)
+ * POST /api/ai-traders/:id/decisions
+ */
+app.post('/api/ai-traders/:id/decisions', async (req, res) => {
+  try {
+    const traderId = parseInt(req.params.id);
+    const {
+      symbol,
+      decision_type,
+      confidence,
+      weighted_score,
+      ml_score,
+      rl_score,
+      sentiment_score,
+      technical_score,
+      signal_agreement,
+      reasoning,
+      summary,
+      quantity,
+      price,
+      stop_loss,
+      take_profit,
+      risk_checks_passed,
+      risk_warnings,
+      risk_blockers,
+      timestamp
+    } = req.body;
+    
+    const decision = await aiTrader.logDecision(traderId, {
+      symbol,
+      decisionType: decision_type,
+      reasoning: {
+        ...reasoning,
+        quantity,
+        price,
+        stop_loss,
+        take_profit,
+        risk_checks_passed,
+        risk_warnings,
+        risk_blockers
+      },
+      confidence,
+      weightedScore: weighted_score,
+      mlScore: ml_score,
+      rlScore: rl_score,
+      sentimentScore: sentiment_score,
+      technicalScore: technical_score,
+      signalAgreement: signal_agreement,
+      summaryShort: summary
+    });
+    
+    // Emit SSE event for real-time UI updates
+    const trader = await aiTrader.getAITrader(traderId);
+    const traderName = trader?.name || `Trader #${traderId}`;
+    emitDecisionMade(traderId, traderName, {
+      symbol,
+      decisionType: decision_type,
+      confidence,
+      weightedScore: weighted_score,
+      mlScore: ml_score,
+      rlScore: rl_score,
+      sentimentScore: sentiment_score,
+      technicalScore: technical_score,
+      summary: summary || `${decision_type.toUpperCase()} ${symbol}`,
+    });
+    
+    res.status(201).json(decision);
+  } catch (e) {
+    console.error('Record decision error:', e);
+    res.status(500).json({ error: 'Failed to record decision' });
+  }
+});
+
+/**
  * Get specific AI trader decision
  * GET /api/ai-traders/:id/decisions/:did
  */
@@ -3390,6 +3702,175 @@ app.get('/api/ai-traders/:id/decisions/:did', async (req, res) => {
   } catch (e) {
     console.error('Get decision error:', e);
     res.status(500).json({ error: 'Failed to fetch decision' });
+  }
+});
+
+/**
+ * Get AI trader portfolio summary
+ * GET /api/ai-traders/:id/portfolio
+ */
+app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
+  try {
+    const traderId = parseInt(req.params.id);
+    const portfolio = await aiTrader.getAITraderPortfolio(traderId);
+    
+    if (!portfolio) {
+      // Create portfolio if it doesn't exist
+      const trader = await aiTrader.getAITrader(traderId);
+      if (!trader) {
+        return res.status(404).json({ error: 'AI trader not found' });
+      }
+      
+      const initialCapital = trader.personality?.capital?.initialBudget || 100000;
+      const newPortfolio = await aiTrader.createAITraderPortfolio(traderId, initialCapital);
+      
+      return res.json({
+        cash: newPortfolio.cash_balance,
+        total_value: newPortfolio.cash_balance,
+        total_invested: 0,
+        positions_count: 0,
+        positions: {},
+        daily_pnl: 0,
+        daily_pnl_pct: 0,
+        max_value: newPortfolio.cash_balance
+      });
+    }
+    
+    // Get positions
+    const positions = await trading.getOpenPositionsByPortfolio(portfolio.id);
+    
+    // Calculate totals
+    let totalInvested = 0;
+    const positionsMap = {};
+    
+    for (const pos of positions) {
+      const value = pos.quantity * pos.current_price;
+      totalInvested += value;
+      positionsMap[pos.symbol] = {
+        quantity: pos.quantity,
+        avg_price: pos.entry_price,
+        current_price: pos.current_price,
+        unrealized_pnl: pos.unrealized_pnl
+      };
+    }
+    
+    const totalValue = parseFloat(portfolio.cash_balance) + totalInvested;
+    
+    res.json({
+      cash: parseFloat(portfolio.cash_balance),
+      total_value: totalValue,
+      total_invested: totalInvested,
+      positions_count: positions.length,
+      positions: positionsMap,
+      daily_pnl: 0, // TODO: Calculate daily P&L
+      daily_pnl_pct: 0,
+      max_value: totalValue
+    });
+  } catch (e) {
+    console.error('Get portfolio error:', e);
+    res.status(500).json({ error: 'Failed to fetch portfolio' });
+  }
+});
+
+/**
+ * Execute trade for AI trader
+ * POST /api/ai-traders/:id/execute
+ */
+app.post('/api/ai-traders/:id/execute', async (req, res) => {
+  try {
+    const traderId = parseInt(req.params.id);
+    const { symbol, action, quantity, price, stop_loss, take_profit, reasoning } = req.body;
+    
+    // Get AI trader
+    const trader = await aiTrader.getAITrader(traderId);
+    const traderName = trader?.name || `Trader #${traderId}`;
+    
+    // Get AI trader's portfolio
+    let portfolio = await aiTrader.getAITraderPortfolio(traderId);
+    if (!portfolio) {
+      if (!trader) {
+        return res.status(404).json({ error: 'AI trader not found' });
+      }
+      const initialCapital = trader.personality?.capital?.initialBudget || 100000;
+      portfolio = await aiTrader.createAITraderPortfolio(traderId, initialCapital);
+    }
+    
+    if (action === 'buy') {
+      // Check if we have enough cash
+      const cost = quantity * price;
+      if (cost > portfolio.cash_balance) {
+        return res.status(400).json({ error: 'Insufficient funds', required: cost, available: portfolio.cash_balance });
+      }
+      
+      // Create or update position
+      const position = await trading.openPosition(portfolio.id, {
+        symbol,
+        quantity,
+        entryPrice: price,
+        stopLoss: stop_loss,
+        takeProfit: take_profit,
+        notes: reasoning
+      });
+      
+      // Update portfolio cash
+      await trading.updatePortfolioCash(portfolio.id, -cost);
+      
+      // Update trader stats
+      await aiTrader.updateAITrader(traderId, {
+        status_message: `Bought ${quantity} ${symbol} @ $${price.toFixed(2)}`
+      });
+      
+      // Emit SSE event for real-time UI updates
+      emitTradeExecuted(traderId, traderName, {
+        symbol,
+        action: 'buy',
+        quantity,
+        price,
+        cost,
+      });
+      
+      res.status(201).json({ success: true, position, action: 'buy' });
+    } else if (action === 'sell' || action === 'close') {
+      // Get existing position
+      const positions = await trading.getOpenPositionsByPortfolio(portfolio.id);
+      const position = positions.find(p => p.symbol === symbol);
+      
+      if (!position) {
+        return res.status(400).json({ error: 'No position to sell' });
+      }
+      
+      // Close position
+      const closedPosition = await trading.closePosition(position.id, price, 'AI Trader decision: ' + (reasoning || action));
+      
+      // Update portfolio cash
+      const proceeds = quantity * price;
+      await trading.updatePortfolioCash(portfolio.id, proceeds);
+      
+      // Calculate P&L
+      const pnl = ((price - position.entry_price) / position.entry_price * 100).toFixed(2);
+      
+      // Update trader stats
+      await aiTrader.updateAITrader(traderId, {
+        status_message: `Sold ${quantity} ${symbol} @ $${price.toFixed(2)}`
+      });
+      
+      // Emit SSE event for real-time UI updates
+      emitTradeExecuted(traderId, traderName, {
+        symbol,
+        action: action === 'close' ? 'close' : 'sell',
+        quantity,
+        price,
+        proceeds,
+        pnl,
+      });
+      
+      res.status(200).json({ success: true, position: closedPosition, action });
+    } else {
+      res.status(400).json({ error: 'Invalid action. Use buy, sell, or close.' });
+    }
+  } catch (e) {
+    console.error('Execute trade error:', e);
+    res.status(500).json({ error: 'Failed to execute trade' });
   }
 });
 
@@ -3577,10 +4058,15 @@ app.get('/api/stream/ai-trader/:id', optionalAuthMiddleware, (req, res) => {
   const random = Math.random().toString(36).substring(7);
   const clientId = `${req.user?.id || 'anon'}-${timestamp}-${random}`;
   
+  // Disable Node.js socket timeout for SSE
+  req.socket.setTimeout(0);
+  req.socket.setNoDelay(true);
+  req.socket.setKeepAlive(true);
+  
   aiTraderEvents.addClient(clientId, res, [traderId]);
   
-  // Initial status message
-  res.write(`data: ${JSON.stringify({ type: 'connected', traderId })}\n\n`);
+  // Initial status message using named event type
+  res.write(`event: message\ndata: ${JSON.stringify({ type: 'connected', traderId })}\n\n`);
 });
 
 /**
@@ -3592,9 +4078,14 @@ app.get('/api/stream/ai-traders', optionalAuthMiddleware, (req, res) => {
   const random = Math.random().toString(36).substring(7);
   const clientId = `${req.user?.id || 'anon'}-${timestamp}-${random}`;
   
+  // Disable Node.js socket timeout for SSE
+  req.socket.setTimeout(0);
+  req.socket.setNoDelay(true);
+  req.socket.setKeepAlive(true);
+  
   aiTraderEvents.addClient(clientId, res, []);
   
-  res.write(`data: ${JSON.stringify({ type: 'connected', all: true })}\n\n`);
+  res.write(`event: message\ndata: ${JSON.stringify({ type: 'connected', all: true })}\n\n`);
 });
 
 // ============================================================================

@@ -35,4 +35,4 @@ export { default as AITraderReportCard } from './AITraderReportCard';
 export { default as AITraderInsights } from './AITraderInsights';
 export { default as SignalAccuracyChart } from './SignalAccuracyChart';
 export { default as AdaptiveWeightsPanel } from './AdaptiveWeightsPanel';
-
+export { ExchangeSelector, ExchangeStatusBadge, ExchangeStatusPanel } from './ExchangeSelector';

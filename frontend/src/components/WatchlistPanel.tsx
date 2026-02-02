@@ -48,6 +48,14 @@ import type { NewsItem } from '../services/types';
 import { getOrCreatePortfolio, executeMarketOrder, getPortfolioMetrics } from '../services/tradingService';
 import { useSettings } from '../contexts/SettingsContext';
 import type { Portfolio, PortfolioMetrics, OrderSide, ProductType } from '../types/trading';
+import { 
+  EXCHANGES, 
+  EXCHANGE_REGIONS, 
+  POPULAR_SYMBOLS,
+  formatSymbolForExchange,
+  detectExchange,
+  getExchangeStatus
+} from '../utils/exchanges';
 
 // Helper function to format market cap
 function formatMarketCap(value: number): string {
@@ -93,6 +101,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
   const [showAddForm, setShowAddForm] = useState(false);
   const [newSymbol, setNewSymbol] = useState('');
   const [newName, setNewName] = useState('');
+  const [newExchange, setNewExchange] = useState('NASDAQ');
   const [addError, setAddError] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'score'>('score');  // Default to score sorting
   const [filterPeriod, setFilterPeriod] = useState<'hourly' | 'daily' | 'weekly' | 'longTerm'>('daily');
@@ -632,6 +641,156 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
   const cancelDelete = useCallback(() => {
     setDeleteConfirmSymbol(null);
   }, []);
+
+  // ===== Import/Export Functions =====
+  
+  // Export watchlist to JSON file
+  const handleExportWatchlist = useCallback(() => {
+    const exportData = {
+      version: '1.0',
+      exportDate: new Date().toISOString(),
+      symbols: watchlistItems.map(item => ({
+        symbol: item.symbol,
+        name: item.name,
+      })),
+    };
+    
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `watchlist-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [watchlistItems]);
+  
+  // Export watchlist to CSV file
+  const handleExportWatchlistCSV = useCallback(() => {
+    const csvContent = [
+      'Symbol,Name',
+      ...watchlistItems.map(item => `${item.symbol},"${item.name.replace(/"/g, '""')}"`)
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `watchlist-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [watchlistItems]);
+  
+  // Import watchlist from file (JSON or CSV)
+  const handleImportWatchlist = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    if (!authState.isAuthenticated) {
+      setAddError('Bitte melden Sie sich an, um Symbole zu importieren');
+      return;
+    }
+    
+    try {
+      const text = await file.text();
+      let symbolsToImport: { symbol: string; name: string }[] = [];
+      
+      if (file.name.endsWith('.json')) {
+        // Parse JSON
+        const data = JSON.parse(text);
+        if (data.symbols && Array.isArray(data.symbols)) {
+          symbolsToImport = data.symbols.map((s: { symbol?: string; name?: string }) => ({
+            symbol: (s.symbol || '').toUpperCase().trim(),
+            name: s.name || s.symbol || '',
+          }));
+        } else if (Array.isArray(data)) {
+          // Simple array format
+          symbolsToImport = data.map((item: string | { symbol?: string; name?: string }) => {
+            if (typeof item === 'string') {
+              return { symbol: item.toUpperCase().trim(), name: item };
+            }
+            return {
+              symbol: (item.symbol || '').toUpperCase().trim(),
+              name: item.name || item.symbol || '',
+            };
+          });
+        }
+      } else if (file.name.endsWith('.csv') || file.name.endsWith('.txt')) {
+        // Parse CSV
+        const lines = text.split('\n').map(line => line.trim()).filter(line => line);
+        const hasHeader = lines[0]?.toLowerCase().includes('symbol');
+        const dataLines = hasHeader ? lines.slice(1) : lines;
+        
+        symbolsToImport = dataLines.map(line => {
+          // Handle CSV with quotes
+          const match = line.match(/^"?([^",]+)"?,?"?([^"]*)"?$/);
+          if (match) {
+            return { symbol: match[1].toUpperCase().trim(), name: match[2].trim() || match[1] };
+          }
+          // Simple comma-separated
+          const parts = line.split(',');
+          return { 
+            symbol: parts[0].toUpperCase().trim(), 
+            name: parts[1]?.trim() || parts[0] 
+          };
+        });
+      } else {
+        setAddError('Unterstützte Formate: .json, .csv, .txt');
+        return;
+      }
+      
+      // Filter valid symbols and remove duplicates
+      const existingSymbols = new Set(watchlistItems.map(item => item.symbol));
+      const validSymbols = symbolsToImport.filter(s => 
+        s.symbol && 
+        s.symbol.length <= 10 && 
+        !existingSymbols.has(s.symbol)
+      );
+      
+      if (validSymbols.length === 0) {
+        setAddError('Keine neuen gültigen Symbole gefunden');
+        return;
+      }
+      
+      // Add symbols to server
+      let addedCount = 0;
+      for (const item of validSymbols) {
+        const result = await addCustomSymbolToServer(item.symbol, item.name);
+        if (result.success) {
+          addedCount++;
+          // Add to local state
+          const newItem: WatchlistItem = {
+            symbol: item.symbol,
+            name: item.name,
+            isLoading: true,
+          };
+          setWatchlistItems(prev => [...prev, newItem]);
+          // Fetch data
+          fetchSymbolData(item.symbol).then(data => {
+            setWatchlistItems(prev => 
+              prev.map(i => i.symbol === item.symbol ? { ...i, ...data } : i)
+            );
+          });
+        }
+      }
+      
+      if (addedCount > 0) {
+        setAddError('');
+        alert(`${addedCount} Symbol(e) erfolgreich importiert`);
+      } else {
+        setAddError('Keine Symbole konnten importiert werden');
+      }
+    } catch (err) {
+      console.error('Import error:', err);
+      setAddError('Fehler beim Importieren der Datei');
+    }
+    
+    // Reset file input
+    event.target.value = '';
+  }, [authState.isAuthenticated, watchlistItems, fetchSymbolData]);
 
   // Helper: Check if a source is enabled in filters
   const isSourceEnabled = useCallback((source: string): boolean => {
@@ -1351,18 +1510,105 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
       {authState.isAuthenticated && (
         <div className="border-t border-slate-700 pt-4">
           {!showAddForm ? (
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-slate-700/50 hover:bg-slate-700 rounded-lg text-gray-300 hover:text-white transition-colors"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              Symbol zur Watchlist hinzufügen
-            </button>
+            <div className="space-y-2">
+              <button
+                onClick={() => setShowAddForm(true)}
+                className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-slate-700/50 hover:bg-slate-700 rounded-lg text-gray-300 hover:text-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Symbol hinzufügen
+              </button>
+              
+              {/* Import/Export Buttons */}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleExportWatchlist}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 bg-slate-700/30 hover:bg-slate-700/50 rounded-lg text-gray-400 hover:text-white text-xs transition-colors"
+                  title="Als JSON exportieren"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Export JSON
+                </button>
+                <button
+                  onClick={handleExportWatchlistCSV}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 bg-slate-700/30 hover:bg-slate-700/50 rounded-lg text-gray-400 hover:text-white text-xs transition-colors"
+                  title="Als CSV exportieren"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Export CSV
+                </button>
+                <label className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 bg-slate-700/30 hover:bg-slate-700/50 rounded-lg text-gray-400 hover:text-white text-xs transition-colors cursor-pointer">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  Import
+                  <input
+                    type="file"
+                    accept=".json,.csv,.txt"
+                    onChange={handleImportWatchlist}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
           ) : (
             <div className="space-y-3 bg-slate-800/50 rounded-lg p-4">
               <h4 className="text-sm font-medium text-white">Neues Symbol hinzufügen</h4>
+              
+              {/* Exchange Selector */}
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Börse</label>
+                <select
+                  value={newExchange}
+                  onChange={(e) => setNewExchange(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                >
+                  {Object.entries(EXCHANGE_REGIONS).map(([region, codes]) => (
+                    <optgroup key={region} label={region}>
+                      {codes.map(code => {
+                        const ex = EXCHANGES[code];
+                        if (!ex) return null;
+                        const status = getExchangeStatus(code);
+                        return (
+                          <option key={code} value={code}>
+                            {ex.flag} {ex.code} - {ex.name} ({status.isOpen ? '🟢' : '⚫'})
+                          </option>
+                        );
+                      })}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+              
+              {/* Quick Add from Popular Symbols */}
+              {POPULAR_SYMBOLS[newExchange] && (
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Beliebte Aktien</label>
+                  <div className="flex flex-wrap gap-1">
+                    {POPULAR_SYMBOLS[newExchange].slice(0, 6).map(({ symbol, name }) => (
+                      <button
+                        key={symbol}
+                        onClick={() => {
+                          const fullSymbol = formatSymbolForExchange(symbol.split('.')[0], newExchange);
+                          setNewSymbol(fullSymbol);
+                          setNewName(name);
+                        }}
+                        className="px-2 py-1 text-xs bg-slate-700/50 hover:bg-slate-700 rounded text-gray-300 hover:text-white transition-colors"
+                        title={name}
+                      >
+                        {symbol.split('.')[0]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
               <input
                 type="text"
                 value={newSymbol}
@@ -1370,10 +1616,10 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                   setNewSymbol(e.target.value.toUpperCase());
                   setAddError('');
                 }}
-                placeholder="Symbol (z.B. TSLA, BTC)"
+                placeholder={`Symbol (z.B. ${POPULAR_SYMBOLS[newExchange]?.[0]?.symbol || 'AAPL'})`}
                 className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 text-sm"
                 autoFocus
-                maxLength={10}
+                maxLength={15}
               />
               <input
                 type="text"
@@ -1391,6 +1637,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                     setShowAddForm(false);
                     setNewSymbol('');
                     setNewName('');
+                    setNewExchange('NASDAQ');
                     setAddError('');
                   }}
                   className="flex-1 py-2 px-3 bg-slate-700 hover:bg-slate-600 rounded-lg text-gray-300 text-sm transition-colors"

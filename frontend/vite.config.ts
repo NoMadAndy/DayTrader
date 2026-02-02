@@ -12,12 +12,33 @@ export default defineConfig({
   server: {
     allowedHosts: true,  // Erlaubt alle Hosts (für Reverseproxy)
     proxy: {
+      // SSE Stream endpoints - MUST be before /api to match first
+      '/api/stream': {
+        target: process.env.BACKEND_URL || 'http://localhost:3001',
+        changeOrigin: true,
+        secure: false,
+        // Critical: Disable all buffering for SSE
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes) => {
+            // Disable buffering for SSE responses
+            proxyRes.headers['cache-control'] = 'no-cache, no-store, must-revalidate';
+            proxyRes.headers['x-accel-buffering'] = 'no';
+          });
+        },
+      },
       // Proxy API requests to backend in development
       // Uses BACKEND_URL (Docker internal) not VITE_API_BASE_URL (browser-facing)
       '/api': {
         target: process.env.BACKEND_URL || 'http://localhost:3001',
         changeOrigin: true,
         secure: false,
+      },
+      // Proxy RL service requests
+      '/rl-api': {
+        target: process.env.RL_SERVICE_URL || 'http://localhost:8001',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/rl-api/, ''),
       },
     },
   },

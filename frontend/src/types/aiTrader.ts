@@ -54,6 +54,7 @@ export interface AITraderScheduleConfig {
 export interface AITraderWatchlistConfig {
   symbols: string[];
   autoUpdate: boolean;
+  useFullWatchlist?: boolean;  // If true, use user's entire watchlist
 }
 
 export interface AITraderSentimentConfig {
@@ -76,6 +77,8 @@ export interface AITraderPersonality {
   watchlist: AITraderWatchlistConfig;
   sentiment: AITraderSentimentConfig;
   learning: AITraderLearningConfig;
+  /** Name of the RL agent to use for signals (optional) */
+  rlAgentName?: string;
 }
 
 // ============================================================================

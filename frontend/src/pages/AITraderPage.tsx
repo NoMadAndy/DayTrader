@@ -4,7 +4,7 @@
  * Full dashboard for monitoring and controlling AI traders.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AITraderCard } from '../components/AITraderCard';
 import { AITraderActivityFeed } from '../components/AITraderActivityFeed';
@@ -17,8 +17,11 @@ import AdaptiveWeightsPanel from '../components/AdaptiveWeightsPanel';
 import { useAITraderStream } from '../hooks/useAITraderStream';
 import { useAITraderReports } from '../hooks/useAITraderReports';
 import { startAITrader, stopAITrader, pauseAITrader } from '../services/aiTraderService';
-import type { AITrader, AITraderDecision } from '../types/aiTrader';
+import type { AITrader, AITraderDecision, AITraderEvent } from '../types/aiTrader';
 import type { PositionWithPnL } from '../types/trading';
+
+// Auto-refresh interval in milliseconds
+const AUTO_REFRESH_INTERVAL_MS = 30000; // 30 seconds
 
 export function AITraderPage() {
   const { id } = useParams<{ id: string }>();
@@ -31,72 +34,208 @@ export function AITraderPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'activity' | 'reports' | 'analytics'>('activity');
+  const lastRefreshRef = useRef<number>(0);
+  
+  // Notification settings (persisted in localStorage)
+  const [notificationSettings, setNotificationSettings] = useState(() => {
+    const saved = localStorage.getItem('aiTraderNotifications');
+    return saved ? JSON.parse(saved) : { sound: false, vibration: false, flash: true };
+  });
+  
+  // Persist notification settings
+  useEffect(() => {
+    localStorage.setItem('aiTraderNotifications', JSON.stringify(notificationSettings));
+  }, [notificationSettings]);
   
   const traderId = id ? parseInt(id) : undefined;
-  const { events, connected, mode, reconnect } = useAITraderStream({ 
-    traderId,
-    enabled: !!traderId,
-  });
+  
   const { reports } = useAITraderReports(traderId);
   
-  // Load trader data
+  // Helper function to transform decision data from snake_case to camelCase
+  const transformDecision = useCallback((d: Record<string, unknown>): AITraderDecision => ({
+    id: d.id as number,
+    aiTraderId: d.ai_trader_id as number,
+    timestamp: d.timestamp as string,
+    symbol: d.symbol as string,
+    symbolsAnalyzed: (d.symbols_analyzed || []) as string[],
+    decisionType: d.decision_type as AITraderDecision['decisionType'],
+    reasoning: (d.reasoning || {}) as AITraderDecision['reasoning'],
+    executed: d.executed as boolean,
+    positionId: d.position_id as number | null,
+    orderId: d.order_id as number | null,
+    executionError: d.execution_error as string | null,
+    confidence: parseFloat(String(d.confidence)) || 0,
+    weightedScore: parseFloat(String(d.weighted_score)) || 0,
+    mlScore: parseFloat(String(d.ml_score)) || 0,
+    rlScore: parseFloat(String(d.rl_score)) || 0,
+    sentimentScore: parseFloat(String(d.sentiment_score)) || 0,
+    technicalScore: parseFloat(String(d.technical_score)) || 0,
+    signalAgreement: d.signal_agreement as AITraderDecision['signalAgreement'],
+    summaryShort: d.summary_short as string | null,
+    marketContext: (d.market_context || {}) as AITraderDecision['marketContext'],
+    portfolioSnapshot: (d.portfolio_snapshot || {}) as AITraderDecision['portfolioSnapshot'],
+    outcomePnl: d.outcome_pnl as number | null,
+    outcomePnlPercent: d.outcome_pnl_percent as number | null,
+    outcomeHoldingDays: d.outcome_holding_days as number | null,
+    outcomeWasCorrect: d.outcome_was_correct as boolean | null,
+  }), []);
+  
+  // Load all trader data (trader details, decisions, positions, portfolio)
+  const loadTraderData = useCallback(async (showLoadingState = false) => {
+    if (!traderId) return;
+    
+    try {
+      if (showLoadingState) {
+        setLoading(true);
+        setError(null);
+      }
+      lastRefreshRef.current = Date.now();
+      
+      // Fetch trader details (with cache-busting)
+      const traderRes = await fetch(`/api/ai-traders/${traderId}?_t=${Date.now()}`, { cache: 'no-store' });
+      if (!traderRes.ok) throw new Error('Failed to load trader');
+      const traderData = await traderRes.json();
+      setTrader(traderData);
+      
+      // Fetch decisions (with cache-busting timestamp to ensure fresh data)
+      const decisionsRes = await fetch(`/api/ai-traders/${traderId}/decisions?limit=10&_t=${Date.now()}`, {
+        cache: 'no-store'
+      });
+      if (decisionsRes.ok) {
+        const decisionsData = await decisionsRes.json();
+        const transformedDecisions = (Array.isArray(decisionsData) ? decisionsData : []).map(transformDecision);
+        setDecisions(transformedDecisions);
+      }
+      
+      // Fetch positions (with cache-busting)
+      const positionsRes = await fetch(`/api/ai-traders/${traderId}/positions?_t=${Date.now()}`, { cache: 'no-store' });
+      if (positionsRes.ok) {
+        const positionsData = await positionsRes.json();
+        setPositions(positionsData.positions || []);
+      }
+      
+      // Fetch portfolio info
+      if (traderData.portfolioId) {
+        const portfolioRes = await fetch(`/api/portfolio/${traderData.portfolioId}`);
+        if (portfolioRes.ok) {
+          const portfolioData = await portfolioRes.json();
+          setPortfolio({
+            cash: portfolioData.cash_balance || 0,
+            totalValue: portfolioData.total_value || 0,
+            pnl: portfolioData.total_return_percent || 0,
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Error loading trader data:', err);
+      if (showLoadingState) {
+        setError('Failed to load AI trader data');
+      }
+    } finally {
+      if (showLoadingState) {
+        setLoading(false);
+      }
+    }
+  }, [traderId, transformDecision]);
+  
+  // Initial load
   useEffect(() => {
     if (!traderId) {
       navigate('/leaderboard');
       return;
     }
+    loadTraderData(true);
+  }, [traderId, navigate, loadTraderData]);
+  
+  // Auto-refresh polling every 30 seconds
+  useEffect(() => {
+    if (!traderId) return;
     
-    const loadTraderData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        // Fetch trader details
-        const traderRes = await fetch(`/api/ai-traders/${traderId}`);
-        if (!traderRes.ok) throw new Error('Failed to load trader');
-        const traderData = await traderRes.json();
-        setTrader(traderData);
-        
-        // Fetch decisions
-        const decisionsRes = await fetch(`/api/ai-traders/${traderId}/decisions?limit=10`);
-        if (decisionsRes.ok) {
-          const decisionsData = await decisionsRes.json();
-          setDecisions(decisionsData.decisions || []);
-        }
-        
-        // Fetch positions
-        const positionsRes = await fetch(`/api/ai-traders/${traderId}/positions`);
-        if (positionsRes.ok) {
-          const positionsData = await positionsRes.json();
-          setPositions(positionsData.positions || []);
-        }
-        
-        // Fetch portfolio info
-        if (traderData.portfolioId) {
-          const portfolioRes = await fetch(`/api/portfolio/${traderData.portfolioId}`);
-          if (portfolioRes.ok) {
-            const portfolioData = await portfolioRes.json();
-            setPortfolio({
-              cash: portfolioData.cash_balance || 0,
-              totalValue: portfolioData.total_value || 0,
-              pnl: portfolioData.total_return_percent || 0,
-            });
-          }
-        }
-      } catch (err) {
-        console.error('Error loading trader data:', err);
-        setError('Failed to load AI trader data');
-      } finally {
-        setLoading(false);
+    const intervalId = setInterval(() => {
+      loadTraderData(false);
+    }, AUTO_REFRESH_INTERVAL_MS);
+    
+    return () => clearInterval(intervalId);
+  }, [traderId, loadTraderData]);
+  
+  // Handle SSE events - trigger refresh on important events
+  const handleSSEEvent = useCallback((event: AITraderEvent) => {
+    // On decision_made, trade_executed, or status_changed, refresh data immediately
+    if (['decision_made', 'trade_executed', 'status_changed', 'position_closed'].includes(event.type)) {
+      // Debounce: only refresh if last refresh was more than 2 seconds ago
+      if (Date.now() - lastRefreshRef.current > 2000) {
+        loadTraderData(false);
       }
-    };
+    }
+  }, [loadTraderData]);
+  
+  // Subscribe to SSE events
+  const { events: sseEvents, connected, mode, reconnect, clearEvents } = useAITraderStream({ 
+    traderId,
+    enabled: !!traderId,
+    onEvent: handleSSEEvent,
+  });
+  
+  // Convert decisions to events and combine with SSE events
+  const allEvents = useMemo(() => {
+    // Convert DB decisions to event format
+    const decisionEvents: AITraderEvent[] = decisions.map((d) => ({
+      type: 'decision_made' as const,
+      traderId: d.aiTraderId,
+      timestamp: d.timestamp,
+      data: {
+        traderId: d.aiTraderId,
+        symbol: d.symbol,
+        decisionType: d.decisionType,
+        confidence: d.confidence,
+        weightedScore: d.weightedScore,
+        mlScore: d.mlScore,
+        rlScore: d.rlScore,
+        sentimentScore: d.sentimentScore,
+        technicalScore: d.technicalScore,
+        summary: d.summaryShort || `${d.decisionType?.toUpperCase()} ${d.symbol}`,
+        timestamp: d.timestamp,
+      },
+    }));
     
-    loadTraderData();
-  }, [traderId, navigate]);
+    // Filter SSE events: only keep status events, not decision_made (those come from DB)
+    const statusEvents = sseEvents.filter(e => 
+      e.type !== 'decision_made' && e.type !== 'heartbeat'
+    );
+    
+    // Combine status events with decision events
+    const combined = [...statusEvents, ...decisionEvents];
+    
+    // Remove duplicates by unique key
+    const seenKeys = new Set<string>();
+    const unique = combined.filter(event => {
+      const ts = String(event.data?.timestamp || event.timestamp || '');
+      const sym = String(event.data?.symbol || '');
+      const key = `${event.type}-${ts}-${sym}`;
+      if (seenKeys.has(key)) return false;
+      seenKeys.add(key);
+      return true;
+    });
+    
+    // Sort by timestamp (newest first)
+    return unique.sort((a, b) => {
+      const timeStrA = String(a.data?.timestamp || a.timestamp || '');
+      const timeStrB = String(b.data?.timestamp || b.timestamp || '');
+      // String comparison works for ISO timestamps and preserves millisecond precision
+      if (timeStrA > timeStrB) return -1;
+      if (timeStrA < timeStrB) return 1;
+      // If timestamps are identical, sort by symbol for stable ordering
+      const symbolA = String(a.data?.symbol || '');
+      const symbolB = String(b.data?.symbol || '');
+      return symbolB.localeCompare(symbolA);
+    });
+  }, [sseEvents, decisions]);
   
   const handleStart = async () => {
     if (!traderId) return;
     try {
+      // Clear old SSE events before starting to avoid duplicates
+      clearEvents();
       const updated = await startAITrader(traderId);
       setTrader(updated);
     } catch (err) {
@@ -109,6 +248,8 @@ export function AITraderPage() {
     try {
       const updated = await stopAITrader(traderId);
       setTrader(updated);
+      // Clear SSE events after stopping
+      clearEvents();
     } catch (err) {
       console.error('Error stopping trader:', err);
     }
@@ -181,16 +322,27 @@ export function AITraderPage() {
           </button>
           
           {/* Trading Hours Indicator - Always show current market status */}
-          <div className={`px-3 py-1.5 rounded-lg flex items-center gap-2 ${
-            trader.tradingTime 
-              ? 'bg-green-500/20 border border-green-500/50' 
-              : 'bg-amber-500/20 border border-amber-500/50'
-          }`}>
-            <span className="text-lg">{trader.tradingTime ? '🟢' : '🚦'}</span>
-            <span className="text-sm font-medium">
-              {trader.tradingTime ? 'Markt offen' : 'Keine Handelszeit'}
-            </span>
-          </div>
+          {(() => {
+            const schedule = trader.personality?.schedule;
+            const tradingStart = schedule?.tradingStart || '15:30';
+            const tradingEnd = schedule?.tradingEnd || '22:00';
+            const isOpen = trader.tradingTime;
+            return (
+              <div 
+                className={`px-3 py-1.5 rounded-lg flex items-center gap-2 ${
+                  isOpen 
+                    ? 'bg-green-500/20 border border-green-500/50' 
+                    : 'bg-amber-500/20 border border-amber-500/50'
+                }`}
+                title={`Handelszeiten: ${tradingStart} - ${tradingEnd} (${schedule?.timezone || 'Europe/Berlin'})`}
+              >
+                <span className="text-lg">{isOpen ? '🟢' : '🟡'}</span>
+                <span className="text-sm font-medium">
+                  {isOpen ? 'Markt offen' : `${tradingStart} - ${tradingEnd}`}
+                </span>
+              </div>
+            );
+          })()}
           
           {/* Connection Status */}
           <button
@@ -233,27 +385,14 @@ export function AITraderPage() {
         onPause={handlePause}
       />
       
-      {/* Trading Time Warning - Show when market is closed */}
-      {trader.tradingTime === false && (
-        <div className="bg-amber-500/20 border-2 border-amber-500/50 rounded-lg p-4 flex items-start gap-3">
-          <div className="text-3xl">🚦</div>
-          <div className="flex-1">
-            <div className="font-bold text-amber-400 text-lg mb-1">
-              Keine Handelszeit
-            </div>
-            <div className="text-gray-300">
-              Es ist aktuell keine Handelszeit. Der Markt ist geschlossen. Handelszeiten: Mo-Fr 15:30-22:00 MEZ
-            </div>
-            {trader.status === 'running' && (
-              <div className="text-sm text-amber-300 mt-2 italic">
-                Der Trader bleibt solange inaktiv, bis der Markt öffnet.
-              </div>
-            )}
-            {trader.statusMessage && (
-              <div className="text-sm text-amber-300 mt-2 italic">
-                Status: {trader.statusMessage}
-              </div>
-            )}
+      {/* Trading Time Warning - Only show when market is closed AND trader is running */}
+      {trader.tradingTime === false && trader.status === 'running' && (
+        <div className="bg-amber-500/20 border border-amber-500/50 rounded-lg p-3 flex items-center gap-3">
+          <span className="text-2xl">⏳</span>
+          <div className="text-gray-300">
+            <span className="font-medium text-amber-400">Wartet auf Handelszeit</span>
+            {' – '}
+            Handel beginnt um {trader.personality?.schedule?.tradingStart || '15:30'} ({trader.personality?.schedule?.timezone || 'Europe/Berlin'})
           </div>
         </div>
       )}
@@ -316,8 +455,43 @@ export function AITraderPage() {
       {activeTab === 'activity' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left Column: Activity Feed */}
-          <div className="space-y-6">
-            <AITraderActivityFeed events={events} maxHeight="500px" autoScroll={true} />
+          <div className="space-y-4">
+            {/* Notification Settings Mini-Toolbar */}
+            <div className="flex items-center justify-between bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
+              <span className="text-xs text-gray-400 px-2">Benachrichtigungen:</span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setNotificationSettings((s: { sound: boolean; vibration: boolean; flash: boolean }) => ({ ...s, flash: !s.flash }))}
+                  className={`px-2 py-1 text-xs rounded transition-colors ${notificationSettings.flash ? 'bg-yellow-500/30 text-yellow-400' : 'bg-slate-700/50 text-gray-500'}`}
+                  title="Visueller Effekt"
+                >
+                  ✨ Flash
+                </button>
+                <button
+                  onClick={() => setNotificationSettings((s: { sound: boolean; vibration: boolean; flash: boolean }) => ({ ...s, sound: !s.sound }))}
+                  className={`px-2 py-1 text-xs rounded transition-colors ${notificationSettings.sound ? 'bg-green-500/30 text-green-400' : 'bg-slate-700/50 text-gray-500'}`}
+                  title="Ton bei wichtigen Ereignissen"
+                >
+                  🔔 Ton
+                </button>
+                <button
+                  onClick={() => setNotificationSettings((s: { sound: boolean; vibration: boolean; flash: boolean }) => ({ ...s, vibration: !s.vibration }))}
+                  className={`px-2 py-1 text-xs rounded transition-colors ${notificationSettings.vibration ? 'bg-purple-500/30 text-purple-400' : 'bg-slate-700/50 text-gray-500'}`}
+                  title="Vibration auf Mobilgeräten"
+                >
+                  📳 Vibration
+                </button>
+              </div>
+            </div>
+            
+            <AITraderActivityFeed 
+              events={allEvents} 
+              maxHeight="500px" 
+              autoScroll={true}
+              enableFlash={notificationSettings.flash}
+              enableSound={notificationSettings.sound}
+              enableVibration={notificationSettings.vibration}
+            />
             
             {/* Open Positions */}
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
@@ -365,7 +539,7 @@ export function AITraderPage() {
             <div className="px-4 py-3 border-b border-slate-700/50">
               <h3 className="font-bold">🧠 Recent Decisions</h3>
             </div>
-            <div className="p-4 space-y-3 max-h-[700px] overflow-y-auto">
+            <div className="p-2 space-y-1 max-h-[700px] overflow-y-auto">
               {decisions.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
                   <div className="text-2xl mb-2">🤔</div>

@@ -40,30 +40,27 @@ export function TradeReasoningCard({ decision, expanded: controlledExpanded, onT
   
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
-      {/* Header - Always visible */}
+      {/* Header - Always visible - Compact version */}
       <button
         onClick={handleToggle}
-        className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-700/30 transition-colors rounded-t-lg"
+        className="w-full px-3 py-2 flex items-center justify-between hover:bg-slate-700/30 transition-colors rounded-t-lg"
       >
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">{signalStyle.emoji}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-lg">{signalStyle.emoji}</span>
           <div className="text-left">
             <div className="flex items-center gap-2">
-              <span className="font-bold text-lg">{decision.symbol}</span>
-              <span className={`px-2 py-0.5 rounded text-xs font-medium uppercase ${signalStyle.bg} ${signalStyle.text}`}>
+              <span className="font-bold">{decision.symbol}</span>
+              <span className={`px-1.5 py-0.5 rounded text-xs font-medium uppercase ${signalStyle.bg} ${signalStyle.text}`}>
                 {decision.decisionType}
               </span>
               {decision.executed && (
-                <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-500/20 text-blue-400">
-                  ✓ Executed
+                <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-blue-500/20 text-blue-400">
+                  ✓
                 </span>
               )}
             </div>
-            <div className="text-xs text-gray-400 mt-1">
-              {timestamp}
-              {decision.confidence && (
-                <> • Confidence: {(decision.confidence * 100).toFixed(0)}%</>
-              )}
+            <div className="text-xs text-gray-500">
+              {timestamp} • {((decision.confidence || 0) * 100).toFixed(0)}%
             </div>
           </div>
         </div>

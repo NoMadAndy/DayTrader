@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Sentiment-Analyse für AI-Trader** - Neuer kombinierter Backend-Endpoint `/api/ml/sentiment/:symbol`:
+  - Holt automatisch News von Finnhub und Marketaux
+  - Analysiert Sentiment mit FinBERT ML-Service
+  - Aggregiert Scores zu einer Gesamtbewertung (positiv/neutral/negativ)
+  - Caching für 10 Minuten zur API-Schonung
+  - Graceful Fallback wenn FinBERT-Model nicht geladen ist
+- **Gesamte Watchlist für AI-Trader** - Im AI-Trader Settings Modal kann jetzt "Gesamte Watchlist verwenden" aktiviert werden. Der Trader analysiert dann automatisch alle Symbole aus der persönlichen Watchlist statt manuell eingegebener Symbole.
+- **Weltweite Börsen-Unterstützung** - Unterstützung für internationale Handelsplätze:
+  - Exchange-Registry mit 20+ Börsen (NYSE, NASDAQ, XETRA, LSE, Euronext, TSE, HKEX, etc.)
+  - Live-Status der Börsen (offen/geschlossen) mit lokaler Uhrzeit
+  - Symbol-Suffixe für internationale Aktien (z.B. SAP.DE, HSBA.L)
+  - Beliebte Aktien pro Börse für schnelles Hinzufügen
+  - "🌍 Börsen" Button in Watchlist zeigt Exchange-Status-Panel
+- **Watchlist Import/Export** - Watchlist kann jetzt als JSON oder CSV exportiert und wieder importiert werden. Unterstützt auch den Import von einfachen Symbollisten aus `.txt` Dateien.
+- **RL-Agent-Auswahl für AI-Trader** - Im AI-Trader Settings Modal kann jetzt ein trainierter RL-Agent für die Signalgenerierung ausgewählt werden. Verfügbare Agenten werden mit Beschreibung, Trading-Stil und Performance-Metriken angezeigt.
+- **API-Proxy für RL-Service** - Frontend kann jetzt direkt mit dem RL-Trading-Service kommunizieren via `/rl-api` Proxy
+
+### Fixed
+- **SSE Live-Updates über Reverse Proxy** - Komplette Überarbeitung der Server-Sent Events Implementierung:
+  - Backend: Korrigiertes SSE Event-Format mit `retry:` Directive und keep-alive Comments
+  - Backend: Socket-Optimierungen (setTimeout=0, setNoDelay, setKeepAlive)
+  - Vite Dev Server: SSE-Proxy-Konfiguration mit deaktiviertem Buffering
+  - nginx: Verbesserte SSE-Location mit `chunked_transfer_encoding on` und `proxy_buffer_size 0`
+  - Frontend: Robustere EventSource-Logik mit Connection-Check-Interval und verbesserter Heartbeat-Überwachung
+- **RL-Agent Signal-Abfrage** - Behoben: `AgentStatus.trained` zu `AgentStatus.is_trained` korrigiert, sodass RL-Agents jetzt korrekt für Signalgenerierung verwendet werden.
+- **Live Activity Duplikate** - Behoben: SSE `decision_made` Events werden jetzt ignoriert (kommen aus DB), nur Status-Events werden live angezeigt.
+- **API-Caching deaktiviert** - Backend und RL-Service senden jetzt `Cache-Control: no-store` Header für alle API-Responses. Das verhindert Browser-Caching und stellt sicher, dass immer aktuelle Daten angezeigt werden.
+- **Sortierung Live Activity Feed** - Events werden jetzt chronologisch sortiert (neueste oben) statt in Einfügereihenfolge.
+- **Nginx Cache-Header** - Reverse Proxy (nginx.conf) fügt jetzt `no-cache` Header für `/api/` und `/rl-api/` Proxy-Routen hinzu.
+- **AI-Trader Start-Problem** - Behoben: AI-Trader konnte nicht gestartet werden wegen falscher Parameter-Übergabe an RL-Service. Der Start-Endpoint filtert jetzt unbekannte Parameter heraus.
+- **AI-Trader Personality-Mapping** - Backend extrahiert jetzt korrekt verschachtelte Personality-Einstellungen (schedule, signals, risk, etc.)
+- **Fehlende API-Endpunkte** - Hinzugefügt: POST `/api/ai-traders/:id/decisions`, GET `/api/ai-traders/:id/portfolio`, POST `/api/ai-traders/:id/execute`
+
 ### Changed
 - **Dashboard + Backtest Unified** - Merged Dashboard and Backtest pages into a single page with mode toggle tabs (Live Trading / Backtest). The old `/backtest` URL now redirects to `/dashboard?mode=backtest`
 - **AI & Models Hub** - Consolidated ML Models, RL Agents, and Historical Data pages into a single unified page with tabs for better organization

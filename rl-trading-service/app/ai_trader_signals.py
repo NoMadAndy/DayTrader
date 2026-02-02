@@ -44,6 +44,7 @@ class SignalAggregator:
         """
         self.config = config
         self.ml_service_url = "http://ml-service:8000"
+        self.backend_url = "http://backend:3001"  # For combined endpoints
         self.http_client = httpx.AsyncClient(timeout=30.0)
     
     async def aggregate_signals(
@@ -237,9 +238,9 @@ class SignalAggregator:
             # Import trainer to access agents
             from .trainer import trainer
             
-            # Check if agent exists
+            # Check if agent exists and is trained
             status = trainer.get_agent_status(agent_name)
-            if not status or not status.trained:
+            if not status or not status.is_trained:
                 return {
                     'score': 0.0,
                     'confidence': 0.0,
@@ -311,6 +312,9 @@ class SignalAggregator:
         """
         Get sentiment signal from FinBERT analysis.
         
+        Uses the backend's combined endpoint which fetches news and
+        analyzes sentiment using the ML service.
+        
         Args:
             symbol: Trading symbol
             
@@ -318,9 +322,10 @@ class SignalAggregator:
             Dict with score, confidence, and details
         """
         try:
-            # Call ML service sentiment endpoint
+            # Call backend combined sentiment endpoint
+            # Backend fetches news and analyzes sentiment via ML service
             response = await self.http_client.get(
-                f"{self.ml_service_url}/api/ml/sentiment/{symbol}",
+                f"{self.backend_url}/api/ml/sentiment/{symbol}",
                 timeout=30.0
             )
             

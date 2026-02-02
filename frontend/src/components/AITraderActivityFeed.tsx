@@ -1,35 +1,132 @@
 /**
  * AI Trader Activity Feed Component
  * 
- * Displays live event stream from AI trader.
+ * Displays live event stream from AI trader with:
+ * - Compact, space-saving design
+ * - Visual flash effect for new events
+ * - Optional sound notification
+ * - Optional haptic feedback on mobile
+ * - Events sorted newest first
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import type { AITraderEvent } from '../types/aiTrader';
 
 interface AITraderActivityFeedProps {
   events: AITraderEvent[];
   maxHeight?: string;
   autoScroll?: boolean;
+  enableSound?: boolean;
+  enableVibration?: boolean;
+  enableFlash?: boolean;
 }
 
-const EVENT_ICONS: Record<string, string> = {
-  connected: '🔌',
-  heartbeat: '💓',
-  status_changed: '🔄',
-  analyzing: '🔍',
-  decision_made: '🧠',
-  trade_executed: '💼',
-  position_closed: '🔒',
-  error: '❌',
+const DECISION_TYPE_COLORS: Record<string, string> = {
+  buy: 'bg-green-500/20 text-green-400 border-green-500/30',
+  sell: 'bg-red-500/20 text-red-400 border-red-500/30',
+  close: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  skip: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+  hold: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
 };
+
+// Beep sound as Base64 data URI (short notification sound)
+const BEEP_SOUND = 'data:audio/wav;base64,UklGRl9vT19teleXAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU' + 
+  'BAAEAAQABAEBAEBAQEBAQABAAABAAABAAABAAAAAAAAAAAAAAAA';
 
 export function AITraderActivityFeed({ 
   events, 
-  maxHeight = '600px', 
-  autoScroll = true 
+  maxHeight = '400px', 
+  autoScroll = true,
+  enableSound = false,
+  enableVibration = false,
+  enableFlash = true,
 }: AITraderActivityFeedProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const prevEventCountRef = useRef(events.length);
+  const [flashingIndices, setFlashingIndices] = useState<Set<number>>(new Set());
+  const audioContextRef = useRef<AudioContext | null>(null);
+  
+  // Sort events by timestamp (newest first) to ensure correct display order
+  const sortedEvents = useMemo(() => {
+    return [...events].sort((a, b) => {
+      const timeA = a.data?.timestamp || a.timestamp || '';
+      const timeB = b.data?.timestamp || b.timestamp || '';
+      // ISO string comparison preserves millisecond precision
+      if (timeA > timeB) return -1;
+      if (timeA < timeB) return 1;
+      return 0;
+    });
+  }, [events]);
+  
+  // Create notification sound using Web Audio API
+  const playNotificationSound = useCallback(() => {
+    if (!enableSound) return;
+    
+    try {
+      // Lazy init AudioContext (must be after user interaction)
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      }
+      const ctx = audioContextRef.current;
+      
+      // Create oscillator for beep
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      
+      oscillator.frequency.value = 800;
+      oscillator.type = 'sine';
+      
+      gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+      
+      oscillator.start(ctx.currentTime);
+      oscillator.stop(ctx.currentTime + 0.15);
+    } catch {
+      // Ignore audio errors
+    }
+  }, [enableSound]);
+  
+  // Handle new events - trigger effects
+  useEffect(() => {
+    if (events.length > prevEventCountRef.current) {
+      const newEventsCount = events.length - prevEventCountRef.current;
+      
+      // Flash effect for new events
+      if (enableFlash) {
+        const indices = new Set<number>();
+        for (let i = 0; i < newEventsCount; i++) {
+          indices.add(i);
+        }
+        setFlashingIndices(indices);
+        
+        // Remove flash after animation
+        setTimeout(() => {
+          setFlashingIndices(new Set());
+        }, 1000);
+      }
+      
+      // Check for important events
+      const newEvents = events.slice(0, newEventsCount);
+      const hasImportantEvent = newEvents.some(
+        e => ['trade_executed', 'position_closed', 'error'].includes(e.type) ||
+             (e.type === 'decision_made' && e.data?.decisionType !== 'skip')
+      );
+      
+      // Sound notification for important events
+      if (enableSound && hasImportantEvent) {
+        playNotificationSound();
+      }
+      
+      // Haptic feedback on mobile for important events
+      if (enableVibration && hasImportantEvent && 'vibrate' in navigator) {
+        navigator.vibrate(100);
+      }
+    }
+    prevEventCountRef.current = events.length;
+  }, [events, enableSound, enableVibration, enableFlash, playNotificationSound]);
   
   // Auto-scroll to top when new events arrive
   useEffect(() => {
@@ -38,7 +135,7 @@ export function AITraderActivityFeed({
     }
   }, [events, autoScroll]);
   
-  const formatTimestamp = (timestamp?: string) => {
+  const formatTimestamp = useCallback((timestamp?: string) => {
     if (!timestamp) return '';
     const date = new Date(timestamp);
     return date.toLocaleTimeString('de-DE', { 
@@ -46,126 +143,126 @@ export function AITraderActivityFeed({
       minute: '2-digit', 
       second: '2-digit' 
     });
-  };
+  }, []);
   
-  const renderEventContent = (event: AITraderEvent) => {
-    const icon = EVENT_ICONS[event.type] || '📌';
+  const renderCompactEvent = (event: AITraderEvent, isFlashing: boolean) => {
     const time = formatTimestamp(event.data?.timestamp || event.timestamp);
+    const flashClass = isFlashing ? 'animate-pulse ring-2 ring-yellow-400/50' : '';
     
     switch (event.type) {
       case 'connected':
         return (
-          <div className="flex items-start gap-2">
-            <span className="text-lg">{icon}</span>
-            <div>
-              <div className="font-medium text-green-400">Connected</div>
-              <div className="text-xs text-gray-500">{time}</div>
-            </div>
+          <div className={`flex items-center gap-2 py-1 px-2 text-sm ${flashClass}`}>
+            <span className="text-gray-500 w-14 text-xs font-mono">{time}</span>
+            <span>🔌</span>
+            <span className="text-green-400">Verbunden</span>
           </div>
         );
         
       case 'heartbeat':
-        return null; // Don't display heartbeat events
+        return null;
         
       case 'status_changed':
         return (
-          <div className="flex items-start gap-2">
-            <span className="text-lg">{icon}</span>
-            <div className="flex-1">
-              <div className="font-medium">
-                Status: <span className="text-yellow-400">{event.data?.oldStatus}</span>
-                {' → '}
-                <span className="text-green-400">{event.data?.newStatus}</span>
-              </div>
-              {event.data?.message && (
-                <div className="text-sm text-gray-400 mt-1">{event.data.message}</div>
-              )}
-              <div className="text-xs text-gray-500 mt-1">{time}</div>
-            </div>
+          <div className={`flex items-center gap-2 py-1 px-2 text-sm ${flashClass}`}>
+            <span className="text-gray-500 w-14 text-xs font-mono">{time}</span>
+            <span>🔄</span>
+            <span className="text-yellow-400">{event.data?.oldStatus}</span>
+            <span className="text-gray-500">→</span>
+            <span className="text-green-400">{event.data?.newStatus}</span>
           </div>
         );
         
       case 'analyzing':
         return (
-          <div className="flex items-start gap-2">
-            <span className="text-lg animate-pulse">{icon}</span>
-            <div className="flex-1">
-              <div className="font-medium text-blue-400">Analyzing Markets</div>
-              <div className="text-sm text-gray-400 mt-1">
-                Phase: {event.data?.phase} ({event.data?.progress}%)
-              </div>
-              {event.data?.symbols && (
-                <div className="text-xs text-gray-500 mt-1">
-                  Symbols: {(event.data.symbols as string[]).join(', ')}
-                </div>
-              )}
-              <div className="text-xs text-gray-500 mt-1">{time}</div>
-            </div>
+          <div className={`flex items-center gap-2 py-1 px-2 text-sm ${flashClass}`}>
+            <span className="text-gray-500 w-14 text-xs font-mono">{time}</span>
+            <span className="animate-pulse">🔍</span>
+            <span className="text-blue-400">Analyse</span>
+            <span className="text-gray-500 text-xs truncate">
+              {event.data?.symbols ? (event.data.symbols as string[]).slice(0, 5).join(', ') : '...'}
+            </span>
           </div>
         );
         
-      case 'decision_made':
-        return (
-          <div className="flex items-start gap-2">
-            <span className="text-lg">{icon}</span>
-            <div className="flex-1">
-              <div className="font-medium text-purple-400">Decision Made</div>
-              <div className="text-sm text-gray-400 mt-1">
-                {String(event.data?.symbol)}: {String(event.data?.decisionType)}
-              </div>
-              <div className="text-xs text-gray-500 mt-1">{time}</div>
-            </div>
-          </div>
-        );
+      case 'decision_made': {
+        const decisionType = String(event.data?.decisionType || 'skip').toLowerCase();
+        const symbol = String(event.data?.symbol || '');
+        const confidence = event.data?.confidence;
+        const typeColorClass = DECISION_TYPE_COLORS[decisionType] || DECISION_TYPE_COLORS.skip;
         
-      case 'trade_executed':
         return (
-          <div className="flex items-start gap-2">
-            <span className="text-lg">{icon}</span>
-            <div className="flex-1">
-              <div className="font-medium text-green-400">Trade Executed</div>
-              <div className="text-sm text-gray-400 mt-1">
-                {String(event.data?.symbol)}: {String(event.data?.action)} {String(event.data?.quantity)} @ ${String(event.data?.price)}
-              </div>
-              <div className="text-xs text-gray-500 mt-1">{time}</div>
-            </div>
+          <div className={`flex items-center gap-2 py-1.5 px-2 rounded border ${typeColorClass} ${flashClass}`}>
+            <span className="text-gray-500 w-14 text-xs font-mono">{time}</span>
+            <span>🧠</span>
+            <span className="font-mono font-semibold w-14">{symbol}</span>
+            <span className={`text-xs px-1.5 py-0.5 rounded uppercase font-bold`}>
+              {decisionType}
+            </span>
+            {confidence !== undefined && (
+              <span className="text-xs text-gray-400 ml-auto">
+                {(Number(confidence) * 100).toFixed(0)}%
+              </span>
+            )}
           </div>
         );
+      }
         
-      case 'position_closed':
+      case 'trade_executed': {
+        const action = String(event.data?.action || '').toUpperCase();
+        const symbol = String(event.data?.symbol || '');
+        const quantity = event.data?.quantity;
+        const price = event.data?.price;
+        const isBuy = action === 'BUY';
+        
         return (
-          <div className="flex items-start gap-2">
-            <span className="text-lg">{icon}</span>
-            <div className="flex-1">
-              <div className="font-medium text-orange-400">Position Closed</div>
-              <div className="text-sm text-gray-400 mt-1">
-                {String(event.data?.symbol)}: P&L {String(event.data?.pnl)}%
-              </div>
-              <div className="text-xs text-gray-500 mt-1">{time}</div>
-            </div>
+          <div className={`flex items-center gap-2 py-1.5 px-2 rounded border ${isBuy ? 'bg-green-500/20 border-green-500/40' : 'bg-red-500/20 border-red-500/40'} ${flashClass}`}>
+            <span className="text-gray-500 w-14 text-xs font-mono">{time}</span>
+            <span>💼</span>
+            <span className="font-mono font-semibold w-14">{symbol}</span>
+            <span className={`text-xs px-1.5 py-0.5 rounded font-bold ${isBuy ? 'bg-green-500/30 text-green-300' : 'bg-red-500/30 text-red-300'}`}>
+              {action}
+            </span>
+            <span className="text-xs text-gray-300">
+              {quantity}× ${Number(price).toFixed(2)}
+            </span>
           </div>
         );
+      }
+        
+      case 'position_closed': {
+        const symbol = String(event.data?.symbol || '');
+        const pnl = Number(event.data?.pnl || 0);
+        const isProfitable = pnl >= 0;
+        
+        return (
+          <div className={`flex items-center gap-2 py-1.5 px-2 rounded border ${isProfitable ? 'bg-green-500/15 border-green-500/30' : 'bg-red-500/15 border-red-500/30'} ${flashClass}`}>
+            <span className="text-gray-500 w-14 text-xs font-mono">{time}</span>
+            <span>🔒</span>
+            <span className="font-mono font-semibold w-14">{symbol}</span>
+            <span className="text-xs text-gray-400">Geschlossen</span>
+            <span className={`text-sm font-bold ml-auto ${isProfitable ? 'text-green-400' : 'text-red-400'}`}>
+              {isProfitable ? '+' : ''}{pnl.toFixed(2)}%
+            </span>
+          </div>
+        );
+      }
         
       case 'error':
         return (
-          <div className="flex items-start gap-2">
-            <span className="text-lg">{icon}</span>
-            <div className="flex-1">
-              <div className="font-medium text-red-400">Error</div>
-              <div className="text-sm text-gray-400 mt-1">{event.data?.error}</div>
-              <div className="text-xs text-gray-500 mt-1">{time}</div>
-            </div>
+          <div className={`flex items-center gap-2 py-1 px-2 rounded bg-red-500/10 border border-red-500/30 ${flashClass}`}>
+            <span className="text-gray-500 w-14 text-xs font-mono">{time}</span>
+            <span>❌</span>
+            <span className="text-sm text-red-400 truncate flex-1">{event.data?.error}</span>
           </div>
         );
         
       default:
         return (
-          <div className="flex items-start gap-2">
-            <span className="text-lg">{icon}</span>
-            <div className="flex-1">
-              <div className="font-medium">{event.type}</div>
-              <div className="text-xs text-gray-500 mt-1">{time}</div>
-            </div>
+          <div className={`flex items-center gap-2 py-1 px-2 text-sm ${flashClass}`}>
+            <span className="text-gray-500 w-14 text-xs font-mono">{time}</span>
+            <span>📌</span>
+            <span className="text-gray-400">{event.type}</span>
           </div>
         );
     }
@@ -173,10 +270,17 @@ export function AITraderActivityFeed({
   
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
-      <div className="px-4 py-3 border-b border-slate-700/50">
-        <h3 className="font-bold flex items-center gap-2">
-          📊 Live Activity Feed
+      <div className="px-3 py-2 border-b border-slate-700/50 flex items-center justify-between">
+        <h3 className="font-bold text-sm flex items-center gap-2">
+          📊 Live Activity
+          {events.length > 0 && (
+            <span className="text-xs text-gray-500 font-normal">({events.length})</span>
+          )}
         </h3>
+        <div className="flex items-center gap-1.5 text-xs text-gray-500">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+          Live
+        </div>
       </div>
       
       <div 
@@ -184,27 +288,23 @@ export function AITraderActivityFeed({
         className="overflow-y-auto"
         style={{ maxHeight }}
       >
-        {events.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">
-            <div className="text-4xl mb-2">👀</div>
-            <div>Waiting for events...</div>
+        {sortedEvents.length === 0 ? (
+          <div className="p-4 text-center text-gray-500 text-sm">
+            <div className="text-xl mb-1">👀</div>
+            <div>Warte auf Ereignisse...</div>
           </div>
         ) : (
-          <div className="p-4 space-y-3">
-            {events.map((event, index) => {
-              const content = renderEventContent(event);
+          <div className="p-1.5 space-y-0.5">
+            {sortedEvents.map((event, index) => {
+              const content = renderCompactEvent(event, flashingIndices.has(index));
               if (!content) return null;
               
-              // Create a unique key using timestamp and type, fallback to index
               const key = event.data?.timestamp 
-                ? `${event.type}-${event.data.timestamp}-${event.traderId || 'all'}`
+                ? `${event.type}-${event.data.timestamp}-${event.traderId || 'all'}-${event.data?.symbol || ''}`
                 : `${event.type}-${index}`;
               
               return (
-                <div 
-                  key={key}
-                  className="bg-slate-900/50 rounded-lg p-3 border border-slate-700/30 hover:border-slate-600/50 transition-colors"
-                >
+                <div key={key} className="transition-all duration-300 rounded hover:bg-slate-700/30">
                   {content}
                 </div>
               );

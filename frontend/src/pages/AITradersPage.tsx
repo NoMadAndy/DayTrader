@@ -8,7 +8,7 @@
  * - Navigate to individual AI trader dashboards
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getAuthState, subscribeToAuth, type AuthState } from '../services/authService';
 import { 
@@ -113,6 +113,25 @@ export default function AITradersPage() {
     loadDefaultPersonality();
     loadAvailableSymbols();
   }, []);
+  
+  // Auto-refresh traders list every 30 seconds to update status
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      refreshTraders();
+    }, 30000);
+    
+    return () => clearInterval(intervalId);
+  }, []);
+  
+  // Silent refresh (no loading spinner)
+  const refreshTraders = async () => {
+    try {
+      const traderList = await getAITraders();
+      setTraders(traderList);
+    } catch (err) {
+      console.error('Failed to refresh AI traders:', err);
+    }
+  };
 
   const loadTraders = async () => {
     try {

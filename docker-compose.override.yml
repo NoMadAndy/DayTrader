@@ -27,8 +27,12 @@ services:
       - CHOKIDAR_USEPOLLING=true
       # BACKEND_URL is for Vite's internal proxy (Docker internal network)
       - BACKEND_URL=http://backend:3001
+      # RL_SERVICE_URL is for Vite's internal proxy (Docker internal network)
+      - RL_SERVICE_URL=http://rl-trading-service:8001
       # VITE_API_BASE_URL should be empty for relative URLs in browser
       - VITE_API_BASE_URL=
+      # VITE_RL_SERVICE_URL for browser access (via proxy)
+      - VITE_RL_SERVICE_URL=/rl-api
       - VITE_FINNHUB_API_KEY=${VITE_FINNHUB_API_KEY:-}
       - VITE_ALPHA_VANTAGE_API_KEY=${VITE_ALPHA_VANTAGE_API_KEY:-}
       - VITE_TWELVE_DATA_API_KEY=${VITE_TWELVE_DATA_API_KEY:-}
@@ -66,5 +70,20 @@ services:
       - USE_CUDA=false
       - DEBUG=true
 
+  # Development rl-trading-service (CPU-only, with hot reload)
+  rl-trading-service:
+    build:
+      context: ./rl-trading-service
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./rl-trading-service/app:/app/app:ro
+      - rl-models-dev:/app/models
+      - rl-checkpoints-dev:/app/checkpoints
+    environment:
+      - USE_CUDA=false
+      - DEBUG=true
+
 volumes:
   ml-models-dev:
+  rl-models-dev:
+  rl-checkpoints-dev:

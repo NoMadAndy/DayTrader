@@ -34,18 +34,18 @@ async function handleResponse<T>(response: Response): Promise<T> {
 // ============================================================================
 
 /**
- * Get all AI traders
+ * Get all AI traders (with cache-busting to ensure fresh data)
  */
 export async function getAITraders(): Promise<AITrader[]> {
-  const response = await fetch(`${API_BASE}/ai-traders`);
+  const response = await fetch(`${API_BASE}/ai-traders?_t=${Date.now()}`, { cache: 'no-store' });
   return handleResponse<AITrader[]>(response);
 }
 
 /**
- * Get AI trader by ID
+ * Get AI trader by ID (with cache-busting)
  */
 export async function getAITrader(id: number): Promise<AITrader> {
-  const response = await fetch(`${API_BASE}/ai-traders/${id}`);
+  const response = await fetch(`${API_BASE}/ai-traders/${id}?_t=${Date.now()}`, { cache: 'no-store' });
   return handleResponse<AITrader>(response);
 }
 
@@ -271,4 +271,42 @@ export async function adjustWeights(
 export async function getDefaultPersonality(): Promise<AITraderPersonality> {
   const response = await fetch(`${API_BASE}/ai-traders/config/default-personality`);
   return handleResponse<AITraderPersonality>(response);
+}
+
+// ============================================================================
+// RL Agents
+// ============================================================================
+
+/** RL Agent status from the RL Trading Service */
+export interface RLAgentStatus {
+  name: string;
+  status: 'trained' | 'training' | 'not_trained';
+  is_trained: boolean;
+  training_progress: number;
+  last_trained: string | null;
+  total_episodes: number;
+  best_reward: number;
+  config: {
+    name: string;
+    description: string;
+    holding_period: string;
+    risk_profile: string;
+    trading_style: string;
+  };
+  performance_metrics?: {
+    mean_reward: number;
+    std_reward: number;
+    mean_return_pct: number;
+    max_return_pct: number;
+    min_return_pct: number;
+  };
+}
+
+/**
+ * Get available RL agents from the RL Trading Service
+ */
+export async function getAvailableRLAgents(): Promise<RLAgentStatus[]> {
+  const RL_SERVICE_URL = import.meta.env.VITE_RL_SERVICE_URL || '/rl-api';
+  const response = await fetch(`${RL_SERVICE_URL}/agents`);
+  return handleResponse<RLAgentStatus[]>(response);
 }

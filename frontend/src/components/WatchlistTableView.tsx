@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { TradingSignalSummary } from '../utils/tradingSignals';
 import type { CompanyInfo } from '../services/companyInfoService';
+import { detectExchange } from '../utils/exchanges';
 
 // Helper function to format market cap
 function formatMarketCap(value: number): string {
@@ -113,6 +114,18 @@ export function WatchlistTableView({
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
                 <span className="font-semibold text-white text-base">{item.symbol}</span>
+                {/* Exchange Badge */}
+                {(() => {
+                  const exchange = detectExchange(item.symbol);
+                  return (
+                    <span 
+                      className="text-[10px] px-1 py-0.5 rounded bg-slate-700/30 text-gray-500" 
+                      title={exchange.name}
+                    >
+                      {exchange.flag}
+                    </span>
+                  );
+                })()}
                 {item.companyInfo?.marketCapEUR !== undefined && (
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700/50 text-gray-400" title="Marktkapitalisierung">
                     €{formatMarketCap(item.companyInfo.marketCapEUR)}

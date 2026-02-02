@@ -208,6 +208,7 @@ export const DEFAULT_PERSONALITY = {
   watchlist: {
     symbols: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA'],
     autoUpdate: false,
+    useFullWatchlist: false,  // If true, use user's entire watchlist
   },
   sentiment: {
     enabled: true,

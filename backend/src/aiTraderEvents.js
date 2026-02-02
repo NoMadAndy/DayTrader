@@ -31,12 +31,11 @@ class AITraderEventEmitter extends EventEmitter {
     // Disable response buffering at Node.js level
     res.flushHeaders();
     
-    // Send initial comment to establish connection
-    res.write(':ok\n\n');
+    // Send retry directive for auto-reconnect (3 seconds)
+    res.write('retry: 3000\n\n');
     
-    // Send immediate heartbeat to confirm connection
-    const connectEvent = `event: heartbeat\ndata: ${JSON.stringify({ type: 'heartbeat', timestamp: new Date().toISOString(), connected: true })}\n\n`;
-    res.write(connectEvent);
+    // Send initial comment to establish connection and prevent proxy buffering
+    res.write(': keep-alive\n\n');
     
     this.clients.set(clientId, {
       res,
@@ -89,8 +88,9 @@ class AITraderEventEmitter extends EventEmitter {
    */
   heartbeat() {
     const timestamp = new Date().toISOString();
-    // Use named event type for heartbeat
-    const heartbeatEvent = `event: heartbeat\ndata: ${JSON.stringify({ type: 'heartbeat', timestamp })}\n\n`;
+    // Use SSE comment + named event for maximum proxy compatibility
+    // The : comment prevents proxy buffering, the event provides data
+    const heartbeatEvent = `: heartbeat ${timestamp}\nevent: heartbeat\ndata: ${JSON.stringify({ type: 'heartbeat', timestamp })}\n\n`;
     
     for (const [clientId, client] of this.clients) {
       try {

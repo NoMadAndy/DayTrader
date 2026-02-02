@@ -5,6 +5,8 @@
  * - Heartbeat monitoring to detect stale connections
  * - Automatic polling fallback when SSE fails
  * - Reconnection with exponential backoff
+ * - EventSource.readyState monitoring
+ * - Periodic connection health checks
  */
 import { useEffect, useState, useCallback, useRef } from 'react';
 import type { AITraderEvent } from '../types/aiTrader';
@@ -25,11 +27,12 @@ interface StreamState {
 
 // Constants
 const MAX_EVENTS = 100;
-const HEARTBEAT_TIMEOUT_MS = 25000; // Expect heartbeat every 15s, timeout after 25s
-const INITIAL_RECONNECT_DELAY_MS = 1000;
-const MAX_RECONNECT_DELAY_MS = 30000;
+const HEARTBEAT_TIMEOUT_MS = 20000;
+const INITIAL_RECONNECT_DELAY_MS = 500;
+const MAX_RECONNECT_DELAY_MS = 15000;
 const POLLING_INTERVAL_MS = 5000;
-const MAX_SSE_FAILURES = 3;
+const MAX_SSE_FAILURES = 5;
+const CONNECTION_CHECK_INTERVAL_MS = 10000;
 
 export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
   const { traderId, enabled = true, onEvent } = options;
@@ -45,18 +48,23 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
   const reconnectTimeoutRef = useRef<number | null>(null);
   const heartbeatTimeoutRef = useRef<number | null>(null);
   const pollingIntervalRef = useRef<number | null>(null);
+  const connectionCheckIntervalRef = useRef<number | null>(null);
   const onEventRef = useRef(onEvent);
   const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY_MS);
   const sseFailureCountRef = useRef(0);
+  const lastHeartbeatRef = useRef<number>(Date.now());
+  const isConnectingRef = useRef(false);
+  const traderIdRef = useRef(traderId);
   
-  // Keep onEvent ref up to date
   useEffect(() => {
     onEventRef.current = onEvent;
   }, [onEvent]);
   
-  // Process incoming event
+  useEffect(() => {
+    traderIdRef.current = traderId;
+  }, [traderId]);
+  
   const processEvent = useCallback((event: AITraderEvent) => {
-    // Skip heartbeat events from being added to the event list
     if (event.type === 'heartbeat') {
       return;
     }
@@ -76,40 +84,48 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
     onEventRef.current?.(event);
   }, []);
   
-  // Stop polling
-  const stopPolling = useCallback(() => {
+  const cleanup = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    if (heartbeatTimeoutRef.current) {
+      clearTimeout(heartbeatTimeoutRef.current);
+      heartbeatTimeoutRef.current = null;
+    }
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
       pollingIntervalRef.current = null;
     }
-  }, []);
-  
-  // Start polling fallback
-  const startPolling = useCallback(() => {
-    stopPolling();
-    
-    // Close SSE if still open
+    if (connectionCheckIntervalRef.current) {
+      clearInterval(connectionCheckIntervalRef.current);
+      connectionCheckIntervalRef.current = null;
+    }
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
+    isConnectingRef.current = false;
+  }, []);
+  
+  const startPolling = useCallback(() => {
+    cleanup();
     
     setState(prev => ({ ...prev, connected: true, mode: 'polling', error: null }));
     console.log('[Stream] Starting polling fallback mode');
     
     const poll = async () => {
       try {
-        // Poll trader status instead of events for simpler implementation
-        if (traderId) {
-          const response = await fetch(`/api/ai-traders/${traderId}`);
+        const tid = traderIdRef.current;
+        if (tid) {
+          const response = await fetch(`/api/ai-traders/${tid}?_t=${Date.now()}`);
           if (response.ok) {
             const trader = await response.json();
-            // Create a synthetic status event
             const statusEvent: AITraderEvent = {
               type: 'status_update',
-              traderId,
+              traderId: tid,
               data: {
-                traderId,
+                traderId: tid,
                 status: trader.status,
                 tradingTime: trader.tradingTime,
                 statusMessage: trader.statusMessage,
@@ -124,55 +140,35 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
       }
     };
     
-    // Initial poll
     poll();
-    
-    // Set up interval
     pollingIntervalRef.current = window.setInterval(poll, POLLING_INTERVAL_MS);
-  }, [traderId, processEvent, stopPolling]);
+  }, [cleanup, processEvent]);
   
-  // Reset heartbeat timeout
-  const resetHeartbeatTimeout = useCallback(() => {
-    if (heartbeatTimeoutRef.current) {
-      clearTimeout(heartbeatTimeoutRef.current);
+  const connectSSE = useCallback(() => {
+    if (isConnectingRef.current) {
+      console.log('[SSE] Connection already in progress, skipping');
+      return;
     }
     
-    heartbeatTimeoutRef.current = window.setTimeout(() => {
-      console.warn('[SSE] Heartbeat timeout - connection may be stale');
-      // Connection is stale, reconnect
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-        sseFailureCountRef.current++;
-        
-        if (sseFailureCountRef.current >= MAX_SSE_FAILURES) {
-          console.log('[SSE] Too many failures, switching to polling mode');
-          startPolling();
-        } else {
-          // Will reconnect via onerror handler
-        }
-      }
-    }, HEARTBEAT_TIMEOUT_MS);
-  }, [startPolling]);
-  
-  // Connect via SSE
-  const connectSSE = useCallback(() => {
-    // Clear any pending reconnection
+    isConnectingRef.current = true;
+    
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
-    
-    // Clear heartbeat timeout
     if (heartbeatTimeoutRef.current) {
       clearTimeout(heartbeatTimeoutRef.current);
       heartbeatTimeoutRef.current = null;
     }
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    if (connectionCheckIntervalRef.current) {
+      clearInterval(connectionCheckIntervalRef.current);
+      connectionCheckIntervalRef.current = null;
+    }
     
-    // Stop polling if active
-    stopPolling();
-    
-    // Close existing connection
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
@@ -180,126 +176,193 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
     
     setState(prev => ({ ...prev, mode: 'connecting' }));
     
-    const url = traderId 
-      ? `/api/stream/ai-trader/${traderId}`
+    const tid = traderIdRef.current;
+    const url = tid 
+      ? `/api/stream/ai-trader/${tid}`
       : '/api/stream/ai-traders';
     
     console.log(`[SSE] Connecting to ${url}`);
-    const es = new EventSource(url);
-    eventSourceRef.current = es;
     
-    es.onopen = () => {
-      console.log('[SSE] Connection opened');
-      reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
-      sseFailureCountRef.current = 0;
-      setState(prev => ({ ...prev, connected: true, error: null, mode: 'sse' }));
-      resetHeartbeatTimeout();
-    };
-    
-    // Handle named 'message' events
-    es.addEventListener('message', (e) => {
-      try {
-        const event = JSON.parse(e.data) as AITraderEvent;
-        processEvent(event);
-        resetHeartbeatTimeout();
-      } catch (err) {
-        console.error('[SSE] Failed to parse message event:', err);
-      }
-    });
-    
-    // Handle named 'heartbeat' events
-    es.addEventListener('heartbeat', () => {
-      // Heartbeat received - connection is alive
-      resetHeartbeatTimeout();
-    });
-    
-    // Legacy: Handle unnamed events via onmessage
-    es.onmessage = (e) => {
-      try {
-        const event = JSON.parse(e.data) as AITraderEvent;
-        if (event.type === 'heartbeat') {
-          resetHeartbeatTimeout();
+    try {
+      const es = new EventSource(url);
+      eventSourceRef.current = es;
+      
+      const setupHeartbeatTimeout = () => {
+        if (heartbeatTimeoutRef.current) {
+          clearTimeout(heartbeatTimeoutRef.current);
+        }
+        lastHeartbeatRef.current = Date.now();
+        
+        heartbeatTimeoutRef.current = window.setTimeout(() => {
+          const timeSinceHeartbeat = Date.now() - lastHeartbeatRef.current;
+          console.warn(`[SSE] Heartbeat timeout (${timeSinceHeartbeat}ms since last heartbeat)`);
+          
+          if (eventSourceRef.current) {
+            const readyState = eventSourceRef.current.readyState;
+            console.log(`[SSE] Connection readyState: ${readyState} (0=CONNECTING, 1=OPEN, 2=CLOSED)`);
+            
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+            isConnectingRef.current = false;
+            sseFailureCountRef.current++;
+            
+            if (sseFailureCountRef.current >= MAX_SSE_FAILURES) {
+              console.log(`[SSE] Too many failures (${sseFailureCountRef.current}), switching to polling`);
+              startPolling();
+            } else {
+              console.log(`[SSE] Scheduling reconnect (failure ${sseFailureCountRef.current}/${MAX_SSE_FAILURES})`);
+              reconnectTimeoutRef.current = window.setTimeout(() => {
+                connectSSE();
+              }, INITIAL_RECONNECT_DELAY_MS);
+            }
+          }
+        }, HEARTBEAT_TIMEOUT_MS);
+      };
+      
+      const setupConnectionCheck = () => {
+        if (connectionCheckIntervalRef.current) {
+          clearInterval(connectionCheckIntervalRef.current);
+        }
+        connectionCheckIntervalRef.current = window.setInterval(() => {
+          const esRef = eventSourceRef.current;
+          if (esRef) {
+            if (esRef.readyState === EventSource.CLOSED) {
+              console.warn('[SSE] Connection check: EventSource is CLOSED, reconnecting');
+              esRef.close();
+              eventSourceRef.current = null;
+              isConnectingRef.current = false;
+              reconnectTimeoutRef.current = window.setTimeout(() => {
+                connectSSE();
+              }, INITIAL_RECONNECT_DELAY_MS);
+            } else if (esRef.readyState === EventSource.CONNECTING) {
+              console.log('[SSE] Connection check: Still connecting...');
+            }
+          }
+        }, CONNECTION_CHECK_INTERVAL_MS);
+      };
+      
+      es.onopen = () => {
+        console.log('[SSE] Connection opened successfully');
+        isConnectingRef.current = false;
+        reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
+        sseFailureCountRef.current = 0;
+        setState(prev => ({ ...prev, connected: true, error: null, mode: 'sse' }));
+        setupHeartbeatTimeout();
+        setupConnectionCheck();
+      };
+      
+      es.addEventListener('message', (e) => {
+        try {
+          const event = JSON.parse(e.data) as AITraderEvent;
+          processEvent(event);
+          setupHeartbeatTimeout();
+        } catch (err) {
+          console.error('[SSE] Failed to parse message event:', err, e.data);
+        }
+      });
+      
+      es.addEventListener('heartbeat', () => {
+        console.debug('[SSE] Heartbeat received');
+        lastHeartbeatRef.current = Date.now();
+        setupHeartbeatTimeout();
+      });
+      
+      es.onerror = () => {
+        console.error('[SSE] Connection error, readyState:', es.readyState);
+        isConnectingRef.current = false;
+        setState(prev => ({ ...prev, connected: false, error: 'Connection error' }));
+        
+        if (heartbeatTimeoutRef.current) {
+          clearTimeout(heartbeatTimeoutRef.current);
+          heartbeatTimeoutRef.current = null;
+        }
+        
+        if (connectionCheckIntervalRef.current) {
+          clearInterval(connectionCheckIntervalRef.current);
+          connectionCheckIntervalRef.current = null;
+        }
+        
+        sseFailureCountRef.current++;
+        
+        if (sseFailureCountRef.current >= MAX_SSE_FAILURES) {
+          console.log(`[SSE] Too many errors (${sseFailureCountRef.current}), switching to polling`);
+          es.close();
+          eventSourceRef.current = null;
+          startPolling();
           return;
         }
-        processEvent(event);
-        resetHeartbeatTimeout();
-      } catch (err) {
-        console.error('[SSE] Failed to parse SSE event:', err);
-      }
-    };
-    
-    es.onerror = () => {
-      console.error('[SSE] Connection error');
-      setState(prev => ({ ...prev, connected: false, error: 'Connection lost' }));
-      
-      if (heartbeatTimeoutRef.current) {
-        clearTimeout(heartbeatTimeoutRef.current);
-      }
-      
-      sseFailureCountRef.current++;
-      
-      // Check if we should switch to polling
-      if (sseFailureCountRef.current >= MAX_SSE_FAILURES) {
-        console.log('[SSE] Too many failures, switching to polling mode');
-        if (eventSourceRef.current) {
-          eventSourceRef.current.close();
-          eventSourceRef.current = null;
+        
+        const delay = Math.min(reconnectDelayRef.current * 1.5, MAX_RECONNECT_DELAY_MS);
+        reconnectDelayRef.current = delay;
+        
+        console.log(`[SSE] Error ${sseFailureCountRef.current}/${MAX_SSE_FAILURES}, will check state in ${delay}ms`);
+        
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
         }
-        startPolling();
-        return;
-      }
+        
+        reconnectTimeoutRef.current = window.setTimeout(() => {
+          if (eventSourceRef.current && eventSourceRef.current.readyState === EventSource.OPEN) {
+            console.log('[SSE] Browser auto-reconnected successfully');
+            setupHeartbeatTimeout();
+            return;
+          }
+          
+          console.log('[SSE] Browser did not auto-reconnect, forcing reconnect');
+          if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+          }
+          connectSSE();
+        }, delay);
+      };
       
-      // Exponential backoff for reconnection
-      const delay = Math.min(reconnectDelayRef.current * 2, MAX_RECONNECT_DELAY_MS);
-      reconnectDelayRef.current = delay;
-      
-      console.log(`[SSE] Reconnecting in ${delay}ms (attempt ${sseFailureCountRef.current})`);
+    } catch (err) {
+      console.error('[SSE] Failed to create EventSource:', err);
+      isConnectingRef.current = false;
+      setState(prev => ({ ...prev, connected: false, error: 'Failed to connect', mode: 'connecting' }));
       
       reconnectTimeoutRef.current = window.setTimeout(() => {
         connectSSE();
-      }, delay);
-    };
-  }, [traderId, processEvent, resetHeartbeatTimeout, stopPolling, startPolling]);
+      }, reconnectDelayRef.current);
+    }
+  }, [processEvent, startPolling]);
   
-  // Main effect
   useEffect(() => {
     if (enabled) {
       connectSSE();
+    } else {
+      cleanup();
+      setState(prev => ({ ...prev, connected: false, mode: 'connecting' }));
     }
     
-    return () => {
-      // Clear all timeouts
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
-      
-      if (heartbeatTimeoutRef.current) {
-        clearTimeout(heartbeatTimeoutRef.current);
-        heartbeatTimeoutRef.current = null;
-      }
-      
-      // Stop polling
-      stopPolling();
-      
-      // Close SSE connection
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-    };
-  }, [enabled, connectSSE, stopPolling]);
+    return cleanup;
+  }, [enabled, connectSSE, cleanup]);
+  
+  useEffect(() => {
+    if (enabled && traderId !== undefined) {
+      const timeout = setTimeout(() => {
+        console.log(`[SSE] TraderId changed to ${traderId}, reconnecting`);
+        sseFailureCountRef.current = 0;
+        reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
+        connectSSE();
+      }, 100);
+      return () => clearTimeout(timeout);
+    }
+  }, [traderId, enabled, connectSSE]);
   
   const clearEvents = useCallback(() => {
     setState(prev => ({ ...prev, events: [] }));
   }, []);
   
-  // Force reconnect (try SSE first)
   const reconnect = useCallback(() => {
+    console.log('[SSE] Manual reconnect requested');
     sseFailureCountRef.current = 0;
     reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
-    connectSSE();
-  }, [connectSSE]);
+    isConnectingRef.current = false;
+    cleanup();
+    setTimeout(() => connectSSE(), 100);
+  }, [connectSSE, cleanup]);
   
   return {
     ...state,

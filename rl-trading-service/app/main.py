@@ -22,6 +22,7 @@ import logging
 import httpx
 import json
 import math
+import sys
 
 from .config import settings
 from .trainer import trainer, TradingAgentTrainer
@@ -65,13 +66,106 @@ def clear_training_logs(agent_name: str):
         training_logs[agent_name].clear()
 
 
+async def resume_running_traders():
+    """Resume all traders that were running before service restart."""
+    logger.info("resume_running_traders: Starting task...")
+    try:
+        # Wait a bit for backend to be ready
+        await asyncio.sleep(2)
+        logger.info("resume_running_traders: Checking for traders...")
+        
+        backend_url = settings.backend_url or "http://backend:3001"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Fetch all AI traders from backend
+            logger.info(f"resume_running_traders: Fetching from {backend_url}/api/ai-traders")
+            response = await client.get(f"{backend_url}/api/ai-traders")
+            logger.info(f"resume_running_traders: Response status: {response.status_code}")
+            if response.status_code != 200:
+                logger.warning(f"Could not fetch AI traders: {response.status_code}")
+                return
+            
+            traders = response.json()
+            running_traders = [t for t in traders if t.get('status') == 'running']
+            
+            if not running_traders:
+                logger.info("resume_running_traders: No running traders to resume")
+                return
+            
+            logger.info(f"resume_running_traders: Found {len(running_traders)} running traders to resume")
+            
+            from .ai_trader_scheduler import get_scheduler
+            from .ai_trader_engine import AITraderConfig
+            import dataclasses
+            
+            sched = get_scheduler()
+            valid_fields = {f.name for f in dataclasses.fields(AITraderConfig)}
+            
+            for trader in running_traders:
+                trader_id = trader.get('id')
+                personality = trader.get('personality', {})
+                
+                try:
+                    # Build config from personality
+                    config = {
+                        'symbols': personality.get('watchlist', {}).get('symbols', []),
+                        'check_interval': personality.get('schedule', {}).get('checkIntervalMinutes', 15),
+                        'trading_start': personality.get('schedule', {}).get('tradingStart', '09:00'),
+                        'trading_end': personality.get('schedule', {}).get('tradingEnd', '17:30'),
+                        'signal_weights': personality.get('signals', {}).get('weights', {}),
+                        'min_confidence': personality.get('trading', {}).get('minConfidence', 0.65),
+                        'rl_agent_name': personality.get('rlAgentName'),
+                    }
+                    
+                    # Filter to valid fields
+                    filtered_config = {
+                        k: v for k, v in config.items() 
+                        if k in valid_fields and k not in ('trader_id', 'name')
+                    }
+                    
+                    trader_config = AITraderConfig(
+                        trader_id=trader_id,
+                        name=trader.get('name', f'Trader-{trader_id}'),
+                        **filtered_config
+                    )
+                    
+                    await sched.start_trader(trader_id, trader_config)
+                    logger.info(f"Resumed trader {trader_id} ({trader.get('name')})")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to resume trader {trader_id}: {e}")
+            
+    except Exception as e:
+        logger.error(f"Error resuming running traders: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler"""
     logger.info(f"Starting {settings.service_name} v{settings.version}")
     logger.info(f"Device: {settings.device_info}")
+    logger.info("Scheduling auto-resume of traders...")
+    
+    # Create the resume task - it will run after we yield
+    resume_task = asyncio.create_task(_delayed_resume())
+    
     yield
+    
+    # Cancel the resume task if it's still running
+    if not resume_task.done():
+        resume_task.cancel()
+    
     logger.info("Shutting down RL Trading Service")
+
+
+async def _delayed_resume():
+    """Resume traders after a delay to let the server fully start."""
+    try:
+        await asyncio.sleep(5)
+        await resume_running_traders()
+    except asyncio.CancelledError:
+        logger.info("Resume task cancelled during shutdown")
+    except Exception as e:
+        logger.error(f"Resume task failed: {e}")
 
 
 app = FastAPI(
@@ -89,6 +183,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Middleware to disable caching for all API responses
+@app.middleware("http")
+async def add_no_cache_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, proxy-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 # ============== Pydantic Models ==============
@@ -800,11 +904,26 @@ async def start_ai_trader(trader_id: int, config: dict):
         Status and trader ID
     """
     try:
+        # Get valid AITraderConfig field names
+        import dataclasses
+        valid_fields = {f.name for f in dataclasses.fields(AITraderConfig)}
+        
+        # Filter config to only include valid fields, excluding trader_id and name
+        filtered_config = {
+            k: v for k, v in config.items() 
+            if k in valid_fields and k not in ('trader_id', 'name')
+        }
+        
+        # Log any ignored fields for debugging
+        ignored_fields = set(config.keys()) - valid_fields - {'name'}
+        if ignored_fields:
+            logger.warning(f"Ignoring unknown config fields for trader {trader_id}: {ignored_fields}")
+        
         # Create config from dict
         trader_config = AITraderConfig(
             trader_id=trader_id,
             name=config.get('name', f'Trader-{trader_id}'),
-            **{k: v for k, v in config.items() if k != 'trader_id' and k != 'name'}
+            **filtered_config
         )
         
         # Start trader

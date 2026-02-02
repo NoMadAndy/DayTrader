@@ -5,7 +5,8 @@
  */
 
 import { useState, useEffect } from 'react';
-import { updateAITrader } from '../services/aiTraderService';
+import { updateAITrader, getAvailableRLAgents, type RLAgentStatus } from '../services/aiTraderService';
+import { getCustomSymbols } from '../services/userSettingsService';
 import { useSettings } from '../contexts';
 import type { AITrader, AITraderPersonality, AITraderRiskConfig } from '../types/aiTrader';
 
@@ -44,6 +45,11 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
   const [watchlistSymbols, setWatchlistSymbols] = useState(
     trader.personality?.watchlist?.symbols?.join(', ') || ''
   );
+  const [useFullWatchlist, setUseFullWatchlist] = useState(
+    trader.personality?.watchlist?.useFullWatchlist ?? false
+  );
+  const [userWatchlistSymbols, setUserWatchlistSymbols] = useState<string[]>([]);
+  const [loadingWatchlist, setLoadingWatchlist] = useState(false);
   
   // Signal weights
   const [mlWeight, setMlWeight] = useState(trader.personality?.signals?.weights?.ml || 0.25);
@@ -62,6 +68,40 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
   const [updateWeights, setUpdateWeights] = useState(trader.personality?.learning?.updateWeights ?? false);
   const [minSamples, setMinSamples] = useState(trader.personality?.learning?.minSamples || 5);
   
+  // RL Agent
+  const [rlAgentName, setRlAgentName] = useState(trader.personality?.rlAgentName || '');
+  const [availableRLAgents, setAvailableRLAgents] = useState<RLAgentStatus[]>([]);
+  const [loadingAgents, setLoadingAgents] = useState(false);
+  
+  // Load available RL agents
+  useEffect(() => {
+    if (isOpen) {
+      setLoadingAgents(true);
+      getAvailableRLAgents()
+        .then(agents => {
+          // Only show trained agents
+          setAvailableRLAgents(agents.filter(a => a.is_trained));
+        })
+        .catch(err => {
+          console.error('Failed to load RL agents:', err);
+          setAvailableRLAgents([]);
+        })
+        .finally(() => setLoadingAgents(false));
+      
+      // Load user's watchlist symbols
+      setLoadingWatchlist(true);
+      getCustomSymbols()
+        .then(symbols => {
+          setUserWatchlistSymbols(symbols.map(s => s.symbol));
+        })
+        .catch(err => {
+          console.error('Failed to load watchlist:', err);
+          setUserWatchlistSymbols([]);
+        })
+        .finally(() => setLoadingWatchlist(false));
+    }
+  }, [isOpen]);
+  
   // Reset form when trader changes
   useEffect(() => {
     if (isOpen) {
@@ -75,6 +115,7 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
       setMaxPositions(trader.personality?.trading?.maxOpenPositions || 5);
       setMinConfidence(trader.personality?.signals?.minAgreement || 0.6);
       setWatchlistSymbols(trader.personality?.watchlist?.symbols?.join(', ') || '');
+      setUseFullWatchlist(trader.personality?.watchlist?.useFullWatchlist ?? false);
       setMlWeight(trader.personality?.signals?.weights?.ml || 0.25);
       setRlWeight(trader.personality?.signals?.weights?.rl || 0.25);
       setSentimentWeight(trader.personality?.signals?.weights?.sentiment || 0.25);
@@ -86,6 +127,7 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
       setLearningEnabled(trader.personality?.learning?.enabled ?? false);
       setUpdateWeights(trader.personality?.learning?.updateWeights ?? false);
       setMinSamples(trader.personality?.learning?.minSamples || 5);
+      setRlAgentName(trader.personality?.rlAgentName || '');
       setError(null);
     }
   }, [trader, isOpen]);
@@ -138,13 +180,15 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
         },
         watchlist: {
           ...trader.personality?.watchlist,
-          symbols,
+          symbols: useFullWatchlist ? userWatchlistSymbols : symbols,
+          useFullWatchlist,
         },
         learning: {
           enabled: learningEnabled,
           updateWeights: learningEnabled && updateWeights,
           minSamples,
         },
+        rlAgentName: rlAgentName || undefined,
       };
       
       const updated = await updateAITrader(trader.id, {
@@ -336,6 +380,50 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
               )}
             </h3>
             
+            {/* RL Agent Selection */}
+            <div className="p-4 bg-slate-700/30 rounded-lg border border-slate-600">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                🤖 RL-Agent für Signale
+              </label>
+              <select
+                value={rlAgentName}
+                onChange={(e) => setRlAgentName(e.target.value)}
+                disabled={loadingAgents}
+                className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+              >
+                <option value="">Kein RL-Agent (nur Technical Analysis)</option>
+                {availableRLAgents.map((agent) => (
+                  <option key={agent.name} value={agent.name}>
+                    {agent.name} - {agent.config.description} ({agent.config.risk_profile})
+                  </option>
+                ))}
+              </select>
+              {rlAgentName && (
+                <div className="mt-2 text-xs text-gray-400">
+                  {(() => {
+                    const agent = availableRLAgents.find(a => a.name === rlAgentName);
+                    if (!agent) return null;
+                    return (
+                      <div className="flex flex-wrap gap-2">
+                        <span className="px-2 py-0.5 bg-blue-600/30 rounded">Stil: {agent.config.trading_style}</span>
+                        <span className="px-2 py-0.5 bg-green-600/30 rounded">Haltedauer: {agent.config.holding_period}</span>
+                        {agent.performance_metrics && (
+                          <span className="px-2 py-0.5 bg-purple-600/30 rounded">
+                            Ø Return: {agent.performance_metrics.mean_return_pct.toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+              {!rlAgentName && rlWeight > 0 && (
+                <p className="mt-2 text-xs text-amber-400">
+                  ⚠️ Ohne RL-Agent wird das RL-Gewicht ({(rlWeight * 100).toFixed(0)}%) nicht berücksichtigt.
+                </p>
+              )}
+            </div>
+            
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -431,18 +519,65 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
                   className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Watchlist Symbole
+            </div>
+            
+            {/* Watchlist Selection */}
+            <div className="p-4 bg-slate-700/30 rounded-lg border border-slate-600">
+              <label className="block text-sm font-medium text-gray-300 mb-3">
+                📋 Watchlist Symbole
+              </label>
+              
+              {/* Toggle for full watchlist */}
+              <div className="flex items-center gap-3 mb-3">
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useFullWatchlist}
+                    onChange={(e) => setUseFullWatchlist(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                 </label>
-                <input
-                  type="text"
-                  value={watchlistSymbols}
-                  onChange={(e) => setWatchlistSymbols(e.target.value)}
-                  placeholder="AAPL, MSFT, GOOGL"
-                  className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
-                />
+                <span className="text-gray-300">Gesamte Watchlist verwenden</span>
+                {loadingWatchlist && <span className="text-gray-500 text-sm">Lädt...</span>}
               </div>
+              
+              {useFullWatchlist ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-gray-400">
+                    Der Trader wird alle {userWatchlistSymbols.length} Symbole aus deiner Watchlist analysieren.
+                  </p>
+                  {userWatchlistSymbols.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 bg-slate-900/50 rounded-lg">
+                      {userWatchlistSymbols.map((symbol) => (
+                        <span 
+                          key={symbol} 
+                          className="px-2 py-0.5 bg-blue-600/30 text-blue-300 rounded text-xs font-mono"
+                        >
+                          {symbol}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-amber-400">
+                      ⚠️ Deine Watchlist ist leer. Füge zuerst Symbole zur Watchlist hinzu.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <input
+                    type="text"
+                    value={watchlistSymbols}
+                    onChange={(e) => setWatchlistSymbols(e.target.value)}
+                    placeholder="AAPL, MSFT, GOOGL"
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Komma-separierte Symbole eingeben
+                  </p>
+                </div>
+              )}
             </div>
           </div>
           

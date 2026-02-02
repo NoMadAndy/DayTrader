@@ -49,6 +49,8 @@ class AITraderConfig:
     position_sizing: str = 'fixed'  # 'fixed', 'kelly', 'volatility'
     fixed_position_percent: float = 0.10  # 10% of budget
     kelly_fraction: float = 0.25  # 25% of Kelly criterion
+    max_position_pct: float = 0.10  # Alias for fixed_position_percent (from backend)
+    max_portfolio_risk: float = 0.20  # Max total portfolio risk
     
     # Stop Loss & Take Profit
     use_stop_loss: bool = True

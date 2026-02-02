@@ -53,22 +53,7 @@ export function AITraderCard({ trader, onStart, onStop, onPause }: AITraderCardP
         </div>
       </div>
       
-      {/* Trading Time Warning - Show when running but not in trading hours */}
-      {trader.status === 'running' && trader.tradingTime === false && (
-        <div className="mb-4 bg-amber-500/20 border-2 border-amber-500/50 rounded-lg p-3 flex items-start gap-3">
-          <div className="text-2xl">🚦</div>
-          <div className="flex-1">
-            <div className="font-bold text-amber-400 mb-1">
-              Keine Handelszeit
-            </div>
-            <div className="text-sm text-gray-300">
-              Wartet auf Handelszeit - Trader ist inaktiv bis der Markt öffnet.
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Status Message */}
+      {/* Status Message - Show when there's a status message */}
       {trader.statusMessage && (
         <div className="mb-4 text-sm text-gray-400 italic">
           {trader.statusMessage}
