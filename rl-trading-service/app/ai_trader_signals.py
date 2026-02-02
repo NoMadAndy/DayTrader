@@ -10,6 +10,7 @@ Aggregates signals from multiple sources:
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
+import asyncio
 import numpy as np
 import httpx
 from datetime import datetime
@@ -146,20 +147,35 @@ class SignalAggregator:
         try:
             # Prepare data for ML service
             prices = market_data.get('prices', [])
-            if len(prices) < 60:
+            # ML needs: 50 points for SMA_50 indicator + 60 points for sequence = 110 minimum
+            # Request 150 to have buffer
+            if len(prices) < 150:
                 return {
                     'score': 0.0,
                     'confidence': 0.0,
                     'prediction': None,
-                    'error': 'Insufficient data (need 60+ points)'
+                    'error': f'Insufficient data (have {len(prices)}, need 150+ points for ML indicators)'
                 }
+            
+            # Convert prices to OHLCVData format expected by ML service
+            # ML service expects: { symbol, data: [{ timestamp, open, high, low, close, volume }, ...] }
+            ohlcv_data = []
+            for p in prices[-200:]:  # Send last 200 points (50 for SMA_50 + 60 for seq + 90 buffer)
+                ohlcv_data.append({
+                    'timestamp': p.get('timestamp', int(p.get('date', 0))),
+                    'open': p.get('open', p.get('close', 0)),
+                    'high': p.get('high', p.get('close', 0)),
+                    'low': p.get('low', p.get('close', 0)),
+                    'close': p.get('close', 0),
+                    'volume': p.get('volume', 0)
+                })
             
             # Call ML service prediction endpoint
             response = await self.http_client.post(
                 f"{self.ml_service_url}/api/ml/predict",
                 json={
                     'symbol': symbol,
-                    'prices': prices[-100:]  # Send last 100 points
+                    'data': ohlcv_data  # Correct field name for ML service
                 },
                 timeout=30.0
             )
@@ -167,27 +183,53 @@ class SignalAggregator:
             if response.status_code == 200:
                 data = response.json()
                 
-                # Extract prediction
-                prediction = data.get('prediction', 0)
-                current_price = prices[-1].get('close', 0) if prices else 0
+                # ML service returns: { symbol, current_price, predictions: [{ day, predicted_price, confidence, change_pct }, ...] }
+                predictions = data.get('predictions', [])
+                current_price = data.get('current_price', 0)
                 
-                # Calculate score based on predicted change
-                if current_price > 0:
-                    predicted_change = (prediction - current_price) / current_price
+                if predictions and current_price > 0:
+                    # Use first prediction (day 1) for immediate signal
+                    first_pred = predictions[0]
+                    predicted_price = first_pred.get('predicted_price', current_price)
+                    confidence = first_pred.get('confidence', 0.5)
+                    change_pct = first_pred.get('change_pct', 0)
                     
-                    # Normalize to -1 to +1 range
-                    # Assume +/-10% is strong signal
-                    score = np.clip(predicted_change / 0.10, -1.0, 1.0)
+                    # Normalize change_pct to -1 to +1 range
+                    # change_pct is already a percentage, normalize assuming +/-10% is strong signal
+                    score = np.clip(change_pct / 10.0, -1.0, 1.0)
+                    
+                    return {
+                        'score': score,
+                        'confidence': confidence,
+                        'prediction': predicted_price,
+                        'current_price': current_price,
+                        'predicted_change': change_pct / 100.0,  # Convert percentage to decimal
+                        'model': data.get('model_info', {}).get('type', 'lstm')
+                    }
                 else:
-                    score = 0.0
-                
+                    return {
+                        'score': 0.0,
+                        'confidence': 0.0,
+                        'error': 'No predictions returned'
+                    }
+            elif response.status_code == 404:
+                # No trained model found - try auto-training if enabled
+                if self.config.auto_train_ml:
+                    print(f"No ML model for {symbol}, attempting auto-training...")
+                    train_result = await self._auto_train_ml_model(symbol, market_data)
+                    if train_result.get('success'):
+                        # Retry prediction after training
+                        return await self._get_ml_signal(symbol, market_data)
+                    else:
+                        return {
+                            'score': 0.0,
+                            'confidence': 0.0,
+                            'error': f"Auto-training failed: {train_result.get('error', 'unknown')}"
+                        }
                 return {
-                    'score': score,
-                    'confidence': data.get('confidence', 0.5),
-                    'prediction': prediction,
-                    'current_price': current_price,
-                    'predicted_change': predicted_change if current_price > 0 else 0,
-                    'model': data.get('model', 'lstm')
+                    'score': 0.0,
+                    'confidence': 0.0,
+                    'error': 'No trained model for this symbol'
                 }
             else:
                 print(f"ML service error: {response.status_code}")
@@ -204,6 +246,102 @@ class SignalAggregator:
                 'confidence': 0.0,
                 'error': str(e)
             }
+    
+    async def _auto_train_ml_model(self, symbol: str, market_data: Dict) -> Dict:
+        """
+        Automatically train an ML model for a symbol if none exists.
+        
+        Args:
+            symbol: Trading symbol
+            market_data: Market data (used for training period hint)
+            
+        Returns:
+            Dict with success status and details
+        """
+        try:
+            # Fetch historical data for training (use configured period, default 2y)
+            period = getattr(self.config, 'ml_training_period', '2y')
+            
+            print(f"Fetching {period} historical data for {symbol}...")
+            response = await self.http_client.get(
+                f"{self.backend_url}/api/yahoo/chart/{symbol}?period={period}&interval=1d",
+                timeout=60.0
+            )
+            
+            if response.status_code != 200:
+                return {'success': False, 'error': f'Failed to fetch historical data: {response.status_code}'}
+            
+            data = response.json()
+            
+            # Parse Yahoo Finance format
+            result = data.get('chart', {}).get('result', [{}])[0]
+            timestamps = result.get('timestamp', [])
+            quotes = result.get('indicators', {}).get('quote', [{}])[0]
+            
+            ohlcv_data = []
+            for i, ts in enumerate(timestamps):
+                close = quotes.get('close', [])[i]
+                if close is not None:
+                    ohlcv_data.append({
+                        'timestamp': ts * 1000,  # Convert to milliseconds
+                        'open': quotes.get('open', [])[i] or close,
+                        'high': quotes.get('high', [])[i] or close,
+                        'low': quotes.get('low', [])[i] or close,
+                        'close': close,
+                        'volume': quotes.get('volume', [])[i] or 0
+                    })
+            
+            if len(ohlcv_data) < 150:  # Minimum for training with indicators
+                return {'success': False, 'error': f'Insufficient data: {len(ohlcv_data)} points (need 150+)'}
+            
+            print(f"Starting ML training for {symbol} with {len(ohlcv_data)} data points...")
+            
+            # Submit training request
+            train_response = await self.http_client.post(
+                f"{self.ml_service_url}/api/ml/train",
+                json={
+                    'symbol': symbol,
+                    'data': ohlcv_data,
+                    'epochs': 50,  # Reasonable default
+                    'sequence_length': 60,
+                    'forecast_days': 14
+                },
+                timeout=10.0  # Just submit, don't wait for completion
+            )
+            
+            if train_response.status_code not in [200, 202]:
+                return {'success': False, 'error': f'Training submit failed: {train_response.status_code}'}
+            
+            # Wait for training to complete (poll status)
+            max_wait = 120  # Maximum wait time in seconds
+            waited = 0
+            while waited < max_wait:
+                await asyncio.sleep(5)
+                waited += 5
+                
+                status_response = await self.http_client.get(
+                    f"{self.ml_service_url}/api/ml/train/{symbol}/status",
+                    timeout=10.0
+                )
+                
+                if status_response.status_code == 200:
+                    status = status_response.json()
+                    if status.get('status') == 'completed':
+                        print(f"ML model training completed for {symbol}")
+                        return {'success': True, 'result': status.get('result')}
+                    elif status.get('status') == 'failed':
+                        return {'success': False, 'error': status.get('message', 'Training failed')}
+                    # Still training, continue waiting
+                    print(f"Training {symbol}... {status.get('progress', 0):.0f}%")
+                elif status_response.status_code == 404:
+                    # Training job not found - might have completed
+                    break
+            
+            return {'success': False, 'error': 'Training timeout'}
+            
+        except Exception as e:
+            print(f"Auto-training error for {symbol}: {e}")
+            return {'success': False, 'error': str(e)}
     
     async def _get_rl_signal(
         self,

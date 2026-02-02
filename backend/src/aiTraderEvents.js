@@ -15,27 +15,36 @@ class AITraderEventEmitter extends EventEmitter {
 
   /**
    * Add a new SSE client with enhanced reverse proxy support
+   * Optimized for GitHub Codespaces, Cloudflare, AWS ALB proxies
    */
   addClient(clientId, res, traderIds = []) {
     // Setup SSE headers - optimized for reverse proxies
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-store, no-transform, must-revalidate');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no'); // Nginx
     res.setHeader('X-Content-Type-Options', 'nosniff');
     
-    // Additional headers for various proxies
+    // Additional headers for various proxies including GitHub Codespaces
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Expose-Headers', 'Content-Type');
+    res.setHeader('Transfer-Encoding', 'chunked');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     
     // Disable response buffering at Node.js level
     res.flushHeaders();
     
-    // Send retry directive for auto-reconnect (3 seconds)
-    res.write('retry: 3000\n\n');
+    // Send retry directive for auto-reconnect (2 seconds - faster for proxies)
+    res.write('retry: 2000\n\n');
     
-    // Send initial comment to establish connection and prevent proxy buffering
-    res.write(': keep-alive\n\n');
+    // Send initial padding to force proxy buffer flush (2KB padding)
+    // GitHub Codespaces proxy buffers ~4KB before flushing
+    const padding = ': ' + 'x'.repeat(2048) + '\n\n';
+    res.write(padding);
+    
+    // Send initial keep-alive comment
+    res.write(': connection established\n\n');
     
     this.clients.set(clientId, {
       res,
@@ -85,12 +94,14 @@ class AITraderEventEmitter extends EventEmitter {
 
   /**
    * Send heartbeat to all clients - critical for reverse proxy keep-alive
+   * Includes padding to force proxy buffer flush
    */
   heartbeat() {
     const timestamp = new Date().toISOString();
     // Use SSE comment + named event for maximum proxy compatibility
-    // The : comment prevents proxy buffering, the event provides data
-    const heartbeatEvent = `: heartbeat ${timestamp}\nevent: heartbeat\ndata: ${JSON.stringify({ type: 'heartbeat', timestamp })}\n\n`;
+    // Include padding to force proxy buffer flush (512 bytes min)
+    const padding = 'x'.repeat(512);
+    const heartbeatEvent = `: heartbeat ${timestamp} ${padding}\nevent: heartbeat\ndata: ${JSON.stringify({ type: 'heartbeat', timestamp })}\n\n`;
     
     for (const [clientId, client] of this.clients) {
       try {
@@ -119,8 +130,9 @@ class AITraderEventEmitter extends EventEmitter {
 
 export const aiTraderEvents = new AITraderEventEmitter();
 
-// Heartbeat every 15 seconds - more frequent for reverse proxy compatibility
-setInterval(() => aiTraderEvents.heartbeat(), 15000);
+// Heartbeat every 5 seconds - critical for GitHub Codespaces and other aggressive proxies
+// Shorter interval ensures proxy buffers are flushed regularly
+setInterval(() => aiTraderEvents.heartbeat(), 5000);
 
 // Event type emitters
 export function emitStatusChanged(traderId, traderName, oldStatus, newStatus, message) {

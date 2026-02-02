@@ -59,13 +59,17 @@ class AITraderConfig:
     take_profit_percent: float = 0.10  # 10% take profit
     max_holding_days: Optional[int] = 30
     
+    # ML Auto-Training
+    auto_train_ml: bool = True  # Automatically train ML models if missing
+    ml_training_period: str = "2y"  # Period of data to use for training
+    
     # Schedule
     schedule_enabled: bool = True
     trading_days: List[str] = field(default_factory=lambda: ['mon', 'tue', 'wed', 'thu', 'fri'])
     trading_start: str = "09:00"
     trading_end: str = "17:30"
     timezone: str = "Europe/Berlin"
-    check_interval: int = 5  # Minutes between checks
+    check_interval_seconds: int = 60  # Seconds between checks
     avoid_market_open: int = 15  # Minutes after market open
     avoid_market_close: int = 15  # Minutes before market close
     

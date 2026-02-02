@@ -237,7 +237,7 @@ export default function AITradersPage() {
           risk: { tolerance: 'moderate', maxDrawdown: 20, stopLossPercent: 5, takeProfitPercent: 10 },
           signals: { weights: { ml: 0.25, rl: 0.25, sentiment: 0.25, technical: 0.25 }, minAgreement: 0.6 },
           trading: { minConfidence: 0.6, maxOpenPositions: 5, diversification: true },
-          schedule: { enabled: true, checkIntervalMinutes: 15, tradingHoursOnly: true, timezone: 'Europe/Berlin' },
+          schedule: { enabled: true, checkIntervalSeconds: 60, tradingHoursOnly: true, timezone: 'Europe/Berlin' },
           watchlist: { symbols: [], autoUpdate: true },
           sentiment: { enabled: true, minScore: 0.3 },
           learning: { enabled: true, updateWeights: true },

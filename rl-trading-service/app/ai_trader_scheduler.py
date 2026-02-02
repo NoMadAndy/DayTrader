@@ -137,8 +137,8 @@ class AITraderScheduler:
                         print(f"Error analyzing {symbol} for trader {trader_id}: {e}")
                         continue
                 
-                # Wait for next check interval
-                await asyncio.sleep(config.check_interval * 60)
+                # Wait for next check interval (in seconds)
+                await asyncio.sleep(config.check_interval_seconds)
                 
         except asyncio.CancelledError:
             print(f"Trader {trader_id} loop cancelled")
@@ -200,10 +200,11 @@ class AITraderScheduler:
             Market data dictionary or None
         """
         try:
-            # Fetch recent chart data (120 days)
+            # Fetch 1 year of data (250+ trading days)
+            # ML needs: 50 points for SMA_50 indicator + 60 for sequence + buffer
             response = await self.http_client.get(
                 f"{self.backend_url}/api/yahoo/chart/{symbol}",
-                params={'period': '3mo', 'interval': '1d'}
+                params={'period': '1y', 'interval': '1d'}
             )
             
             if response.status_code != 200:

@@ -12,6 +12,7 @@ interface TradeReasoningCardProps {
   decision: AITraderDecision;
   expanded?: boolean;
   onToggle?: () => void;
+  isNew?: boolean;
 }
 
 const SIGNAL_COLORS: Record<DecisionType, { bg: string; text: string; emoji: string }> = {
@@ -22,7 +23,7 @@ const SIGNAL_COLORS: Record<DecisionType, { bg: string; text: string; emoji: str
   skip: { bg: 'bg-gray-500/15', text: 'text-gray-400', emoji: '⏭️' },
 };
 
-export function TradeReasoningCard({ decision, expanded: controlledExpanded, onToggle }: TradeReasoningCardProps) {
+export function TradeReasoningCard({ decision, expanded: controlledExpanded, onToggle, isNew = false }: TradeReasoningCardProps) {
   const [internalExpanded, setInternalExpanded] = useState(false);
   
   // Use controlled expansion if provided, otherwise use internal state
@@ -38,8 +39,13 @@ export function TradeReasoningCard({ decision, expanded: controlledExpanded, onT
     minute: '2-digit',
   });
   
+  // Flash animation classes for new decisions
+  const flashClass = isNew 
+    ? 'animate-pulse ring-2 ring-yellow-400/60 shadow-lg shadow-yellow-400/20' 
+    : '';
+  
   return (
-    <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
+    <div className={`bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 transition-all duration-500 ${flashClass}`}>
       {/* Header - Always visible - Compact version */}
       <button
         onClick={handleToggle}

@@ -8,11 +8,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Sentiment für internationale Symbole** - Verbesserte News-Suche für nicht-US Aktien:
+  - Internationale Symbole (z.B. MRK.DE, SAP.DE) werden jetzt korrekt unterstützt
+  - Automatisches Entfernen des Börsen-Suffixes für Fallback-Suche (MRK.DE → MRK)
+  - Firmenname wird von Yahoo Finance geholt für erweiterte Suche bei Marketaux
+  - Finnhub und Marketaux werden mit mehreren Suchbegriffen abgefragt
+  - Löst das Problem "No recent news found" für deutsche/europäische Aktien
+- **Sentiment-Archiv** - Persistente Speicherung aller Sentiment-Analysen in der Datenbank:
+  - Neue `sentiment_archive` Tabelle für langfristige Sentiment-Historie
+  - Automatische Archivierung jeder Sentiment-Analyse mit Deduplizierung (1 Eintrag/Stunde/Symbol)
+  - 90 Tage Aufbewahrung, ältere Einträge werden automatisch bereinigt
+  - Neue API-Endpoints:
+    - `GET /api/sentiment/history/:symbol` - Historie der Sentiment-Werte (bis 30 Tage)
+    - `GET /api/sentiment/trend/:symbol` - Trend-Analyse (Durchschnitt, Min/Max, Entwicklung)
+    - `GET /api/sentiment/symbols` - Liste aller archivierten Symbole
+  - Ermöglicht Korrelationsanalysen zwischen Sentiment und Kursentwicklung
+- **Historische Kursdaten in Datenbank** - Historische Kursdaten werden jetzt persistent in der PostgreSQL-Datenbank gespeichert:
+  - `/api/yahoo/chart/:symbol` prüft zuerst die `historical_prices` Tabelle
+  - Fehlende Daten werden automatisch von Yahoo Finance geholt und gespeichert
+  - Alle Services (AI-Trader, ML-Training, Backtesting) nutzen dieselben gecachten Daten
+  - Spart API-Calls, da historische Daten sich nicht ändern
+  - Unterstützt `period`/`range` Parameter (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, max)
+  - Cache-Metadaten zeigen Quelle an (`historical_prices_db` vs `freshly_fetched_and_stored`)
+- **ML Auto-Training** - Wenn kein ML-Modell für ein Symbol existiert, wird automatisch ein neues trainiert:
+  - RL-Service erkennt 404-Fehler vom ML-Service bei fehlenden Modellen
+  - Holt automatisch 2 Jahre historische Daten von Yahoo Finance
+  - Startet Training im ML-Service und wartet max. 120 Sekunden auf Abschluss
+  - Wiederholt Prediction nach erfolgreichem Training
+  - Konfigurierbar über UI: "Auto-Training aktivieren" Toggle in AI-Trader Settings
+  - Trainings-Zeitraum einstellbar (Standard: 2 Jahre)
+  - Kann für Ressourcen-Schonung deaktiviert werden
 - **Sentiment-Analyse für AI-Trader** - Neuer kombinierter Backend-Endpoint `/api/ml/sentiment/:symbol`:
   - Holt automatisch News von Finnhub und Marketaux
   - Analysiert Sentiment mit FinBERT ML-Service
   - Aggregiert Scores zu einer Gesamtbewertung (positiv/neutral/negativ)
-  - Caching für 10 Minuten zur API-Schonung
+  - Caching für 60 Minuten zur API-Schonung (erhöht von 10 Min)
   - Graceful Fallback wenn FinBERT-Model nicht geladen ist
 - **Gesamte Watchlist für AI-Trader** - Im AI-Trader Settings Modal kann jetzt "Gesamte Watchlist verwenden" aktiviert werden. Der Trader analysiert dann automatisch alle Symbole aus der persönlichen Watchlist statt manuell eingegebener Symbole.
 - **Weltweite Börsen-Unterstützung** - Unterstützung für internationale Handelsplätze:
@@ -26,13 +56,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **API-Proxy für RL-Service** - Frontend kann jetzt direkt mit dem RL-Trading-Service kommunizieren via `/rl-api` Proxy
 
 ### Fixed
+- **SSE für GitHub Codespaces** - SSE-Verbindungen funktionieren jetzt zuverlässig über GitHub Codespaces Reverse Proxy:
+  - Backend: Heartbeat-Intervall auf 5 Sekunden reduziert (statt 15s)
+  - Backend: 2KB Initial-Padding und 512B Heartbeat-Padding zum Flushen von Proxy-Buffern
+  - Backend: Zusätzliche HTTP-Header (`Transfer-Encoding: chunked`, `Pragma: no-cache`)
+  - Frontend: Heartbeat-Timeout auf 12s angepasst, schnellerer Fallback zu Polling nach 3 Fehlern
+  - nginx: Aggressiveres Buffering-Verbot mit `proxy_buffers 0 0`
 - **SSE Live-Updates über Reverse Proxy** - Komplette Überarbeitung der Server-Sent Events Implementierung:
   - Backend: Korrigiertes SSE Event-Format mit `retry:` Directive und keep-alive Comments
   - Backend: Socket-Optimierungen (setTimeout=0, setNoDelay, setKeepAlive)
   - Vite Dev Server: SSE-Proxy-Konfiguration mit deaktiviertem Buffering
   - nginx: Verbesserte SSE-Location mit `chunked_transfer_encoding on` und `proxy_buffer_size 0`
   - Frontend: Robustere EventSource-Logik mit Connection-Check-Interval und verbesserter Heartbeat-Überwachung
+- **ML-Service Request-Format** - Behoben: RL-Service sendet jetzt das korrekte Request-Format an den ML-Service (`data` statt `prices`, mit vollständigen OHLCV-Feldern). Response-Parsing wurde ebenfalls auf das neue `predictions`-Array-Format angepasst.
+- **AI-Trader Portfolio-Endpoint** - Behoben: Frontend verwendet jetzt `/api/ai-traders/:id/portfolio` statt des nicht existierenden `/api/portfolio/:id`.
 - **RL-Agent Signal-Abfrage** - Behoben: `AgentStatus.trained` zu `AgentStatus.is_trained` korrigiert, sodass RL-Agents jetzt korrekt für Signalgenerierung verwendet werden.
+- **RL-Agent Config beim Resume** - Behoben: Bei Neustart des RL-Service wurden die Signal-Gewichte als Dict statt einzelne Felder übergeben, wodurch `rl_agent_name` und Gewichte verloren gingen. Jetzt werden `ml_weight`, `rl_weight`, `sentiment_weight`, `technical_weight` und `rl_agent_name` korrekt an AITraderConfig übergeben.
 - **Live Activity Duplikate** - Behoben: SSE `decision_made` Events werden jetzt ignoriert (kommen aus DB), nur Status-Events werden live angezeigt.
 - **API-Caching deaktiviert** - Backend und RL-Service senden jetzt `Cache-Control: no-store` Header für alle API-Responses. Das verhindert Browser-Caching und stellt sicher, dass immer aktuelle Daten angezeigt werden.
 - **Sortierung Live Activity Feed** - Events werden jetzt chronologisch sortiert (neueste oben) statt in Einfügereihenfolge.
@@ -40,6 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **AI-Trader Start-Problem** - Behoben: AI-Trader konnte nicht gestartet werden wegen falscher Parameter-Übergabe an RL-Service. Der Start-Endpoint filtert jetzt unbekannte Parameter heraus.
 - **AI-Trader Personality-Mapping** - Backend extrahiert jetzt korrekt verschachtelte Personality-Einstellungen (schedule, signals, risk, etc.)
 - **Fehlende API-Endpunkte** - Hinzugefügt: POST `/api/ai-traders/:id/decisions`, GET `/api/ai-traders/:id/portfolio`, POST `/api/ai-traders/:id/execute`
+- **ML-Service Datenpunkte** - Erhöht: Market-Data-Fetch von 3 Monaten auf 1 Jahr (250+ Handelstage). Sendet 200 statt 100 Punkte an ML-Service für technische Indikatoren (SMA_50 braucht 50 Punkte + 60 für Sequenz).
+- **ML-Modell sequence_length Konflikt** - Alte Modelle mit sequence_length=330 wurden automatisch erkannt und durch Modelle mit sequence_length=60 ersetzt.
 
 ### Changed
 - **Dashboard + Backtest Unified** - Merged Dashboard and Backtest pages into a single page with mode toggle tabs (Live Trading / Backtest). The old `/backtest` URL now redirects to `/dashboard?mode=backtest`

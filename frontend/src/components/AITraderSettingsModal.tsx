@@ -61,12 +61,15 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
   const [scheduleEnabled, setScheduleEnabled] = useState(trader.personality?.schedule?.enabled ?? true);
   const [tradingStart, setTradingStart] = useState(trader.personality?.schedule?.tradingStart || '09:00');
   const [tradingEnd, setTradingEnd] = useState(trader.personality?.schedule?.tradingEnd || '17:30');
-  const [checkInterval, setCheckInterval] = useState(trader.personality?.schedule?.checkIntervalMinutes || 15);
+  const [checkInterval, setCheckInterval] = useState(trader.personality?.schedule?.checkIntervalSeconds || 60);
   
   // Learning
   const [learningEnabled, setLearningEnabled] = useState(trader.personality?.learning?.enabled ?? false);
   const [updateWeights, setUpdateWeights] = useState(trader.personality?.learning?.updateWeights ?? false);
   const [minSamples, setMinSamples] = useState(trader.personality?.learning?.minSamples || 5);
+  
+  // ML Auto-Training
+  const [autoTrainML, setAutoTrainML] = useState(trader.personality?.ml?.autoTrain ?? true);
   
   // RL Agent
   const [rlAgentName, setRlAgentName] = useState(trader.personality?.rlAgentName || '');
@@ -123,10 +126,11 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
       setScheduleEnabled(trader.personality?.schedule?.enabled ?? true);
       setTradingStart(trader.personality?.schedule?.tradingStart || '09:00');
       setTradingEnd(trader.personality?.schedule?.tradingEnd || '17:30');
-      setCheckInterval(trader.personality?.schedule?.checkIntervalMinutes || 15);
+      setCheckInterval(trader.personality?.schedule?.checkIntervalSeconds || 60);
       setLearningEnabled(trader.personality?.learning?.enabled ?? false);
       setUpdateWeights(trader.personality?.learning?.updateWeights ?? false);
       setMinSamples(trader.personality?.learning?.minSamples || 5);
+      setAutoTrainML(trader.personality?.ml?.autoTrain ?? true);
       setRlAgentName(trader.personality?.rlAgentName || '');
       setError(null);
     }
@@ -176,7 +180,7 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
           enabled: scheduleEnabled,
           tradingStart,
           tradingEnd,
-          checkIntervalMinutes: checkInterval,
+          checkIntervalSeconds: checkInterval,
         },
         watchlist: {
           ...trader.personality?.watchlist,
@@ -187,6 +191,10 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
           enabled: learningEnabled,
           updateWeights: learningEnabled && updateWeights,
           minSamples,
+        },
+        ml: {
+          ...trader.personality?.ml,
+          autoTrain: autoTrainML,
         },
         rlAgentName: rlAgentName || undefined,
       };
@@ -626,14 +634,14 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Prüfintervall (Min.)
+                    Prüfintervall (Sek.)
                   </label>
                   <input
                     type="number"
                     value={checkInterval}
                     onChange={(e) => setCheckInterval(Number(e.target.value))}
-                    min={1}
-                    max={60}
+                    min={10}
+                    max={3600}
                     className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
                   />
                 </div>
@@ -699,6 +707,38 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
                 )}
               </div>
             )}
+          </div>
+          
+          {/* ML Auto-Training */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-white border-b border-slate-700 pb-2">
+              🤖 ML Modell Training
+            </h3>
+            
+            <div className="flex items-center gap-3">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoTrainML}
+                  onChange={(e) => setAutoTrainML(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+              <span className="text-gray-300">ML-Modelle automatisch trainieren</span>
+            </div>
+            
+            <p className="text-sm text-gray-400">
+              Wenn aktiviert, trainiert der Trader automatisch LSTM-Modelle für Symbole, die noch kein trainiertes Modell haben. 
+              Das Training verwendet 2 Jahre historische Daten und kann einige Minuten dauern.
+            </p>
+            
+            <div className="p-3 bg-slate-700/30 rounded-lg border border-slate-600">
+              <p className="text-xs text-gray-400">
+                <span className="text-purple-400">💡 Tipp:</span> Deaktiviere diese Option wenn du nur bestimmte Modelle verwenden möchtest 
+                oder wenn das automatische Training zu lange dauert. Du kannst Modelle auch manuell über die ML-Service API trainieren.
+              </p>
+            </div>
           </div>
         </div>
         

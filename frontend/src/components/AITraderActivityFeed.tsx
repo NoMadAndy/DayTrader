@@ -59,7 +59,7 @@ export function AITraderActivityFeed({
   }, [events]);
   
   // Create notification sound using Web Audio API
-  const playNotificationSound = useCallback(() => {
+  const playNotificationSound = useCallback((isImportant: boolean = true) => {
     if (!enableSound) return;
     
     try {
@@ -69,21 +69,51 @@ export function AITraderActivityFeed({
       }
       const ctx = audioContextRef.current;
       
-      // Create oscillator for beep
-      const oscillator = ctx.createOscillator();
-      const gainNode = ctx.createGain();
+      // Resume context if suspended (browser autoplay policy)
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
       
-      oscillator.connect(gainNode);
-      gainNode.connect(ctx.destination);
-      
-      oscillator.frequency.value = 800;
-      oscillator.type = 'sine';
-      
-      gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
-      
-      oscillator.start(ctx.currentTime);
-      oscillator.stop(ctx.currentTime + 0.15);
+      if (isImportant) {
+        // Two-tone ascending sound for important events (trade executed, buy/sell)
+        const frequencies = [880, 1100];
+        frequencies.forEach((freq, i) => {
+          const oscillator = ctx.createOscillator();
+          const gainNode = ctx.createGain();
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(ctx.destination);
+          
+          oscillator.frequency.value = freq;
+          oscillator.type = 'triangle';
+          
+          const startTime = ctx.currentTime + (i * 0.08);
+          gainNode.gain.setValueAtTime(0, startTime);
+          gainNode.gain.linearRampToValueAtTime(0.25, startTime + 0.02);
+          gainNode.gain.setValueAtTime(0.25, startTime + 0.06);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + 0.12);
+          
+          oscillator.start(startTime);
+          oscillator.stop(startTime + 0.12);
+        });
+      } else {
+        // Simple soft beep for info events
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        oscillator.frequency.value = 600;
+        oscillator.type = 'sine';
+        
+        gainNode.gain.setValueAtTime(0, ctx.currentTime);
+        gainNode.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.01);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+        
+        oscillator.start(ctx.currentTime);
+        oscillator.stop(ctx.currentTime + 0.1);
+      }
     } catch {
       // Ignore audio errors
     }
@@ -115,14 +145,21 @@ export function AITraderActivityFeed({
              (e.type === 'decision_made' && e.data?.decisionType !== 'skip')
       );
       
+      // Check for very important events (executed trades)
+      const hasVeryImportantEvent = newEvents.some(
+        e => ['trade_executed', 'position_closed'].includes(e.type) ||
+             (e.type === 'decision_made' && e.data?.decisionType && ['buy', 'sell'].includes(e.data.decisionType) && e.data?.executed)
+      );
+      
       // Sound notification for important events
       if (enableSound && hasImportantEvent) {
-        playNotificationSound();
+        playNotificationSound(hasVeryImportantEvent);
       }
       
       // Haptic feedback on mobile for important events
       if (enableVibration && hasImportantEvent && 'vibrate' in navigator) {
-        navigator.vibrate(100);
+        // Stronger vibration for very important events
+        navigator.vibrate(hasVeryImportantEvent ? [50, 30, 50, 30, 100] : [80]);
       }
     }
     prevEventCountRef.current = events.length;

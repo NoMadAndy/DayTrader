@@ -16,6 +16,7 @@ import SignalAccuracyChart from '../components/SignalAccuracyChart';
 import AdaptiveWeightsPanel from '../components/AdaptiveWeightsPanel';
 import { useAITraderStream } from '../hooks/useAITraderStream';
 import { useAITraderReports } from '../hooks/useAITraderReports';
+import { useNotificationFeedback } from '../hooks/useNotificationFeedback';
 import { startAITrader, stopAITrader, pauseAITrader } from '../services/aiTraderService';
 import type { AITrader, AITraderDecision, AITraderEvent } from '../types/aiTrader';
 import type { PositionWithPnL } from '../types/trading';
@@ -42,10 +43,45 @@ export function AITraderPage() {
     return saved ? JSON.parse(saved) : { sound: false, vibration: false, flash: true };
   });
   
+  // Track previous decisions for detecting new ones
+  const prevDecisionIdsRef = useRef<Set<number>>(new Set());
+  const [newDecisionIds, setNewDecisionIds] = useState<Set<number>>(new Set());
+  
+  // Notification feedback hook
+  const { notifyDecision } = useNotificationFeedback({ settings: notificationSettings });
+  
   // Persist notification settings
   useEffect(() => {
     localStorage.setItem('aiTraderNotifications', JSON.stringify(notificationSettings));
   }, [notificationSettings]);
+  
+  // Detect new decisions and trigger feedback
+  useEffect(() => {
+    if (decisions.length === 0) return;
+    
+    const currentIds = new Set(decisions.map(d => d.id));
+    const newIds = new Set<number>();
+    
+    // Find truly new decisions (not seen before)
+    decisions.forEach(d => {
+      if (!prevDecisionIdsRef.current.has(d.id)) {
+        newIds.add(d.id);
+        // Trigger notification for non-skip decisions
+        if (d.decisionType !== 'skip') {
+          notifyDecision(d.decisionType, d.executed);
+        }
+      }
+    });
+    
+    // Update refs and state
+    if (newIds.size > 0) {
+      setNewDecisionIds(newIds);
+      // Clear flash after animation
+      setTimeout(() => setNewDecisionIds(new Set()), 2000);
+    }
+    
+    prevDecisionIdsRef.current = currentIds;
+  }, [decisions, notifyDecision]);
   
   const traderId = id ? parseInt(id) : undefined;
   
@@ -114,17 +150,15 @@ export function AITraderPage() {
         setPositions(positionsData.positions || []);
       }
       
-      // Fetch portfolio info
-      if (traderData.portfolioId) {
-        const portfolioRes = await fetch(`/api/portfolio/${traderData.portfolioId}`);
-        if (portfolioRes.ok) {
-          const portfolioData = await portfolioRes.json();
-          setPortfolio({
-            cash: portfolioData.cash_balance || 0,
-            totalValue: portfolioData.total_value || 0,
-            pnl: portfolioData.total_return_percent || 0,
-          });
-        }
+      // Fetch portfolio info using the AI trader portfolio endpoint
+      const portfolioRes = await fetch(`/api/ai-traders/${traderId}/portfolio?_t=${Date.now()}`, { cache: 'no-store' });
+      if (portfolioRes.ok) {
+        const portfolioData = await portfolioRes.json();
+        setPortfolio({
+          cash: portfolioData.cash || 0,
+          totalValue: portfolioData.total_value || 0,
+          pnl: portfolioData.daily_pnl_pct || 0,
+        });
       }
     } catch (err) {
       console.error('Error loading trader data:', err);
@@ -547,7 +581,11 @@ export function AITraderPage() {
                 </div>
               ) : (
                 decisions.map((decision) => (
-                  <TradeReasoningCard key={decision.id} decision={decision} />
+                  <TradeReasoningCard 
+                    key={decision.id} 
+                    decision={decision} 
+                    isNew={notificationSettings.flash && newDecisionIds.has(decision.id)}
+                  />
                 ))
               )}
             </div>

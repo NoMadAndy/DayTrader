@@ -105,16 +105,28 @@ async def resume_running_traders():
                 personality = trader.get('personality', {})
                 
                 try:
+                    # Extract signal weights
+                    signal_weights = personality.get('signals', {}).get('weights', {})
+                    
                     # Build config from personality
                     config = {
                         'symbols': personality.get('watchlist', {}).get('symbols', []),
-                        'check_interval': personality.get('schedule', {}).get('checkIntervalMinutes', 15),
+                        'check_interval_seconds': personality.get('schedule', {}).get('checkIntervalSeconds', 60),
                         'trading_start': personality.get('schedule', {}).get('tradingStart', '09:00'),
                         'trading_end': personality.get('schedule', {}).get('tradingEnd', '17:30'),
-                        'signal_weights': personality.get('signals', {}).get('weights', {}),
+                        # Individual signal weights (not a dict!)
+                        'ml_weight': signal_weights.get('ml', 0.25),
+                        'rl_weight': signal_weights.get('rl', 0.25),
+                        'sentiment_weight': signal_weights.get('sentiment', 0.25),
+                        'technical_weight': signal_weights.get('technical', 0.25),
                         'min_confidence': personality.get('trading', {}).get('minConfidence', 0.65),
                         'rl_agent_name': personality.get('rlAgentName'),
+                        # Additional config from personality
+                        'schedule_enabled': personality.get('schedule', {}).get('enabled', True),
+                        'auto_train_ml': personality.get('ml', {}).get('autoTrain', True),
                     }
+                    
+                    logger.info(f"resume_running_traders: Config for trader {trader_id}: rl_agent_name={config.get('rl_agent_name')}, symbols={len(config.get('symbols', []))} items")
                     
                     # Filter to valid fields
                     filtered_config = {

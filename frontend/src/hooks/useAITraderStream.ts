@@ -25,14 +25,14 @@ interface StreamState {
   mode: 'sse' | 'polling' | 'connecting';
 }
 
-// Constants
+// Constants - optimized for GitHub Codespaces and other reverse proxies
 const MAX_EVENTS = 100;
-const HEARTBEAT_TIMEOUT_MS = 20000;
-const INITIAL_RECONNECT_DELAY_MS = 500;
-const MAX_RECONNECT_DELAY_MS = 15000;
-const POLLING_INTERVAL_MS = 5000;
-const MAX_SSE_FAILURES = 5;
-const CONNECTION_CHECK_INTERVAL_MS = 10000;
+const HEARTBEAT_TIMEOUT_MS = 12000; // 12s timeout (heartbeat every 5s + buffer)
+const INITIAL_RECONNECT_DELAY_MS = 300; // Faster initial reconnect
+const MAX_RECONNECT_DELAY_MS = 10000;
+const POLLING_INTERVAL_MS = 4000; // Faster polling fallback
+const MAX_SSE_FAILURES = 3; // Switch to polling faster
+const CONNECTION_CHECK_INTERVAL_MS = 8000;
 
 export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
   const { traderId, enabled = true, onEvent } = options;

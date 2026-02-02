@@ -14,6 +14,7 @@ import compression from 'compression';
 import db from './db.js';
 import stockCache from './stockCache.js';
 import backgroundJobs from './backgroundJobs.js';
+import * as sentimentArchive from './sentimentArchive.js';
 import { registerUser, loginUser, logoutUser, authMiddleware, optionalAuthMiddleware } from './auth.js';
 import { getUserSettings, updateUserSettings, getCustomSymbols, addCustomSymbol, removeCustomSymbol, syncCustomSymbols } from './userSettings.js';
 import * as trading from './trading.js';
@@ -607,6 +608,131 @@ const YAHOO_CHART_URL = 'https://query1.finance.yahoo.com/v8/finance/chart';
 const YAHOO_SEARCH_URL = 'https://query1.finance.yahoo.com/v1/finance/search';
 const YAHOO_QUOTE_URL = 'https://query2.finance.yahoo.com/v6/finance/quote';
 
+// Import historical prices service for DB caching
+import * as historicalPricesService from './historicalPrices.js';
+
+/**
+ * Convert period/range string to date range
+ * @param {string} range - e.g., '1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', 'max'
+ * @returns {{ startDate: string, endDate: string }} Date range in YYYY-MM-DD format
+ */
+function rangeToDateRange(range) {
+  const endDate = new Date();
+  let startDate = new Date();
+  
+  switch (range) {
+    case '1d':
+      startDate.setDate(startDate.getDate() - 1);
+      break;
+    case '5d':
+      startDate.setDate(startDate.getDate() - 5);
+      break;
+    case '1mo':
+      startDate.setMonth(startDate.getMonth() - 1);
+      break;
+    case '3mo':
+      startDate.setMonth(startDate.getMonth() - 3);
+      break;
+    case '6mo':
+      startDate.setMonth(startDate.getMonth() - 6);
+      break;
+    case '1y':
+      startDate.setFullYear(startDate.getFullYear() - 1);
+      break;
+    case '2y':
+      startDate.setFullYear(startDate.getFullYear() - 2);
+      break;
+    case '5y':
+      startDate.setFullYear(startDate.getFullYear() - 5);
+      break;
+    case '10y':
+      startDate.setFullYear(startDate.getFullYear() - 10);
+      break;
+    case 'max':
+      startDate.setFullYear(startDate.getFullYear() - 30);
+      break;
+    default:
+      // Try to parse as period like '1y', '6mo'
+      const match = range.match(/^(\d+)(d|mo|y)$/);
+      if (match) {
+        const num = parseInt(match[1]);
+        const unit = match[2];
+        if (unit === 'd') startDate.setDate(startDate.getDate() - num);
+        else if (unit === 'mo') startDate.setMonth(startDate.getMonth() - num);
+        else if (unit === 'y') startDate.setFullYear(startDate.getFullYear() - num);
+      } else {
+        // Default to 1 year
+        startDate.setFullYear(startDate.getFullYear() - 1);
+      }
+  }
+  
+  return {
+    startDate: startDate.toISOString().split('T')[0],
+    endDate: endDate.toISOString().split('T')[0],
+  };
+}
+
+/**
+ * Convert historical prices from DB format to Yahoo Chart format
+ * @param {string} symbol
+ * @param {Array} prices - Array of {date, open, high, low, close, volume}
+ * @returns {Object} Yahoo Chart API format
+ */
+function convertToYahooChartFormat(symbol, prices) {
+  if (!prices || prices.length === 0) {
+    return null;
+  }
+  
+  const timestamps = [];
+  const opens = [];
+  const highs = [];
+  const lows = [];
+  const closes = [];
+  const volumes = [];
+  
+  for (const p of prices) {
+    // Convert date to Unix timestamp
+    timestamps.push(Math.floor(new Date(p.date).getTime() / 1000));
+    opens.push(p.open);
+    highs.push(p.high);
+    lows.push(p.low);
+    closes.push(p.close);
+    volumes.push(p.volume || 0);
+  }
+  
+  return {
+    chart: {
+      result: [{
+        meta: {
+          symbol: symbol.toUpperCase(),
+          currency: 'USD',
+          exchangeName: 'UNKNOWN',
+          instrumentType: 'EQUITY',
+          regularMarketPrice: closes[closes.length - 1],
+          previousClose: closes.length > 1 ? closes[closes.length - 2] : closes[0],
+          dataGranularity: '1d',
+          range: '',
+        },
+        timestamp: timestamps,
+        indicators: {
+          quote: [{
+            open: opens,
+            high: highs,
+            low: lows,
+            close: closes,
+            volume: volumes,
+          }],
+          adjclose: [{
+            adjclose: closes, // Use close as adjclose if not available
+          }],
+        },
+      }],
+      error: null,
+    },
+    _source: 'database_cache',
+  };
+}
+
 /**
  * Proxy Yahoo Finance quote data (includes market cap, PE, etc.)
  * GET /api/yahoo/quote/:symbols
@@ -675,10 +801,72 @@ app.get('/api/yahoo/quote/:symbols', async (req, res) => {
  */
 app.get('/api/yahoo/chart/:symbol', async (req, res) => {
   const { symbol } = req.params;
-  const { interval = '1d', range = '1y' } = req.query;
-  const cacheKey = `yahoo:chart:${symbol}:${interval}:${range}`;
+  const { interval = '1d', range = '1y', period } = req.query;
   
-  // Check cache first (if database is configured)
+  // Support both 'range' and 'period' params (period takes precedence)
+  const effectiveRange = period || range;
+  const cacheKey = `yahoo:chart:${symbol}:${interval}:${effectiveRange}`;
+  
+  // For daily interval, try to use persistent historical_prices table first
+  // This avoids repeated API calls for data that doesn't change
+  if (interval === '1d' && process.env.DATABASE_URL) {
+    try {
+      const { startDate, endDate } = rangeToDateRange(effectiveRange);
+      
+      // Check if we have sufficient data in the database
+      const availability = await historicalPricesService.checkHistoricalDataAvailability(
+        symbol, startDate, endDate
+      );
+      
+      if (availability.hasData) {
+        // Serve from database
+        const prices = await historicalPricesService.getHistoricalPrices(symbol, startDate, endDate);
+        if (prices && prices.length > 0) {
+          const chartData = convertToYahooChartFormat(symbol, prices);
+          console.log(`[Yahoo Chart] Serving ${symbol} (${effectiveRange}) from database: ${prices.length} records`);
+          return res.json({
+            ...chartData,
+            _cache: { 
+              fromCache: true, 
+              source: 'historical_prices_db',
+              recordCount: prices.length,
+              dateRange: { startDate, endDate }
+            }
+          });
+        }
+      }
+      
+      // Data not in DB or insufficient - fetch from Yahoo and store
+      console.log(`[Yahoo Chart] Fetching ${symbol} (${effectiveRange}) from Yahoo Finance and storing in DB...`);
+      const fetchResult = await historicalPricesService.fetchAndStoreHistoricalData(symbol, startDate, endDate);
+      
+      if (fetchResult.success) {
+        // Now serve the freshly stored data
+        const prices = await historicalPricesService.getHistoricalPrices(symbol, startDate, endDate);
+        if (prices && prices.length > 0) {
+          const chartData = convertToYahooChartFormat(symbol, prices);
+          console.log(`[Yahoo Chart] Stored and serving ${symbol}: ${prices.length} records`);
+          return res.json({
+            ...chartData,
+            _cache: { 
+              fromCache: false, 
+              source: 'freshly_fetched_and_stored',
+              recordCount: prices.length,
+              dateRange: { startDate, endDate }
+            }
+          });
+        }
+      }
+      
+      // Fall through to direct Yahoo API if DB storage failed
+      console.log(`[Yahoo Chart] DB storage failed for ${symbol}, falling back to direct API`);
+    } catch (dbError) {
+      console.error(`[Yahoo Chart] Database error for ${symbol}:`, dbError.message);
+      // Fall through to direct Yahoo API
+    }
+  }
+  
+  // Check short-term cache for non-daily intervals or as fallback
   if (process.env.DATABASE_URL) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
@@ -690,7 +878,7 @@ app.get('/api/yahoo/chart/:symbol', async (req, res) => {
   }
   
   try {
-    const url = `${YAHOO_CHART_URL}/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`;
+    const url = `${YAHOO_CHART_URL}/${encodeURIComponent(symbol)}?interval=${interval}&range=${effectiveRange}`;
     
     const response = await fetch(url, {
       headers: {
@@ -710,7 +898,7 @@ app.get('/api/yahoo/chart/:symbol', async (req, res) => {
     
     const data = await response.json();
     
-    // Cache the response
+    // Cache the response (short-term)
     if (process.env.DATABASE_URL) {
       const ttl = interval === '1d' ? stockCache.CACHE_DURATIONS.candles_daily : stockCache.CACHE_DURATIONS.candles_intraday;
       await stockCache.setCache(cacheKey, 'candles', symbol.toUpperCase(), data, 'yahoo', ttl);
@@ -1904,6 +2092,33 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
       return res.json(cached.data);
     }
     
+    // For international symbols (e.g., MRK.DE, SAP.DE), extract base symbol and get company name
+    const baseSymbol = symbol.split('.')[0].toUpperCase();
+    let companyName = null;
+    
+    // Try to get company name from Yahoo Finance for better news search
+    if (symbol.includes('.')) {
+      try {
+        const quoteUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`;
+        const quoteRes = await fetch(quoteUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+        if (quoteRes.ok) {
+          const quoteData = await quoteRes.json();
+          const result = quoteData?.quoteResponse?.result?.[0];
+          if (result) {
+            // Extract company name without legal suffixes
+            companyName = (result.longName || result.shortName || '')
+              .replace(/\s*(Inc\.?|Corp\.?|Ltd\.?|PLC|AG|SE|KGaA|N\.V\.|S\.A\.|GmbH|Co\.|& Co|Holdings?|Group|International)\s*/gi, '')
+              .trim();
+            console.log(`[Sentiment] International symbol ${symbol} -> base: ${baseSymbol}, company: ${companyName}`);
+          }
+        }
+      } catch (err) {
+        console.warn(`[Sentiment] Could not fetch company name for ${symbol}:`, err.message);
+      }
+    }
+    
     // Fetch news from multiple sources
     const newsTexts = [];
     const sources = [];
@@ -1925,47 +2140,77 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
       console.warn(`[Sentiment] Could not fetch API keys from DB:`, dbErr.message);
     }
     
+    // Build list of symbols/terms to search for
+    const searchTerms = [symbol.toUpperCase()];
+    if (baseSymbol !== symbol.toUpperCase()) {
+      searchTerms.push(baseSymbol);
+    }
+    
     // Try Finnhub first
     if (finnhubApiKey) {
-      try {
-        const to = new Date().toISOString().split('T')[0];
-        const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-        const finnhubUrl = `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(symbol)}&from=${from}&to=${to}&token=${finnhubApiKey}`;
-        const response = await fetch(finnhubUrl);
-        if (response.ok) {
-          const news = await response.json();
-          if (Array.isArray(news)) {
-            news.slice(0, 10).forEach(item => {
-              if (item.headline) {
-                newsTexts.push(item.headline);
-                sources.push({ source: 'finnhub', headline: item.headline });
-              }
-            });
+      const to = new Date().toISOString().split('T')[0];
+      const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      
+      // Try each search term until we find news
+      for (const term of searchTerms) {
+        if (newsTexts.length >= 5) break;
+        try {
+          const finnhubUrl = `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(term)}&from=${from}&to=${to}&token=${finnhubApiKey}`;
+          const response = await fetch(finnhubUrl);
+          if (response.ok) {
+            const news = await response.json();
+            if (Array.isArray(news) && news.length > 0) {
+              console.log(`[Sentiment] Finnhub found ${news.length} news for term "${term}"`);
+              news.slice(0, 10).forEach(item => {
+                if (item.headline && !newsTexts.includes(item.headline)) {
+                  newsTexts.push(item.headline);
+                  sources.push({ source: 'finnhub', headline: item.headline });
+                }
+              });
+            }
           }
+        } catch (err) {
+          console.warn(`[Sentiment] Finnhub error for ${term}:`, err.message);
         }
-      } catch (err) {
-        console.warn(`[Sentiment] Finnhub error for ${symbol}:`, err.message);
       }
     }
     
-    // Try Marketaux as backup
+    // Try Marketaux as backup (supports company name search)
     if (marketauxApiKey && newsTexts.length < 5) {
-      try {
-        const marketauxUrl = `https://api.marketaux.com/v1/news/all?symbols=${encodeURIComponent(symbol)}&filter_entities=true&language=en&api_token=${marketauxApiKey}`;
-        const response = await fetch(marketauxUrl);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.data && Array.isArray(data.data)) {
-            data.data.slice(0, 10).forEach(item => {
-              if (item.title && !newsTexts.includes(item.title)) {
-                newsTexts.push(item.title);
-                sources.push({ source: 'marketaux', headline: item.title });
-              }
-            });
+      // Marketaux can search by symbol or by search query
+      const marketauxSearches = [symbol.toUpperCase()];
+      if (baseSymbol !== symbol.toUpperCase()) {
+        marketauxSearches.push(baseSymbol);
+      }
+      if (companyName && companyName.length > 2) {
+        marketauxSearches.push(companyName);
+      }
+      
+      for (const term of marketauxSearches) {
+        if (newsTexts.length >= 10) break;
+        try {
+          // Use symbols parameter for ticker, search parameter for company name
+          const isCompanyName = term === companyName;
+          const marketauxUrl = isCompanyName
+            ? `https://api.marketaux.com/v1/news/all?search=${encodeURIComponent(term)}&filter_entities=true&language=en&api_token=${marketauxApiKey}`
+            : `https://api.marketaux.com/v1/news/all?symbols=${encodeURIComponent(term)}&filter_entities=true&language=en&api_token=${marketauxApiKey}`;
+          
+          const response = await fetch(marketauxUrl);
+          if (response.ok) {
+            const data = await response.json();
+            if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+              console.log(`[Sentiment] Marketaux found ${data.data.length} news for term "${term}"`);
+              data.data.slice(0, 10).forEach(item => {
+                if (item.title && !newsTexts.includes(item.title)) {
+                  newsTexts.push(item.title);
+                  sources.push({ source: 'marketaux', headline: item.title });
+                }
+              });
+            }
           }
+        } catch (err) {
+          console.warn(`[Sentiment] Marketaux error for ${term}:`, err.message);
         }
-      } catch (err) {
-        console.warn(`[Sentiment] Marketaux error for ${symbol}:`, err.message);
       }
     }
     
@@ -1980,7 +2225,8 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
         sources: [],
         message: 'No recent news found for sentiment analysis (no API keys or no news available)'
       };
-      await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), neutralResult, 'combined', 600);
+      // Cache for 60 minutes (was 10 min)
+      await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), neutralResult, 'combined', 3600);
       return res.json(neutralResult);
     }
     
@@ -2008,7 +2254,8 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
         sources: sources.slice(0, 5),
         message: 'Sentiment model not available (FinBERT not loaded)'
       };
-      await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), neutralResult, 'combined', 300);
+      // Cache for 60 minutes (was 5 min)
+      await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), neutralResult, 'combined', 3600);
       return res.json(neutralResult);
     }
     
@@ -2037,7 +2284,8 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
         sources: sources.slice(0, 5),
         message: 'Sentiment analysis returned no valid results'
       };
-      await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), neutralResult, 'combined', 300);
+      // Cache for 60 minutes (was 5 min)
+      await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), neutralResult, 'combined', 3600);
       return res.json(neutralResult);
     }
     
@@ -2076,9 +2324,16 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
       sources: sources.slice(0, 5)  // Limit to first 5 sources
     };
     
-    // Cache for 10 minutes
-    await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), result, 'combined', 600);
+    // Cache for 60 minutes (was 10 min)
+    await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), result, 'combined', 3600);
     console.log(`[Sentiment] Analyzed ${newsTexts.length} news items for ${symbol}: ${overallSentiment} (${avgScore.toFixed(3)})`);
+    
+    // Archive sentiment for historical analysis
+    try {
+      await sentimentArchive.archiveSentiment(result);
+    } catch (archiveError) {
+      console.warn(`[Sentiment] Failed to archive sentiment: ${archiveError.message}`);
+    }
     
     res.json(result);
     
@@ -2092,6 +2347,61 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
       news_count: 0,
       error: error.message
     });
+  }
+});
+
+// ============================================================================
+// Sentiment Archive endpoints
+// ============================================================================
+
+/**
+ * Get sentiment history for a symbol
+ */
+app.get('/api/sentiment/history/:symbol', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const { days = 30, limit = 100 } = req.query;
+    const history = await sentimentArchive.getSentimentHistory(symbol, parseInt(days), parseInt(limit));
+    res.json({
+      symbol: symbol.toUpperCase(),
+      history,
+      count: history.length,
+      days_requested: parseInt(days)
+    });
+  } catch (error) {
+    console.error(`[Sentiment Archive] Error fetching history for ${req.params.symbol}:`, error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Get sentiment trend for a symbol
+ */
+app.get('/api/sentiment/trend/:symbol', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const { days = 7 } = req.query;
+    const trend = await sentimentArchive.getSentimentTrend(symbol, parseInt(days));
+    res.json({
+      symbol: symbol.toUpperCase(),
+      ...trend
+    });
+  } catch (error) {
+    console.error(`[Sentiment Archive] Error fetching trend for ${req.params.symbol}:`, error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Get list of symbols with archived sentiments
+ */
+app.get('/api/sentiment/symbols', async (req, res) => {
+  try {
+    const symbols = await sentimentArchive.getArchivedSymbols();
+    res.json({ symbols, count: symbols.length });
+  } catch (error) {
+    console.error('[Sentiment Archive] Error fetching symbols:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -2977,7 +3287,8 @@ app.get('/api/trading/leaderboard/rank', authMiddleware, async (req, res) => {
 // Historical Prices Endpoints (for Backtesting)
 // ============================================================================
 
-import * as historicalPrices from './historicalPrices.js';
+// Note: historicalPricesService is already imported above for Yahoo Chart caching
+const historicalPrices = historicalPricesService;
 
 /**
  * Get all symbols with historical data in database
@@ -3466,14 +3777,23 @@ app.post('/api/ai-traders/:id/start', authMiddleware, async (req, res) => {
       technical_weight: p.signals?.weights?.technical || 0.25,
       // Schedule settings
       schedule_enabled: p.schedule?.enabled ?? true,
-      check_interval: p.schedule?.checkIntervalMinutes || 15,
+      check_interval_seconds: p.schedule?.checkIntervalSeconds || 60,
       trading_start: p.schedule?.tradingStart || '09:00',
       trading_end: p.schedule?.tradingEnd || '17:30',
       timezone: p.schedule?.timezone || 'Europe/Berlin',
       trading_days: p.schedule?.tradingDays || ['mon', 'tue', 'wed', 'thu', 'fri'],
       avoid_market_open: p.schedule?.avoidMarketOpenMinutes || 15,
       avoid_market_close: p.schedule?.avoidMarketCloseMinutes || 15,
+      // ML Auto-Training
+      auto_train_ml: p.ml?.autoTrain ?? true,
     };
+    
+    // Log the config being sent (for debugging)
+    console.log(`[AI-Trader Start] Sending config for trader ${traderId}:`, JSON.stringify({
+      rl_agent_name: config.rl_agent_name,
+      symbols: config.symbols,
+      schedule_enabled: config.schedule_enabled
+    }));
     
     // Call RL Trading Service to start the trading loop
     try {
@@ -4765,6 +5085,7 @@ const startServer = async () => {
       await trading.initializeTradingSchema();
       await aiTrader.initializeAITraderSchema();
       await stockCache.initializeCacheTable();
+      await sentimentArchive.initializeSentimentArchive();
       console.log('Database connected and initialized');
       
       // Schedule session cleanup every hour
@@ -4776,6 +5097,11 @@ const startServer = async () => {
       setInterval(() => {
         stockCache.cleanupExpiredCache();
       }, 15 * 60 * 1000);
+      
+      // Schedule sentiment archive cleanup daily (keep 90 days)
+      setInterval(() => {
+        sentimentArchive.cleanupOldEntries(90);
+      }, 24 * 60 * 60 * 1000);
       
       // Schedule overnight fee processing daily at 00:00 UTC
       const scheduleOvernightFees = () => {
