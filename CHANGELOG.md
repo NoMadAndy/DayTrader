@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Self-Training Einstellungen in UI** - RL-Agent Self-Training kann jetzt in den AI Trader Einstellungen konfiguriert werden:
+  - Toggle zum Aktivieren/Deaktivieren von Self-Training während Leerlaufzeiten
+  - Einstellbares Trainings-Intervall (15-240 Minuten)
+  - Wählbare Training-Schritte pro Session (5.000 - 50.000)
+  - Erklärung wie das Training in Entscheidungen einfließt
+
 ### Fixed
 - **Execute Endpoint repariert** - AI Trader kann jetzt wieder Trades ausführen:
   - `/api/ai-traders/:id/execute` Endpoint komplett neu geschrieben mit direkten SQL-Abfragen

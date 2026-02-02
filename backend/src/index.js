@@ -3851,6 +3851,10 @@ app.post('/api/ai-traders/:id/start', authMiddleware, async (req, res) => {
       avoid_market_close: p.schedule?.avoidMarketCloseMinutes || 15,
       // ML Auto-Training
       auto_train_ml: p.ml?.autoTrain ?? true,
+      // RL Self-Training
+      self_training_enabled: p.rl?.selfTrainingEnabled ?? true,
+      self_training_interval_minutes: p.rl?.selfTrainingIntervalMinutes || 60,
+      self_training_timesteps: p.rl?.selfTrainingTimesteps || 10000,
     };
     
     // Log the config being sent (for debugging)

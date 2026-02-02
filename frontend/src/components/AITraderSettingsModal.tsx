@@ -71,6 +71,11 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
   // ML Auto-Training
   const [autoTrainML, setAutoTrainML] = useState(trader.personality?.ml?.autoTrain ?? true);
   
+  // RL Self-Training (during idle)
+  const [selfTrainingEnabled, setSelfTrainingEnabled] = useState(trader.personality?.rl?.selfTrainingEnabled ?? true);
+  const [selfTrainingInterval, setSelfTrainingInterval] = useState(trader.personality?.rl?.selfTrainingIntervalMinutes || 60);
+  const [selfTrainingTimesteps, setSelfTrainingTimesteps] = useState(trader.personality?.rl?.selfTrainingTimesteps || 10000);
+  
   // Short Selling
   const [allowShortSelling, setAllowShortSelling] = useState(trader.personality?.risk?.allowShortSelling ?? false);
   const [maxShortPositions, setMaxShortPositions] = useState(trader.personality?.risk?.maxShortPositions || 3);
@@ -136,6 +141,9 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
       setUpdateWeights(trader.personality?.learning?.updateWeights ?? false);
       setMinSamples(trader.personality?.learning?.minSamples || 5);
       setAutoTrainML(trader.personality?.ml?.autoTrain ?? true);
+      setSelfTrainingEnabled(trader.personality?.rl?.selfTrainingEnabled ?? true);
+      setSelfTrainingInterval(trader.personality?.rl?.selfTrainingIntervalMinutes || 60);
+      setSelfTrainingTimesteps(trader.personality?.rl?.selfTrainingTimesteps || 10000);
       setAllowShortSelling(trader.personality?.risk?.allowShortSelling ?? false);
       setMaxShortPositions(trader.personality?.risk?.maxShortPositions || 3);
       setMaxShortExposure((trader.personality?.risk?.maxShortExposure || 0.3) * 100);
@@ -206,6 +214,12 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
         ml: {
           ...trader.personality?.ml,
           autoTrain: autoTrainML,
+        },
+        rl: {
+          ...trader.personality?.rl,
+          selfTrainingEnabled,
+          selfTrainingIntervalMinutes: selfTrainingInterval,
+          selfTrainingTimesteps,
         },
         rlAgentName: rlAgentName || undefined,
       };
@@ -811,6 +825,80 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
               <p className="text-xs text-gray-400">
                 <span className="text-purple-400">💡 Tipp:</span> Deaktiviere diese Option wenn du nur bestimmte Modelle verwenden möchtest 
                 oder wenn das automatische Training zu lange dauert. Du kannst Modelle auch manuell über die ML-Service API trainieren.
+              </p>
+            </div>
+          </div>
+          
+          {/* RL Self-Training */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-white border-b border-slate-700 pb-2">
+              🧠 RL Agent Self-Training
+            </h3>
+            
+            <div className="flex items-center gap-3">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selfTrainingEnabled}
+                  onChange={(e) => setSelfTrainingEnabled(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+              </label>
+              <span className="text-gray-300">Self-Training aktivieren (während Leerlaufzeiten)</span>
+            </div>
+            
+            <p className="text-sm text-gray-400">
+              Der RL-Agent trainiert sich automatisch während Leerlaufzeiten (außerhalb der Handelszeiten oder wenn nichts zu tun ist).
+              Das verbessert die Entscheidungsfähigkeit über Zeit.
+            </p>
+            
+            {selfTrainingEnabled && (
+              <div className="space-y-4 p-4 bg-slate-700/30 rounded-lg border border-slate-600">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Trainings-Intervall (Minuten)
+                  </label>
+                  <input
+                    type="number"
+                    value={selfTrainingInterval}
+                    onChange={(e) => setSelfTrainingInterval(Number(e.target.value))}
+                    min={15}
+                    max={240}
+                    step={15}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-green-500 focus:outline-none"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Wie oft soll der Agent trainieren? (15-240 Minuten)
+                  </p>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Training-Schritte pro Session
+                  </label>
+                  <select
+                    value={selfTrainingTimesteps}
+                    onChange={(e) => setSelfTrainingTimesteps(Number(e.target.value))}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-green-500 focus:outline-none"
+                  >
+                    <option value={5000}>5.000 (Schnell, ~1-2 Min)</option>
+                    <option value={10000}>10.000 (Standard, ~2-4 Min)</option>
+                    <option value={25000}>25.000 (Intensiv, ~5-10 Min)</option>
+                    <option value={50000}>50.000 (Gründlich, ~10-20 Min)</option>
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Mehr Schritte = besseres Training, aber längere Dauer
+                  </p>
+                </div>
+              </div>
+            )}
+            
+            <div className="p-3 bg-slate-700/30 rounded-lg border border-slate-600">
+              <p className="text-xs text-gray-400">
+                <span className="text-green-400">📊 Wie fließt das Training ein?</span> Der RL-Agent lernt aus historischen Daten 
+                und entwickelt eine Strategie (wann kaufen/verkaufen). Seine Empfehlungen werden mit der RL-Gewichtung 
+                (aktuell: {(rlWeight * 100).toFixed(0)}%) in die Gesamtentscheidung einbezogen.
               </p>
             </div>
           </div>

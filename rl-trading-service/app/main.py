@@ -124,6 +124,10 @@ async def resume_running_traders():
                         # Additional config from personality
                         'schedule_enabled': personality.get('schedule', {}).get('enabled', True),
                         'auto_train_ml': personality.get('ml', {}).get('autoTrain', True),
+                        # Self-training config
+                        'self_training_enabled': personality.get('rl', {}).get('selfTrainingEnabled', True),
+                        'self_training_interval_minutes': personality.get('rl', {}).get('selfTrainingIntervalMinutes', 60),
+                        'self_training_timesteps': personality.get('rl', {}).get('selfTrainingTimesteps', 10000),
                     }
                     
                     logger.info(f"resume_running_traders: Config for trader {trader_id}: rl_agent_name={config.get('rl_agent_name')}, symbols={len(config.get('symbols', []))} items")
