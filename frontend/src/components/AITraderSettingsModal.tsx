@@ -581,7 +581,7 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
             
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                Min. Übereinstimmung: {(minConfidence * 100).toFixed(0)}%
+                Mindest-Konfidenz: {(minConfidence * 100).toFixed(0)}%
               </label>
               <input
                 type="range"
@@ -592,6 +592,9 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
                 step={0.05}
                 className="w-full"
               />
+              <p className="mt-1 text-xs text-gray-500">
+                Signal-Konfidenz muss über diesem Wert liegen, um eine Aktion auszulösen (Buy/Sell/Short).
+              </p>
             </div>
           </div>
           
