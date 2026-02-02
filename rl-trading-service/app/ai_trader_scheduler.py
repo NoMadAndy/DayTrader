@@ -142,7 +142,9 @@ class AITraderScheduler:
                             await self._execute_trade(trader_id, decision)
                         
                     except Exception as e:
+                        import traceback
                         print(f"Error analyzing {symbol} for trader {trader_id}: {e}")
+                        print(f"Traceback: {traceback.format_exc()}")
                         continue
                 
                 # Wait for next check interval (in seconds)

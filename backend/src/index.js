@@ -3831,8 +3831,8 @@ app.post('/api/ai-traders/:id/start', authMiddleware, async (req, res) => {
       min_confidence: p.trading?.minConfidence || 0.6,
       max_positions: p.trading?.maxOpenPositions || 5,
       // Signal agreement settings
-      require_multiple_confirmation: p.signals?.requireMultipleConfirmation ?? false,  // Disable by default for now
-      min_signal_agreement: 'weak',  // Allow weak agreement
+      require_multiple_confirmation: p.signals?.requireMultipleConfirmation ?? false,
+      min_signal_agreement: p.signals?.minSignalAgreement || 'weak',
       // Risk settings
       risk_tolerance: p.risk?.tolerance || 'moderate',
       max_drawdown: (p.risk?.maxDrawdown || 15) / 100,
@@ -4166,13 +4166,15 @@ app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
     const positionsMap = {};
     
     for (const pos of positions) {
-      const value = pos.quantity * pos.current_price;
+      const currentPrice = pos.currentPrice || pos.entryPrice || 0;
+      const value = pos.quantity * currentPrice;
       totalInvested += value;
       positionsMap[pos.symbol] = {
         quantity: pos.quantity,
-        avg_price: pos.entry_price,
-        current_price: pos.current_price,
-        unrealized_pnl: pos.unrealized_pnl
+        avg_price: pos.entryPrice,
+        current_price: currentPrice,
+        unrealized_pnl: pos.unrealizedPnl || 0,
+        value: value
       };
     }
     

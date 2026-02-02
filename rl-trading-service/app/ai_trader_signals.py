@@ -87,10 +87,16 @@ class SignalAggregator:
         technical_conf = technical_result.get('confidence', 0.5)
         
         # Adjust weights based on signal availability/confidence
-        effective_ml_weight = self.config.ml_weight * (ml_conf if ml_conf > 0.1 else 0.1)
-        effective_rl_weight = self.config.rl_weight * (rl_conf if rl_conf > 0.1 else 0.1)
-        effective_sentiment_weight = self.config.sentiment_weight * (sentiment_conf if sentiment_conf > 0.1 else 0.1)
-        effective_technical_weight = self.config.technical_weight * (technical_conf if technical_conf > 0.1 else 0.1)
+        # Use defaults if weights are None
+        ml_weight = self.config.ml_weight if self.config.ml_weight is not None else 0.25
+        rl_weight = self.config.rl_weight if self.config.rl_weight is not None else 0.25
+        sentiment_weight = self.config.sentiment_weight if self.config.sentiment_weight is not None else 0.25
+        technical_weight = self.config.technical_weight if self.config.technical_weight is not None else 0.25
+        
+        effective_ml_weight = ml_weight * (ml_conf if ml_conf > 0.1 else 0.1)
+        effective_rl_weight = rl_weight * (rl_conf if rl_conf > 0.1 else 0.1)
+        effective_sentiment_weight = sentiment_weight * (sentiment_conf if sentiment_conf > 0.1 else 0.1)
+        effective_technical_weight = technical_weight * (technical_conf if technical_conf > 0.1 else 0.1)
         
         # Normalize weights
         total_weight = effective_ml_weight + effective_rl_weight + effective_sentiment_weight + effective_technical_weight

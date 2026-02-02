@@ -281,11 +281,14 @@ class AITraderEngine:
         Returns:
             Threshold value for decision making
         """
+        # Use default if min_confidence is None
+        min_confidence = self.config.min_confidence if self.config.min_confidence is not None else 0.65
+        
         if not self.config.adaptive_threshold:
-            return self.config.min_confidence
+            return min_confidence
         
         # Start with base threshold
-        threshold = self.config.min_confidence
+        threshold = min_confidence
         
         # Adjust based on signal agreement
         if aggregated.agreement == 'weak':
@@ -294,7 +297,7 @@ class AITraderEngine:
             threshold += 0.10
         
         # Adjust based on portfolio performance
-        daily_pnl_pct = portfolio_state.get('daily_pnl_pct', 0)
+        daily_pnl_pct = portfolio_state.get('daily_pnl_pct') or 0
         if daily_pnl_pct < -2:  # Losing day
             threshold += 0.10
         
@@ -333,9 +336,9 @@ class AITraderEngine:
         confidence = aggregated.confidence
         
         # Check if we have an existing position
-        positions = portfolio_state.get('positions', {})
-        position = positions.get(symbol, {})
-        position_quantity = position.get('quantity', 0)
+        positions = portfolio_state.get('positions') or {}
+        position = positions.get(symbol) or {}
+        position_quantity = position.get('quantity') or 0
         has_long_position = position_quantity > 0
         has_short_position = position_quantity < 0
         
@@ -408,19 +411,20 @@ class AITraderEngine:
         positions = portfolio_state.get('positions', {})
         
         # Count existing short positions
-        short_count = sum(1 for p in positions.values() if p.get('quantity', 0) < 0)
-        if short_count >= self.config.max_short_positions:
+        short_count = sum(1 for p in positions.values() if (p.get('quantity') or 0) < 0)
+        if short_count >= (self.config.max_short_positions or 3):
             return False
         
-        # Check short exposure
-        total_value = portfolio_state.get('total_value', 100000)
+        # Check short exposure (use default if None)
+        total_value = portfolio_state.get('total_value') or 100000
         short_exposure = sum(
-            abs(p.get('market_value', 0)) 
+            abs(p.get('market_value', 0) or 0) 
             for p in positions.values() 
-            if p.get('quantity', 0) < 0
+            if (p.get('quantity', 0) or 0) < 0
         )
         
-        if short_exposure / total_value > self.config.max_short_exposure:
+        max_short_exposure = self.config.max_short_exposure if self.config.max_short_exposure is not None else 0.30
+        if total_value > 0 and short_exposure / total_value > max_short_exposure:
             return False
         
         return True
@@ -451,11 +455,17 @@ class AITraderEngine:
         if current_price <= 0:
             return (0, 0)
         
-        cash = portfolio_state.get('cash', self.config.initial_budget)
+        # Use defaults if config values are None
+        initial_budget = self.config.initial_budget if self.config.initial_budget is not None else 100000
+        fixed_position_percent = self.config.fixed_position_percent if self.config.fixed_position_percent is not None else 0.10
+        max_position_size = self.config.max_position_size if self.config.max_position_size is not None else 0.25
+        kelly_fraction = self.config.kelly_fraction if self.config.kelly_fraction is not None else 0.25
+        
+        cash = portfolio_state.get('cash', initial_budget)
         
         if self.config.position_sizing == 'fixed':
             # Fixed percentage of budget
-            position_size = self.config.initial_budget * self.config.fixed_position_percent
+            position_size = initial_budget * fixed_position_percent
         
         elif self.config.position_sizing == 'kelly':
             # Kelly Criterion (simplified)
@@ -465,19 +475,19 @@ class AITraderEngine:
             win_loss_ratio = 2.0  # Assume 2:1 reward/risk
             
             kelly_pct = (win_prob * win_loss_ratio - loss_prob) / win_loss_ratio
-            kelly_pct = max(0, kelly_pct) * self.config.kelly_fraction  # Use fraction
+            kelly_pct = max(0, kelly_pct) * kelly_fraction  # Use fraction
             
-            position_size = self.config.initial_budget * kelly_pct
+            position_size = initial_budget * kelly_pct
         
         elif self.config.position_sizing == 'volatility':
             # Volatility-based sizing (simplified)
             # Use confidence as inverse volatility proxy
             vol_factor = confidence
-            base_size = self.config.initial_budget * self.config.fixed_position_percent
+            base_size = initial_budget * fixed_position_percent
             position_size = base_size * vol_factor
         
         else:
-            position_size = self.config.initial_budget * self.config.fixed_position_percent
+            position_size = initial_budget * fixed_position_percent
         
         # For short positions, use a smaller position size (more conservative)
         if decision_type == 'short':
@@ -487,7 +497,7 @@ class AITraderEngine:
         position_size = min(position_size, cash * 0.95)  # Keep some buffer
         
         # Ensure position size doesn't exceed max position size
-        max_position = self.config.initial_budget * self.config.max_position_size
+        max_position = initial_budget * max_position_size
         position_size = min(position_size, max_position)
         
         # Calculate quantity
@@ -520,21 +530,25 @@ class AITraderEngine:
         if decision_type not in ['buy', 'short']:
             return (None, None)
         
+        # Use defaults if config values are None
+        stop_loss_percent = self.config.stop_loss_percent if self.config.stop_loss_percent is not None else 0.05
+        take_profit_percent = self.config.take_profit_percent if self.config.take_profit_percent is not None else 0.10
+        
         stop_loss = None
         take_profit = None
         
         if decision_type == 'buy':
             # Long position: stop-loss below, take-profit above
             if self.config.use_stop_loss:
-                stop_loss = current_price * (1 - self.config.stop_loss_percent)
+                stop_loss = current_price * (1 - stop_loss_percent)
             if self.config.use_take_profit:
-                take_profit = current_price * (1 + self.config.take_profit_percent)
+                take_profit = current_price * (1 + take_profit_percent)
         elif decision_type == 'short':
             # Short position: stop-loss above, take-profit below (inverted)
             if self.config.use_stop_loss:
-                stop_loss = current_price * (1 + self.config.stop_loss_percent)  # Stop above
+                stop_loss = current_price * (1 + stop_loss_percent)  # Stop above
             if self.config.use_take_profit:
-                take_profit = current_price * (1 - self.config.take_profit_percent)  # Target below
+                take_profit = current_price * (1 - take_profit_percent)  # Target below
         
         return (stop_loss, take_profit)
     
@@ -593,10 +607,10 @@ class AITraderEngine:
                 'checks': risk_result.checks
             },
             'portfolio': {
-                'cash': portfolio_state.get('cash', 0),
-                'total_value': portfolio_state.get('total_value', 0),
-                'positions_count': portfolio_state.get('positions_count', 0),
-                'daily_pnl_pct': portfolio_state.get('daily_pnl_pct', 0)
+                'cash': portfolio_state.get('cash') or 0,
+                'total_value': portfolio_state.get('total_value') or 0,
+                'positions_count': portfolio_state.get('positions_count') or 0,
+                'daily_pnl_pct': portfolio_state.get('daily_pnl_pct') or 0
             }
         }
     

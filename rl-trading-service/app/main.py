@@ -107,33 +107,55 @@ async def resume_running_traders():
                 try:
                     # Extract signal weights
                     signal_weights = personality.get('signals', {}).get('weights', {})
+                    risk = personality.get('risk', {})
+                    schedule = personality.get('schedule', {})
+                    capital = personality.get('capital', {})
+                    trading = personality.get('trading', {})
+                    ml = personality.get('ml', {})
+                    rl = personality.get('rl', {})
                     
-                    # Build config from personality
+                    # Build config from personality - include ALL fields
                     config = {
                         'symbols': personality.get('watchlist', {}).get('symbols', []),
-                        'check_interval_seconds': personality.get('schedule', {}).get('checkIntervalSeconds', 60),
-                        'trading_start': personality.get('schedule', {}).get('tradingStart', '09:00'),
-                        'trading_end': personality.get('schedule', {}).get('tradingEnd', '17:30'),
-                        # Individual signal weights (not a dict!)
+                        # Schedule settings
+                        'schedule_enabled': schedule.get('enabled', True),
+                        'check_interval_seconds': schedule.get('checkIntervalSeconds', 60),
+                        'trading_start': schedule.get('tradingStart', '09:00'),
+                        'trading_end': schedule.get('tradingEnd', '17:30'),
+                        'timezone': schedule.get('timezone', 'Europe/Berlin'),
+                        'trading_days': schedule.get('tradingDays', ['mon', 'tue', 'wed', 'thu', 'fri']),
+                        'avoid_market_open': schedule.get('avoidMarketOpenMinutes', 15),
+                        'avoid_market_close': schedule.get('avoidMarketCloseMinutes', 15),
+                        # Signal weights
                         'ml_weight': signal_weights.get('ml', 0.25),
                         'rl_weight': signal_weights.get('rl', 0.25),
                         'sentiment_weight': signal_weights.get('sentiment', 0.25),
                         'technical_weight': signal_weights.get('technical', 0.25),
-                        'min_confidence': personality.get('trading', {}).get('minConfidence', 0.65),
+                        # Decision settings
+                        'min_confidence': trading.get('minConfidence', 0.65),
                         'require_multiple_confirmation': personality.get('signals', {}).get('requireMultipleConfirmation', False),
-                        'min_signal_agreement': 'weak',  # Allow weak agreement
+                        'min_signal_agreement': personality.get('signals', {}).get('minSignalAgreement', 'weak'),
                         'rl_agent_name': personality.get('rlAgentName'),
-                        # Additional config from personality
-                        'schedule_enabled': personality.get('schedule', {}).get('enabled', True),
-                        'auto_train_ml': personality.get('ml', {}).get('autoTrain', True),
+                        'max_positions': trading.get('maxOpenPositions', 5),
+                        # Capital settings
+                        'initial_budget': capital.get('initialBudget', 100000),
+                        'max_position_size': (capital.get('maxPositionSize', 25) / 100),  # Convert from % to decimal
+                        'reserve_cash': (capital.get('reserveCashPercent', 10) / 100),  # Convert from % to decimal
+                        # Risk settings
+                        'risk_tolerance': risk.get('tolerance', 'moderate'),
+                        'max_drawdown': (risk.get('maxDrawdown', 15) / 100),
+                        'stop_loss_percent': (risk.get('stopLossPercent', 5) / 100),
+                        'take_profit_percent': (risk.get('takeProfitPercent', 10) / 100),
+                        # ML settings
+                        'auto_train_ml': ml.get('autoTrain', True),
                         # Self-training config
-                        'self_training_enabled': personality.get('rl', {}).get('selfTrainingEnabled', True),
-                        'self_training_interval_minutes': personality.get('rl', {}).get('selfTrainingIntervalMinutes', 60),
-                        'self_training_timesteps': personality.get('rl', {}).get('selfTrainingTimesteps', 10000),
+                        'self_training_enabled': rl.get('selfTrainingEnabled', True),
+                        'self_training_interval_minutes': rl.get('selfTrainingIntervalMinutes', 60),
+                        'self_training_timesteps': rl.get('selfTrainingTimesteps', 10000),
                         # Short selling config
-                        'allow_short_selling': personality.get('risk', {}).get('allowShortSelling', False),
-                        'max_short_positions': personality.get('risk', {}).get('maxShortPositions', 3),
-                        'max_short_exposure': personality.get('risk', {}).get('maxShortExposure', 0.30),
+                        'allow_short_selling': risk.get('allowShortSelling', False),
+                        'max_short_positions': risk.get('maxShortPositions', 3),
+                        'max_short_exposure': risk.get('maxShortExposure', 0.30),
                     }
                     
                     logger.info(f"resume_running_traders: Config for trader {trader_id}: rl_agent_name={config.get('rl_agent_name')}, symbols={len(config.get('symbols', []))} items")

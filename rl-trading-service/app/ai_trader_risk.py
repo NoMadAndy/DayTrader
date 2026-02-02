@@ -52,6 +52,24 @@ class RiskManager:
         self.config = config
         self.backend_url = "http://backend:3001"
         self.http_client = httpx.AsyncClient(timeout=30.0)
+        
+        # Pre-compute config values with defaults for null-safety
+        self._initial_budget = config.initial_budget if config.initial_budget is not None else 100000
+        self._max_position_size = config.max_position_size if config.max_position_size is not None else 0.25
+        self._max_total_exposure = config.max_total_exposure if config.max_total_exposure is not None else 0.80
+        self._max_positions = config.max_positions if config.max_positions is not None else 10
+        self._reserve_cash = config.reserve_cash if config.reserve_cash is not None else 0.10
+        self._max_daily_loss = config.max_daily_loss if config.max_daily_loss is not None else 0.05
+        self._max_drawdown = config.max_drawdown if config.max_drawdown is not None else 0.15
+        self._schedule_enabled = config.schedule_enabled if config.schedule_enabled is not None else True
+        self._trading_start = config.trading_start if config.trading_start is not None else "09:00"
+        self._trading_end = config.trading_end if config.trading_end is not None else "17:30"
+        self._timezone = config.timezone if config.timezone is not None else "Europe/Berlin"
+        self._avoid_market_open = config.avoid_market_open if config.avoid_market_open is not None else 15
+        self._avoid_market_close = config.avoid_market_close if config.avoid_market_close is not None else 15
+        self._pause_on_high_vix = config.pause_on_high_vix if config.pause_on_high_vix is not None else 30
+        self._max_consecutive_losses = config.max_consecutive_losses if config.max_consecutive_losses is not None else 5
+        self._trading_days = config.trading_days if config.trading_days is not None else ['mon', 'tue', 'wed', 'thu', 'fri']
     
     async def check_all(
         self, 
@@ -127,7 +145,7 @@ class RiskManager:
     
     def _check_position_size(self, position_size: float) -> RiskCheck:
         """Check if position size is within limits"""
-        max_position = self.config.initial_budget * self.config.max_position_size
+        max_position = self._initial_budget * self._max_position_size
         passed = position_size <= max_position
         
         return RiskCheck(
@@ -136,17 +154,17 @@ class RiskManager:
             passed=passed,
             value=f"${position_size:,.0f}",
             limit=f"${max_position:,.0f}",
-            description=f"Position size must not exceed {self.config.max_position_size*100:.0f}% of budget",
+            description=f"Position size must not exceed {self._max_position_size*100:.0f}% of budget",
             severity='blocker' if not passed else 'info'
         )
     
     def _check_max_positions(self, current_portfolio: Dict, decision_type: str) -> RiskCheck:
         """Check if we've reached max number of positions"""
-        current_positions = current_portfolio.get('positions_count', 0)
+        current_positions = current_portfolio.get('positions_count') or 0
         
         # Only block if trying to open a new position
         if decision_type == 'buy':
-            passed = current_positions < self.config.max_positions
+            passed = current_positions < self._max_positions
         else:
             passed = True
         
@@ -155,8 +173,8 @@ class RiskManager:
             category="position",
             passed=passed,
             value=str(current_positions),
-            limit=str(self.config.max_positions),
-            description=f"Cannot exceed {self.config.max_positions} open positions",
+            limit=str(self._max_positions),
+            description=f"Cannot exceed {self._max_positions} open positions",
             severity='blocker' if not passed else 'info'
         )
     
@@ -168,12 +186,13 @@ class RiskManager:
     ) -> RiskCheck:
         """Check if symbol exposure is within limits"""
         # Get current exposure to this symbol
-        positions = current_portfolio.get('positions', {})
-        current_exposure = positions.get(symbol, {}).get('value', 0)
+        positions = current_portfolio.get('positions') or {}
+        position_data = positions.get(symbol) or {}
+        current_exposure = position_data.get('value') or 0
         total_exposure = current_exposure + new_position_size
         
         # Max 25% per symbol (same as max_position_size)
-        max_symbol_exposure = self.config.initial_budget * self.config.max_position_size
+        max_symbol_exposure = self._initial_budget * self._max_position_size
         passed = total_exposure <= max_symbol_exposure
         
         return RiskCheck(
@@ -193,13 +212,13 @@ class RiskManager:
         decision_type: str
     ) -> RiskCheck:
         """Check total portfolio exposure"""
-        total_invested = current_portfolio.get('total_invested', 0)
+        total_invested = current_portfolio.get('total_invested') or 0
         
         # Add new position if buying
         if decision_type == 'buy':
             total_invested += new_position_size
         
-        max_exposure = self.config.initial_budget * self.config.max_total_exposure
+        max_exposure = self._initial_budget * self._max_total_exposure
         passed = total_invested <= max_exposure
         
         return RiskCheck(
@@ -208,14 +227,14 @@ class RiskManager:
             passed=passed,
             value=f"${total_invested:,.0f}",
             limit=f"${max_exposure:,.0f}",
-            description=f"Total exposure must not exceed {self.config.max_total_exposure*100:.0f}% of budget",
+            description=f"Total exposure must not exceed {self._max_total_exposure*100:.0f}% of budget",
             severity='blocker' if not passed else 'info'
         )
     
     def _check_cash_reserve(self, position_size: float, current_portfolio: Dict) -> RiskCheck:
         """Check if we maintain minimum cash reserve"""
-        cash = current_portfolio.get('cash', self.config.initial_budget)
-        min_reserve = self.config.initial_budget * self.config.reserve_cash
+        cash = current_portfolio.get('cash') or self._initial_budget
+        min_reserve = self._initial_budget * self._reserve_cash
         
         # After buying, will we still have enough cash?
         remaining_cash = cash - position_size
@@ -227,16 +246,16 @@ class RiskManager:
             passed=passed,
             value=f"${remaining_cash:,.0f}",
             limit=f"${min_reserve:,.0f}",
-            description=f"Must maintain {self.config.reserve_cash*100:.0f}% cash reserve",
+            description=f"Must maintain {self._reserve_cash*100:.0f}% cash reserve",
             severity='blocker' if not passed else 'info'
         )
     
     def _check_daily_loss(self, current_portfolio: Dict) -> RiskCheck:
         """Check if daily loss limit exceeded"""
-        daily_pnl = current_portfolio.get('daily_pnl', 0)
-        daily_pnl_pct = current_portfolio.get('daily_pnl_pct', 0)
+        daily_pnl = current_portfolio.get('daily_pnl') or 0
+        daily_pnl_pct = current_portfolio.get('daily_pnl_pct') or 0
         
-        max_loss_pct = self.config.max_daily_loss * 100
+        max_loss_pct = self._max_daily_loss * 100
         passed = daily_pnl_pct > -max_loss_pct
         
         return RiskCheck(
@@ -251,12 +270,12 @@ class RiskManager:
     
     def _check_max_drawdown(self, current_portfolio: Dict) -> RiskCheck:
         """Check if max drawdown exceeded"""
-        max_value = current_portfolio.get('max_value', self.config.initial_budget)
-        current_value = current_portfolio.get('total_value', self.config.initial_budget)
+        max_value = current_portfolio.get('max_value') or self._initial_budget
+        current_value = current_portfolio.get('total_value') or self._initial_budget
         
         drawdown = (max_value - current_value) / max_value if max_value > 0 else 0
-        max_dd = self.config.max_drawdown * 100
-        passed = drawdown < self.config.max_drawdown
+        max_dd = self._max_drawdown * 100
+        passed = drawdown < self._max_drawdown
         
         return RiskCheck(
             name="Max Drawdown",
@@ -270,7 +289,7 @@ class RiskManager:
     
     def _check_trading_hours(self) -> RiskCheck:
         """Check if within trading hours"""
-        if not self.config.schedule_enabled:
+        if not self._schedule_enabled:
             return RiskCheck(
                 name="Trading Hours",
                 category="schedule",
@@ -282,33 +301,33 @@ class RiskManager:
             )
         
         try:
-            tz = pytz.timezone(self.config.timezone)
+            tz = pytz.timezone(self._timezone)
             now = datetime.now(tz)
             
             # Check day of week
             weekday = now.strftime('%a').lower()
-            if weekday not in self.config.trading_days:
+            if weekday not in self._trading_days:
                 return RiskCheck(
                     name="Trading Hours",
                     category="schedule",
                     passed=False,
                     value=weekday,
-                    limit=", ".join(self.config.trading_days),
+                    limit=", ".join(self._trading_days),
                     description="Today is not a trading day",
                     severity='blocker'
                 )
             
             # Check time of day
             current_time = now.time()
-            start_time = time.fromisoformat(self.config.trading_start)
-            end_time = time.fromisoformat(self.config.trading_end)
+            start_time = time.fromisoformat(self._trading_start)
+            end_time = time.fromisoformat(self._trading_end)
             
             # Add market open/close buffers
             from datetime import timedelta
             start_buffer = (datetime.combine(datetime.today(), start_time) + 
-                          timedelta(minutes=self.config.avoid_market_open)).time()
+                          timedelta(minutes=self._avoid_market_open)).time()
             end_buffer = (datetime.combine(datetime.today(), end_time) - 
-                        timedelta(minutes=self.config.avoid_market_close)).time()
+                        timedelta(minutes=self._avoid_market_close)).time()
             
             passed = start_buffer <= current_time <= end_buffer
             
@@ -338,9 +357,9 @@ class RiskManager:
         """Check if in cooldown period after consecutive losses"""
         # This would need to track consecutive losses in the portfolio state
         # For now, we'll implement a basic version
-        consecutive_losses = self.config.__dict__.get('_consecutive_losses', 0)
+        consecutive_losses = getattr(self.config, '_consecutive_losses', 0) or 0
         
-        if consecutive_losses >= self.config.max_consecutive_losses:
+        if consecutive_losses >= self._max_consecutive_losses:
             # Check if cooldown period has passed
             # This is simplified - in production, track last loss timestamp
             passed = False
@@ -348,7 +367,7 @@ class RiskManager:
             severity = 'blocker'
         else:
             passed = True
-            description = f"{consecutive_losses}/{self.config.max_consecutive_losses} consecutive losses"
+            description = f"{consecutive_losses}/{self._max_consecutive_losses} consecutive losses"
             severity = 'info'
         
         return RiskCheck(
@@ -356,7 +375,7 @@ class RiskManager:
             category="protection",
             passed=passed,
             value=str(consecutive_losses),
-            limit=str(self.config.max_consecutive_losses),
+            limit=str(self._max_consecutive_losses),
             description=description,
             severity=severity
         )
@@ -377,14 +396,14 @@ class RiskManager:
                 chart_data = data.get('chart', {}).get('result', [{}])[0]
                 vix_level = chart_data.get('meta', {}).get('regularMarketPrice', 0)
                 
-                passed = vix_level < self.config.pause_on_high_vix
+                passed = vix_level < self._pause_on_high_vix
                 
                 return RiskCheck(
                     name="VIX Level",
                     category="market",
                     passed=passed,
                     value=f"{vix_level:.2f}",
-                    limit=f"<{self.config.pause_on_high_vix:.0f}",
+                    limit=f"<{self._pause_on_high_vix:.0f}",
                     description="High VIX indicates elevated market volatility",
                     severity='warning' if not passed else 'info'
                 )
@@ -395,7 +414,7 @@ class RiskManager:
                     category="market",
                     passed=True,
                     value="N/A",
-                    limit=f"<{self.config.pause_on_high_vix:.0f}",
+                    limit=f"<{self._pause_on_high_vix:.0f}",
                     description="Could not fetch VIX level",
                     severity='info'
                 )
@@ -408,7 +427,7 @@ class RiskManager:
                 category="market",
                 passed=True,
                 value="Error",
-                limit=f"<{self.config.pause_on_high_vix:.0f}",
+                limit=f"<{self._pause_on_high_vix:.0f}",
                 description=f"Error fetching VIX: {e}",
                 severity='info'
             )

@@ -159,7 +159,8 @@ export function AITraderPage() {
       const positionsRes = await fetch(`/api/ai-traders/${traderId}/positions?_t=${Date.now()}`, { cache: 'no-store' });
       if (positionsRes.ok) {
         const positionsData = await positionsRes.json();
-        setPositions(positionsData.positions || []);
+        // API returns array directly, not {positions: [...]}
+        setPositions(Array.isArray(positionsData) ? positionsData : (positionsData.positions || []));
       }
       
       // Fetch portfolio info using the AI trader portfolio endpoint

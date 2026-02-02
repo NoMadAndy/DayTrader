@@ -57,6 +57,12 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
   const [sentimentWeight, setSentimentWeight] = useState(trader.personality?.signals?.weights?.sentiment || 0.25);
   const [technicalWeight, setTechnicalWeight] = useState(trader.personality?.signals?.weights?.technical || 0.25);
   
+  // Signal Agreement
+  const [requireAgreement, setRequireAgreement] = useState(trader.personality?.signals?.requireMultipleConfirmation ?? false);
+  const [minSignalAgreement, setMinSignalAgreement] = useState<'weak' | 'moderate' | 'strong'>(
+    trader.personality?.signals?.minSignalAgreement || 'weak'
+  );
+  
   // Schedule
   const [scheduleEnabled, setScheduleEnabled] = useState(trader.personality?.schedule?.enabled ?? true);
   const [tradingStart, setTradingStart] = useState(trader.personality?.schedule?.tradingStart || '09:00');
@@ -133,6 +139,8 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
       setRlWeight(trader.personality?.signals?.weights?.rl || 0.25);
       setSentimentWeight(trader.personality?.signals?.weights?.sentiment || 0.25);
       setTechnicalWeight(trader.personality?.signals?.weights?.technical || 0.25);
+      setRequireAgreement(trader.personality?.signals?.requireMultipleConfirmation ?? false);
+      setMinSignalAgreement(trader.personality?.signals?.minSignalAgreement || 'weak');
       setScheduleEnabled(trader.personality?.schedule?.enabled ?? true);
       setTradingStart(trader.personality?.schedule?.tradingStart || '09:00');
       setTradingEnd(trader.personality?.schedule?.tradingEnd || '17:30');
@@ -188,6 +196,8 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
             technical: technicalWeight,
           },
           minAgreement: minConfidence,
+          requireMultipleConfirmation: requireAgreement,
+          minSignalAgreement,
         },
         trading: {
           ...trader.personality?.trading,
@@ -595,6 +605,46 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
               <p className="mt-1 text-xs text-gray-500">
                 Signal-Konfidenz muss über diesem Wert liegen, um eine Aktion auszulösen (Buy/Sell/Short).
               </p>
+            </div>
+            
+            {/* Signal Agreement */}
+            <div className="p-4 bg-slate-700/30 rounded-lg border border-slate-600 space-y-4">
+              <div className="flex items-center gap-3">
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={requireAgreement}
+                    onChange={(e) => setRequireAgreement(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+                <span className="text-gray-300">Signal-Übereinstimmung erforderlich</span>
+              </div>
+              
+              <p className="text-xs text-gray-400">
+                Wenn aktiviert, müssen mehrere Signale (ML, RL, Sentiment, Technisch) in dieselbe Richtung zeigen.
+              </p>
+              
+              {requireAgreement && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Mindest-Übereinstimmung
+                  </label>
+                  <select
+                    value={minSignalAgreement}
+                    onChange={(e) => setMinSignalAgreement(e.target.value as 'weak' | 'moderate' | 'strong')}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="weak">Schwach (2+ von 4 Signalen)</option>
+                    <option value="moderate">Moderat (3+ von 4 Signalen)</option>
+                    <option value="strong">Stark (4 von 4 Signalen)</option>
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Je höher die Anforderung, desto weniger Trades aber höhere Treffsicherheit.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
           

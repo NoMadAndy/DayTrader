@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Erklärung wie das Training in Entscheidungen einfließt
 
 ### Fixed
+- **Umfassende Null-Safety-Fixes im RL-Trading-Service** - Behebt NoneType-Fehler, die das Trading verhinderten:
+  - `portfolio_state.get()` Pattern zu `or` Pattern geändert, um explizite `None`-Werte korrekt zu behandeln
+  - Betrifft: ai_trader_engine.py, ai_trader_risk.py, ai_trader_signals.py
+  - Alle Risk-Checks funktionieren jetzt korrekt, auch wenn Portfolio-Daten `None` enthalten
+- **Portfolio-Endpoint Fix im Backend** - Position-Daten werden jetzt korrekt formatiert:
+  - camelCase-Feldnamen (`currentPrice`, `entryPrice`) statt snake_case verwendet
+  - `total_value`, `total_invested`, `max_value` werden jetzt korrekt berechnet
+  - Position `value` wird jetzt in der API-Antwort inkludiert
+- **Datenbank-Schema erweitert** - `positions.close_reason` von VARCHAR(50) zu TEXT geändert:
+  - Ermöglicht längere Reasoning-Texte beim Trade-Logging
+  - Behebt "value too long for type character varying" Fehler beim Execute
 - **Execute Endpoint repariert** - AI Trader kann jetzt wieder Trades ausführen:
   - `/api/ai-traders/:id/execute` Endpoint komplett neu geschrieben mit direkten SQL-Abfragen
   - Behebt "trading.openPosition is not a function" Fehler
