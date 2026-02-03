@@ -2772,6 +2772,23 @@ app.get('/api/rl/options/:optionType', async (req, res) => {
   }
 });
 
+/**
+ * Proxy RL Trading Service - AI Trader self-training status
+ */
+app.get('/api/rl/ai-trader/:traderId/self-training-status', async (req, res) => {
+  try {
+    const response = await fetch(`${RL_SERVICE_URL}/ai-trader/${req.params.traderId}/self-training-status`);
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('RL Trading Service self-training status error:', error);
+    res.status(503).json({ 
+      error: 'RL Trading Service unavailable',
+      message: error.message 
+    });
+  }
+});
+
 // ============================================================================
 // Watchlist Signal Cache Endpoints
 // ============================================================================
@@ -3711,6 +3728,145 @@ app.get('/api/ai-traders', async (req, res) => {
 });
 
 /**
+ * Get adaptive learning status (MUST be before /:id route)
+ * GET /api/ai-traders/learning-status
+ */
+app.get('/api/ai-traders/learning-status', async (req, res) => {
+  try {
+    const aiTraderLearningModule = await import('./aiTraderLearning.js');
+    const traders = await aiTraderLearningModule.getTradersWithLearningEnabled();
+    
+    res.json({
+      outsideTradingHours: backgroundJobs.isOutsideTradingHours(),
+      tradersWithLearningEnabled: traders.length,
+      traders: traders.map(t => ({
+        id: t.id,
+        name: t.name,
+        learningConfig: t.personality?.learning
+      }))
+    });
+  } catch (e) {
+    console.error('Get learning status error:', e);
+    res.status(500).json({ error: e.message || 'Failed to get learning status' });
+  }
+});
+
+/**
+ * Trigger adaptive learning for ALL traders (MUST be before /:id route)
+ * POST /api/ai-traders/trigger-learning-all
+ */
+app.post('/api/ai-traders/trigger-learning-all', authMiddleware, async (req, res) => {
+  try {
+    const force = req.body.force === true;
+    console.log(`[API] Manual adaptive learning trigger for all traders (force: ${force})`);
+    
+    const result = await backgroundJobs.adjustAdaptiveWeights(force);
+    
+    res.json({
+      success: true,
+      outsideTradingHours: backgroundJobs.isOutsideTradingHours(),
+      ...result
+    });
+  } catch (e) {
+    console.error('Trigger learning all error:', e);
+    res.status(500).json({ error: e.message || 'Failed to trigger adaptive learning' });
+  }
+});
+
+/**
+ * Get training status for an AI trader (MUST be before /:id route)
+ * GET /api/ai-traders/:id/training-status
+ */
+app.get('/api/ai-traders/:id/training-status', async (req, res) => {
+  try {
+    const traderId = parseInt(req.params.id);
+    const trader = await aiTrader.getAITrader(traderId);
+    
+    if (!trader) {
+      return res.status(404).json({ error: 'AI trader not found' });
+    }
+    
+    const personality = trader.personality || {};
+    const rlAgentName = personality.rlAgentName || null;
+    
+    // Fetch RL agent status from RL service
+    let rlAgentStatus = {
+      status: 'not_configured',
+      isTrained: false,
+      lastTrained: null,
+      trainingProgress: 0,
+      totalEpisodes: 0,
+      bestReward: null,
+      performanceMetrics: null
+    };
+    
+    if (rlAgentName) {
+      try {
+        const rlServiceUrl = process.env.RL_SERVICE_URL || 'http://rl-trading-service:8001';
+        const rlResponse = await fetch(`${rlServiceUrl}/agents/${encodeURIComponent(rlAgentName)}`);
+        
+        if (rlResponse.ok) {
+          const rlData = await rlResponse.json();
+          rlAgentStatus = {
+            status: rlData.status || 'not_trained',
+            isTrained: rlData.is_trained || false,
+            lastTrained: rlData.last_trained || null,
+            trainingProgress: rlData.training_progress || 0,
+            totalEpisodes: rlData.total_episodes || 0,
+            bestReward: rlData.best_reward || null,
+            performanceMetrics: rlData.performance_metrics ? {
+              meanReward: rlData.performance_metrics.mean_reward,
+              meanReturnPct: rlData.performance_metrics.mean_return_pct,
+              maxReturnPct: rlData.performance_metrics.max_return_pct,
+              minReturnPct: rlData.performance_metrics.min_return_pct
+            } : null
+          };
+        }
+      } catch (rlError) {
+        console.warn('Failed to fetch RL agent status:', rlError.message);
+      }
+    }
+    
+    // Get self-training config
+    const rlConfig = personality.rl || {};
+    const selfTraining = {
+      enabled: rlConfig.selfTrainingEnabled ?? true,
+      intervalMinutes: rlConfig.selfTrainingIntervalMinutes || 60,
+      timesteps: rlConfig.selfTrainingTimesteps || 10000,
+      lastTrainingAt: null // Would need to track this in DB
+    };
+    
+    // Get ML config
+    const mlConfig = personality.ml || {};
+    const mlModel = {
+      autoTrain: mlConfig.autoTrain ?? true,
+      trainedSymbols: [] // Would need to query ML service for this
+    };
+    
+    // Get learning mode config
+    const learningConfig = personality.learning || {};
+    const learningMode = {
+      enabled: learningConfig.enabled ?? false,
+      updateWeights: learningConfig.updateWeights ?? false,
+      minSamples: learningConfig.minSamples || 5
+    };
+    
+    res.json({
+      traderId,
+      traderName: trader.name,
+      rlAgentName,
+      rlAgent: rlAgentStatus,
+      selfTraining,
+      mlModel,
+      learningMode
+    });
+  } catch (e) {
+    console.error('Get training status error:', e);
+    res.status(500).json({ error: e.message || 'Failed to get training status' });
+  }
+});
+
+/**
  * Get AI trader by ID
  * GET /api/ai-traders/:id
  */
@@ -4128,7 +4284,49 @@ app.delete('/api/ai-traders/:id/decisions/:did', async (req, res) => {
 });
 
 /**
- * Get AI trader portfolio summary
+ * Mark AI trader decision as executed
+ * PATCH /api/ai-traders/:id/decisions/mark-executed
+ */
+app.patch('/api/ai-traders/:id/decisions/mark-executed', async (req, res) => {
+  try {
+    const traderId = parseInt(req.params.id);
+    const { symbol, decision_type, timestamp } = req.body;
+    
+    // Find the most recent decision matching the criteria
+    const result = await query(
+      `UPDATE ai_trader_decisions 
+       SET executed = true, 
+           updated_at = NOW()
+       WHERE id = (
+         SELECT id FROM ai_trader_decisions 
+         WHERE ai_trader_id = $1 
+           AND symbol = $2 
+           AND decision_type = $3
+         ORDER BY created_at DESC 
+         LIMIT 1
+       )
+       RETURNING id`,
+      [traderId, symbol, decision_type]
+    );
+    
+    if (result.rows.length === 0) {
+      console.log(`[AI Trader] No matching decision found to mark as executed: ${traderId}/${symbol}/${decision_type}`);
+      return res.status(404).json({ error: 'Decision not found' });
+    }
+    
+    // Update trader statistics
+    await aiTrader.updateTraderStats(traderId);
+    
+    console.log(`[AI Trader] Marked decision ${result.rows[0].id} as executed for trader ${traderId}`);
+    res.status(204).send();
+  } catch (e) {
+    console.error('Mark decision executed error:', e);
+    res.status(500).json({ error: 'Failed to mark decision as executed' });
+  }
+});
+
+/**
+ * Get AI trader portfolio summary with live prices
  * GET /api/ai-traders/:id/portfolio
  */
 app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
@@ -4154,40 +4352,111 @@ app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
         positions: {},
         daily_pnl: 0,
         daily_pnl_pct: 0,
-        max_value: newPortfolio.cash_balance
+        max_value: newPortfolio.cash_balance,
+        unrealized_pnl: 0
       });
     }
     
     // Get positions
     const positions = await trading.getOpenPositionsByPortfolio(portfolio.id);
     
-    // Calculate totals
-    let totalInvested = 0;
+    // Fetch live prices for all symbols
+    const symbols = [...new Set(positions.map(p => p.symbol))];
+    const liveQuotes = {};
+    
+    for (const symbol of symbols) {
+      try {
+        const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
+        const response = await fetch(yahooUrl);
+        if (response.ok) {
+          const data = await response.json();
+          const quote = data?.chart?.result?.[0];
+          if (quote) {
+            const meta = quote.meta || {};
+            const closes = quote.indicators?.quote?.[0]?.close || [];
+            const currentPrice = meta.regularMarketPrice || closes[closes.length - 1] || null;
+            const previousClose = meta.chartPreviousClose || meta.previousClose || null;
+            if (currentPrice) {
+              liveQuotes[symbol] = { currentPrice, previousClose };
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`Failed to fetch live quote for ${symbol}:`, e.message);
+      }
+    }
+    
+    // Calculate totals with live prices
+    let totalInvested = 0;  // Entry value
+    let totalCurrentValue = 0;  // Current market value
+    let totalUnrealizedPnl = 0;
+    let dailyPnl = 0;
     const positionsMap = {};
     
     for (const pos of positions) {
-      const currentPrice = pos.currentPrice || pos.entryPrice || 0;
-      const value = pos.quantity * currentPrice;
-      totalInvested += value;
+      const live = liveQuotes[pos.symbol];
+      const currentPrice = live?.currentPrice || pos.currentPrice || pos.entryPrice || 0;
+      const entryPrice = pos.entryPrice || 0;
+      const quantity = pos.quantity || 0;
+      const side = pos.side || 'long';
+      
+      const entryValue = entryPrice * quantity;
+      const currentValue = currentPrice * quantity;
+      
+      // Calculate unrealized P&L based on side
+      let unrealizedPnl;
+      if (side === 'short') {
+        unrealizedPnl = (entryPrice - currentPrice) * quantity;
+      } else {
+        unrealizedPnl = (currentPrice - entryPrice) * quantity;
+      }
+      
+      // Calculate daily P&L
+      if (live?.previousClose) {
+        if (side === 'short') {
+          dailyPnl += (live.previousClose - currentPrice) * quantity;
+        } else {
+          dailyPnl += (currentPrice - live.previousClose) * quantity;
+        }
+      }
+      
+      totalInvested += entryValue;
+      totalCurrentValue += currentValue;
+      totalUnrealizedPnl += unrealizedPnl;
+      
       positionsMap[pos.symbol] = {
-        quantity: pos.quantity,
-        avg_price: pos.entryPrice,
+        quantity: quantity,
+        side: side,
+        avg_price: entryPrice,
         current_price: currentPrice,
-        unrealized_pnl: pos.unrealizedPnl || 0,
-        value: value
+        unrealized_pnl: unrealizedPnl,
+        unrealized_pnl_pct: entryPrice > 0 ? (unrealizedPnl / entryValue) * 100 : 0,
+        entry_value: entryValue,
+        current_value: currentValue
       };
     }
     
-    const totalValue = parseFloat(portfolio.cash_balance) + totalInvested;
+    const cashBalance = parseFloat(portfolio.cash_balance);
+    const totalValue = cashBalance + totalCurrentValue;
+    const initialCapital = parseFloat(portfolio.initial_capital) || 100000;
+    const totalPnl = totalValue - initialCapital;
+    const totalPnlPct = initialCapital > 0 ? (totalPnl / initialCapital) * 100 : 0;
+    const dailyPnlPct = totalCurrentValue > 0 ? (dailyPnl / totalCurrentValue) * 100 : 0;
     
     res.json({
-      cash: parseFloat(portfolio.cash_balance),
+      cash: cashBalance,
       total_value: totalValue,
       total_invested: totalInvested,
+      total_current_value: totalCurrentValue,
       positions_count: positions.length,
       positions: positionsMap,
-      daily_pnl: 0, // TODO: Calculate daily P&L
-      daily_pnl_pct: 0,
+      unrealized_pnl: totalUnrealizedPnl,
+      unrealized_pnl_pct: totalInvested > 0 ? (totalUnrealizedPnl / totalInvested) * 100 : 0,
+      total_pnl: totalPnl,
+      total_pnl_pct: totalPnlPct,
+      daily_pnl: dailyPnl,
+      daily_pnl_pct: dailyPnlPct,
+      initial_capital: initialCapital,
       max_value: totalValue
     });
   } catch (e) {
@@ -4368,7 +4637,7 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
 });
 
 /**
- * Get AI trader positions
+ * Get AI trader positions with live prices
  * GET /api/ai-traders/:id/positions
  */
 app.get('/api/ai-traders/:id/positions', async (req, res) => {
@@ -4379,7 +4648,110 @@ app.get('/api/ai-traders/:id/positions', async (req, res) => {
     }
     
     const positions = await trading.getOpenPositionsByPortfolio(portfolio.id);
-    res.json(positions);
+    
+    // Fetch live prices for all symbols
+    const symbols = [...new Set(positions.map(p => p.symbol))];
+    const liveQuotes = {};
+    
+    for (const symbol of symbols) {
+      try {
+        // Use Yahoo chart endpoint to get current price
+        const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
+        const response = await fetch(yahooUrl);
+        if (response.ok) {
+          const data = await response.json();
+          const quote = data?.chart?.result?.[0];
+          if (quote) {
+            const meta = quote.meta || {};
+            const closes = quote.indicators?.quote?.[0]?.close || [];
+            const currentPrice = meta.regularMarketPrice || closes[closes.length - 1] || null;
+            const previousClose = meta.chartPreviousClose || meta.previousClose || null;
+            const marketState = meta.marketState || 'UNKNOWN';
+            
+            liveQuotes[symbol] = {
+              currentPrice,
+              previousClose,
+              marketState,
+              change: currentPrice && previousClose ? currentPrice - previousClose : null,
+              changePercent: currentPrice && previousClose ? ((currentPrice - previousClose) / previousClose) * 100 : null
+            };
+          }
+        }
+      } catch (e) {
+        console.warn(`Failed to fetch live quote for ${symbol}:`, e.message);
+      }
+    }
+    
+    // Enhance positions with live data
+    const enhancedPositions = positions.map(pos => {
+      const live = liveQuotes[pos.symbol];
+      const currentPrice = live?.currentPrice || pos.currentPrice || pos.entryPrice;
+      const entryPrice = pos.entryPrice || 0;
+      const quantity = pos.quantity || 0;
+      const side = pos.side || 'long';
+      
+      // Calculate P&L based on position side
+      let unrealizedPnl, unrealizedPnlPercent;
+      if (side === 'short') {
+        unrealizedPnl = (entryPrice - currentPrice) * quantity;
+        unrealizedPnlPercent = entryPrice > 0 ? ((entryPrice - currentPrice) / entryPrice) * 100 : 0;
+      } else {
+        unrealizedPnl = (currentPrice - entryPrice) * quantity;
+        unrealizedPnlPercent = entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0;
+      }
+      
+      // Calculate days held
+      const openedAt = pos.openedAt ? new Date(pos.openedAt) : new Date();
+      const now = new Date();
+      const daysHeld = Math.floor((now.getTime() - openedAt.getTime()) / (1000 * 60 * 60 * 24));
+      const hoursHeld = Math.floor((now.getTime() - openedAt.getTime()) / (1000 * 60 * 60));
+      
+      // Calculate daily P&L (change since previous close)
+      let dailyPnl = null;
+      let dailyPnlPercent = null;
+      if (live?.previousClose && currentPrice) {
+        if (side === 'short') {
+          dailyPnl = (live.previousClose - currentPrice) * quantity;
+          dailyPnlPercent = ((live.previousClose - currentPrice) / live.previousClose) * 100;
+        } else {
+          dailyPnl = (currentPrice - live.previousClose) * quantity;
+          dailyPnlPercent = ((currentPrice - live.previousClose) / live.previousClose) * 100;
+        }
+      }
+      
+      // Calculate distance to stop loss / take profit
+      const distanceToStopLoss = pos.stopLoss ? 
+        (side === 'short' 
+          ? ((pos.stopLoss - currentPrice) / currentPrice) * 100
+          : ((currentPrice - pos.stopLoss) / currentPrice) * 100) 
+        : null;
+      
+      const distanceToTakeProfit = pos.takeProfit ? 
+        (side === 'short'
+          ? ((currentPrice - pos.takeProfit) / currentPrice) * 100
+          : ((pos.takeProfit - currentPrice) / currentPrice) * 100)
+        : null;
+      
+      return {
+        ...pos,
+        currentPrice,
+        unrealizedPnl,
+        unrealizedPnlPercent,
+        daysHeld,
+        hoursHeld,
+        dailyPnl,
+        dailyPnlPercent,
+        distanceToStopLoss,
+        distanceToTakeProfit,
+        marketState: live?.marketState || 'UNKNOWN',
+        priceChange: live?.change || null,
+        priceChangePercent: live?.changePercent || null,
+        notionalValue: currentPrice * quantity,
+        investedValue: entryPrice * quantity
+      };
+    });
+    
+    res.json(enhancedPositions);
   } catch (e) {
     console.error('Get positions error:', e);
     res.status(500).json({ error: 'Failed to fetch positions' });
@@ -4530,6 +4902,44 @@ app.post('/api/ai-traders/:id/adjust-weights', authMiddleware, async (req, res) 
   } catch (e) {
     console.error('Adjust weights error:', e);
     res.status(400).json({ error: e.message || 'Failed to adjust weights' });
+  }
+});
+
+/**
+ * Trigger adaptive learning for a specific AI trader
+ * POST /api/ai-traders/:id/trigger-learning
+ */
+app.post('/api/ai-traders/:id/trigger-learning', authMiddleware, async (req, res) => {
+  try {
+    const traderId = parseInt(req.params.id);
+    const aiTraderLearningModule = await import('./aiTraderLearning.js');
+    
+    // Check if trader exists and has learning enabled
+    const trader = await aiTrader.getAITrader(traderId);
+    if (!trader) {
+      return res.status(404).json({ error: 'AI Trader not found' });
+    }
+    
+    const learning = trader.personality?.learning;
+    if (!learning?.enabled || !learning?.updateWeights) {
+      return res.status(400).json({ 
+        error: 'Learning not enabled for this trader',
+        hint: 'Enable "Lernmodus aktivieren" and "Gewichte automatisch anpassen" in trader settings'
+      });
+    }
+    
+    console.log(`[API] Manual adaptive learning trigger for trader ${traderId}`);
+    const result = await aiTraderLearningModule.adjustSignalWeights(traderId);
+    
+    res.json({
+      success: true,
+      traderId,
+      traderName: trader.name,
+      ...result
+    });
+  } catch (e) {
+    console.error('Trigger learning error:', e);
+    res.status(500).json({ error: e.message || 'Failed to trigger adaptive learning' });
   }
 });
 

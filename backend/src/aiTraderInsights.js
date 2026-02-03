@@ -82,24 +82,28 @@ export async function generateInsights(traderId, context = {}) {
       insights.push(`⚡ Technical-Indikatoren sind aktuell sehr akkurat`);
     }
 
-    // 2. Performance Insights
-    if (context.bestTrade && context.bestTrade.pnl_percent > 5) {
+    // 2. Performance Insights - Only if we have meaningful data
+    if (context.bestTrade && context.bestTrade.pnl_percent > 5 && context.bestTrade.symbol !== 'TEST') {
       insights.push(
         `⚡ Beste Performance bei ${context.bestTrade.symbol}: +${context.bestTrade.pnl_percent.toFixed(1)}% in ${context.bestTrade.holding_days} Tagen`
       );
     }
 
-    if (context.worstTrade && context.worstTrade.pnl_percent < -3) {
+    // Only show worst trade if it's significant AND not test data
+    if (context.worstTrade && context.worstTrade.pnl_percent < -3 && 
+        context.worstTrade.symbol !== 'TEST' && 
+        Math.abs(context.worstTrade.pnl_percent) < 30) {  // Ignore outliers
       insights.push(
         `⚠️ Größter Verlust bei ${context.worstTrade.symbol}: ${context.worstTrade.pnl_percent.toFixed(1)}%`
       );
     }
 
-    // 3. Win Rate Insights
-    if (context.winRate !== null && context.winRate !== undefined) {
+    // 3. Win Rate Insights - Only if we have enough data
+    const totalOutcomes = (context.winningTrades || 0) + (context.losingTrades || 0);
+    if (context.winRate !== null && context.winRate !== undefined && totalOutcomes >= 3) {
       if (context.winRate > 70) {
-        insights.push(`🎯 Sehr hohe Win-Rate: ${context.winRate.toFixed(0)}%`);
-      } else if (context.winRate < 40) {
+        insights.push(`🎯 Sehr hohe Win-Rate: ${context.winRate.toFixed(0)}% (${totalOutcomes} Trades)`);
+      } else if (context.winRate < 40 && context.winRate > 0) {
         insights.push(`⚠️ Niedrige Win-Rate: ${context.winRate.toFixed(0)}% - Überprüfung der Strategie empfohlen`);
       }
     }
@@ -148,12 +152,23 @@ export async function generateInsights(traderId, context = {}) {
       }
     }
 
-    // 7. Trading Activity Insights
-    const tradesThisWeek = recentTrades.length;
-    if (tradesThisWeek === 0) {
-      insights.push(`⏸️ Keine Trades diese Woche - Marktbedingungen erfüllen möglicherweise nicht die Kriterien`);
-    } else if (tradesThisWeek > 10) {
-      insights.push(`📊 Hohe Handelsaktivität: ${tradesThisWeek} Trades diese Woche`);
+    // 7. Trading Activity Insights - Check actual executed trades
+    const executedTradesResult = await query(
+      `SELECT COUNT(*) as count FROM ai_trader_decisions
+       WHERE ai_trader_id = $1
+       AND executed = true
+       AND decision_type IN ('buy', 'sell', 'short', 'close')
+       AND timestamp >= NOW() - INTERVAL '7 days'`,
+      [traderId]
+    );
+    const executedThisWeek = parseInt(executedTradesResult.rows[0]?.count || 0);
+    
+    if (executedThisWeek === 0 && trader.status === 'running') {
+      insights.push(`⏸️ Keine Trades diese Woche ausgeführt - Marktbedingungen erfüllen möglicherweise nicht die Kriterien`);
+    } else if (executedThisWeek >= 5) {
+      insights.push(`📊 Aktiver Handel: ${executedThisWeek} Trades diese Woche`);
+    } else if (executedThisWeek > 0) {
+      insights.push(`📊 ${executedThisWeek} Trade${executedThisWeek > 1 ? 's' : ''} diese Woche ausgeführt`);
     }
 
     // 8. P&L Insights from context
@@ -180,26 +195,13 @@ export async function generateInsights(traderId, context = {}) {
 }
 
 /**
- * Get insights for display
+ * Get insights for display - always generates fresh
  * @param {number} traderId - AI Trader ID
  * @returns {Promise<Array<string>>} Array of recent insights
  */
 export async function getInsights(traderId) {
   try {
-    // Get the most recent daily report
-    const reportResult = await query(
-      `SELECT insights FROM ai_trader_daily_reports
-       WHERE ai_trader_id = $1
-       ORDER BY report_date DESC
-       LIMIT 1`,
-      [traderId]
-    );
-
-    if (reportResult.rows.length > 0 && reportResult.rows[0].insights) {
-      return reportResult.rows[0].insights;
-    }
-
-    // If no report exists, generate fresh insights
+    // Always generate fresh insights for real-time accuracy
     return await generateInsights(traderId);
   } catch (error) {
     console.error('Error getting insights:', error);

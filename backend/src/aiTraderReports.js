@@ -34,96 +34,166 @@ export async function generateDailyReport(traderId, date = new Date()) {
     const endOfDay = new Date(reportDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    // Get portfolio snapshots for start and end of day
-    const portfolioStart = await getPortfolioValueAtTime(traderId, startOfDay, client);
-    const portfolioEnd = await getPortfolioValueAtTime(traderId, endOfDay, client);
-
-    // Calculate P&L
-    const startValue = portfolioStart || 0;
-    const endValue = portfolioEnd || 0;
-    const pnl = endValue - startValue;
-    const pnlPercent = startValue > 0 ? (pnl / startValue) * 100 : 0;
-
-    // Get day's trades
-    const tradesResult = await client.query(
-      `SELECT d.*, o.fee, o.total_cost, o.total_proceeds
-       FROM ai_trader_decisions d
-       LEFT JOIN orders o ON d.order_id = o.id
-       WHERE d.ai_trader_id = $1 
-       AND d.timestamp >= $2 
-       AND d.timestamp <= $3
-       AND d.executed = true
-       ORDER BY d.timestamp`,
-      [traderId, startOfDay, endOfDay]
+    // Get portfolio ID for this trader
+    const traderResult = await client.query(
+      'SELECT portfolio_id FROM ai_traders WHERE id = $1',
+      [traderId]
     );
-    const trades = tradesResult.rows;
+    const portfolioId = traderResult.rows[0]?.portfolio_id;
+    
+    if (!portfolioId) {
+      throw new Error(`No portfolio found for trader ${traderId}`);
+    }
 
-    // Calculate trading statistics
-    const tradesExecuted = trades.length;
-    const feesPaid = trades.reduce((sum, t) => sum + (parseFloat(t.fee) || 0), 0);
+    // Get initial capital from portfolio
+    const portfolioResult = await client.query(
+      'SELECT initial_capital, cash_balance FROM portfolios WHERE id = $1',
+      [portfolioId]
+    );
+    const initialCapital = parseFloat(portfolioResult.rows[0]?.initial_capital || 100000);
+    const currentCash = parseFloat(portfolioResult.rows[0]?.cash_balance || 0);
 
-    // Positions opened/closed
-    const positionsOpened = trades.filter(t => t.decision_type === 'buy').length;
-    const positionsClosed = trades.filter(t => t.decision_type === 'sell' || t.decision_type === 'close').length;
+    // Count positions opened on this day
+    const positionsOpenedResult = await client.query(
+      `SELECT COUNT(*) as count, 
+              COALESCE(SUM(quantity * entry_price), 0) as total_invested
+       FROM positions
+       WHERE portfolio_id = $1 
+       AND opened_at::date = $2::date`,
+      [portfolioId, reportDateStr]
+    );
+    const positionsOpened = parseInt(positionsOpenedResult.rows[0]?.count || 0);
+    const totalInvestedToday = parseFloat(positionsOpenedResult.rows[0]?.total_invested || 0);
 
-    // Win/Loss statistics from closed positions
-    const closedTrades = trades.filter(t => 
-      t.decision_type === 'close' || t.decision_type === 'sell'
+    // Count positions closed on this day
+    const positionsClosedResult = await client.query(
+      `SELECT COUNT(*) as count,
+              COALESCE(SUM(realized_pnl), 0) as realized_pnl,
+              COUNT(*) FILTER (WHERE realized_pnl > 0) as winning,
+              COUNT(*) FILTER (WHERE realized_pnl < 0) as losing,
+              COALESCE(AVG(realized_pnl) FILTER (WHERE realized_pnl > 0), 0) as avg_win,
+              COALESCE(AVG(realized_pnl) FILTER (WHERE realized_pnl < 0), 0) as avg_loss
+       FROM positions
+       WHERE portfolio_id = $1 
+       AND closed_at::date = $2::date
+       AND is_open = false`,
+      [portfolioId, reportDateStr]
+    );
+    const positionsClosed = parseInt(positionsClosedResult.rows[0]?.count || 0);
+    const realizedPnl = parseFloat(positionsClosedResult.rows[0]?.realized_pnl || 0);
+    const winningTrades = parseInt(positionsClosedResult.rows[0]?.winning || 0);
+    const losingTrades = parseInt(positionsClosedResult.rows[0]?.losing || 0);
+    const avgWin = positionsClosedResult.rows[0]?.avg_win ? parseFloat(positionsClosedResult.rows[0].avg_win) : null;
+    const avgLoss = positionsClosedResult.rows[0]?.avg_loss ? parseFloat(positionsClosedResult.rows[0].avg_loss) : null;
+    
+    const winRate = positionsClosed > 0 
+      ? (winningTrades / positionsClosed) * 100 
+      : null;
+
+    // Get best and worst trades closed today
+    const bestWorstResult = await client.query(
+      `SELECT symbol, realized_pnl, 
+              (realized_pnl / (quantity * entry_price) * 100) as pnl_percent,
+              EXTRACT(DAY FROM closed_at - opened_at) as holding_days
+       FROM positions
+       WHERE portfolio_id = $1 
+       AND closed_at::date = $2::date
+       AND is_open = false
+       ORDER BY realized_pnl DESC`,
+      [portfolioId, reportDateStr]
     );
     
-    const winningTrades = closedTrades.filter(t => {
-      const pnl = t.outcome_pnl || 0;
-      return pnl > 0;
-    }).length;
-    
-    const losingTrades = closedTrades.filter(t => {
-      const pnl = t.outcome_pnl || 0;
-      return pnl < 0;
-    }).length;
-
-    const winRate = closedTrades.length > 0 
-      ? (winningTrades / closedTrades.length) * 100 
-      : null;
-
-    // Average win/loss
-    const wins = closedTrades.filter(t => (t.outcome_pnl || 0) > 0);
-    const losses = closedTrades.filter(t => (t.outcome_pnl || 0) < 0);
-    
-    const avgWin = wins.length > 0
-      ? wins.reduce((sum, t) => sum + (t.outcome_pnl || 0), 0) / wins.length
-      : null;
-    
-    const avgLoss = losses.length > 0
-      ? losses.reduce((sum, t) => sum + (t.outcome_pnl || 0), 0) / losses.length
-      : null;
-
-    // Best and worst trades
     let bestTrade = null;
     let worstTrade = null;
     
-    if (closedTrades.length > 0) {
-      const sorted = [...closedTrades].sort((a, b) => 
-        (b.outcome_pnl || 0) - (a.outcome_pnl || 0)
-      );
-      
-      if (sorted[0] && sorted[0].outcome_pnl > 0) {
+    if (bestWorstResult.rows.length > 0) {
+      const best = bestWorstResult.rows[0];
+      if (best.realized_pnl > 0) {
         bestTrade = {
-          symbol: sorted[0].symbol,
-          pnl: sorted[0].outcome_pnl,
-          pnl_percent: sorted[0].outcome_pnl_percent,
-          holding_days: sorted[0].outcome_holding_days,
+          symbol: best.symbol,
+          pnl: parseFloat(best.realized_pnl),
+          pnl_percent: parseFloat(best.pnl_percent),
+          holding_days: parseInt(best.holding_days || 0),
         };
       }
       
-      if (sorted[sorted.length - 1] && sorted[sorted.length - 1].outcome_pnl < 0) {
+      const worst = bestWorstResult.rows[bestWorstResult.rows.length - 1];
+      if (worst.realized_pnl < 0) {
         worstTrade = {
-          symbol: sorted[sorted.length - 1].symbol,
-          pnl: sorted[sorted.length - 1].outcome_pnl,
-          pnl_percent: sorted[sorted.length - 1].outcome_pnl_percent,
-          holding_days: sorted[sorted.length - 1].outcome_holding_days,
+          symbol: worst.symbol,
+          pnl: parseFloat(worst.realized_pnl),
+          pnl_percent: parseFloat(worst.pnl_percent),
+          holding_days: parseInt(worst.holding_days || 0),
         };
       }
     }
+
+    // Calculate current portfolio value (cash + open positions)
+    const openPositionsResult = await client.query(
+      `SELECT symbol, quantity, entry_price, current_price, side,
+              CASE 
+                WHEN side = 'short' THEN quantity * (entry_price - current_price)
+                ELSE quantity * (current_price - entry_price)
+              END as unrealized_pnl,
+              CASE 
+                WHEN side = 'short' THEN ((entry_price - current_price) / entry_price * 100)
+                ELSE ((current_price - entry_price) / entry_price * 100)
+              END as unrealized_pnl_percent
+       FROM positions
+       WHERE portfolio_id = $1
+       AND is_open = true`,
+      [portfolioId]
+    );
+    const openPositions = openPositionsResult.rows;
+    
+    const openPositionsValue = openPositions.reduce((sum, p) => 
+      sum + (parseFloat(p.quantity) * parseFloat(p.current_price)), 0
+    );
+    const unrealizedPnl = openPositions.reduce((sum, p) => 
+      sum + parseFloat(p.unrealized_pnl || 0), 0
+    );
+
+    // Calculate portfolio values
+    const currentValue = currentCash + openPositionsValue;
+    
+    // For start value, we need to estimate what it was at the start of the day
+    // Check if this was the first day with any positions opened for this trader
+    const firstPositionResult = await client.query(
+      `SELECT MIN(opened_at::date) as first_date 
+       FROM positions 
+       WHERE portfolio_id = $1`,
+      [portfolioId]
+    );
+    const firstTradingDate = firstPositionResult.rows[0]?.first_date;
+    const isFirstTradingDay = firstTradingDate && 
+      new Date(firstTradingDate).toISOString().split('T')[0] === reportDateStr;
+    
+    let startValue, endValue;
+    
+    if (isFirstTradingDay) {
+      // First trading day: started with initial capital, ended with current value minus unrealized changes
+      startValue = initialCapital;
+      endValue = initialCapital; // On first day, no realized P&L yet, just positions opened
+    } else {
+      // Subsequent days: estimate based on current state
+      // End value is current portfolio value
+      endValue = currentValue;
+      // Start value is end value minus today's realized P&L
+      startValue = endValue - realizedPnl;
+    }
+    
+    const pnl = realizedPnl; // Only count realized P&L for the day
+    const pnlPercent = startValue > 0 ? (pnl / startValue) * 100 : 0;
+    
+    // Fees paid today (from closed positions)
+    const feesResult = await client.query(
+      `SELECT COALESCE(SUM(total_fees_paid), 0) as fees
+       FROM positions
+       WHERE portfolio_id = $1 
+       AND (opened_at::date = $2::date OR closed_at::date = $2::date)`,
+      [portfolioId, reportDateStr]
+    );
+    const feesPaid = parseFloat(feesResult.rows[0]?.fees || 0);
 
     // Get all decisions (including non-executed)
     const decisionsResult = await client.query(
@@ -136,30 +206,24 @@ export async function generateDailyReport(traderId, date = new Date()) {
     );
     const decisionsAnalyzed = parseInt(decisionsResult.rows[0]?.count || 0);
 
+    // Total trades = positions opened + positions closed
+    const tradesExecuted = positionsOpened + positionsClosed;
+
     // Calculate signal accuracy for the day
     const signalAccuracy = await calculateSignalAccuracy(traderId, 1); // 1 day
-
-    // Get open positions at end of day
-    const openPositionsResult = await client.query(
-      `SELECT symbol, quantity, avg_price, current_price, unrealized_pnl, unrealized_pnl_percent
-       FROM positions
-       WHERE portfolio_id = (SELECT portfolio_id FROM ai_traders WHERE id = $1)
-       AND status = 'open'
-       AND updated_at <= $2`,
-      [traderId, endOfDay]
-    );
-    const openPositions = openPositionsResult.rows;
 
     // Generate insights
     const insights = await generateInsights(traderId, {
       date: reportDate,
-      trades,
+      trades: [],
       signalAccuracy,
       pnl,
       pnlPercent,
       winRate,
       bestTrade,
       worstTrade,
+      positionsOpened,
+      positionsClosed,
     });
 
     // Insert or update report
@@ -250,9 +314,9 @@ async function getPortfolioValueAtTime(traderId, timestamp, client = null) {
     
     const portfolioId = traderResult.rows[0].portfolio_id;
     
-    // Get portfolio value (cash + positions value)
+    // Get portfolio cash balance
     const portfolioResult = await queryFn(
-      `SELECT cash_balance, total_value 
+      `SELECT cash_balance, initial_capital
        FROM portfolios 
        WHERE id = $1`,
       [portfolioId]
@@ -262,7 +326,19 @@ async function getPortfolioValueAtTime(traderId, timestamp, client = null) {
       return null;
     }
     
-    return parseFloat(portfolioResult.rows[0].total_value || portfolioResult.rows[0].cash_balance || 0);
+    const cashBalance = parseFloat(portfolioResult.rows[0].cash_balance || 0);
+    
+    // Get total value of open positions
+    const positionsResult = await queryFn(
+      `SELECT COALESCE(SUM(quantity * current_price), 0) as positions_value
+       FROM positions
+       WHERE portfolio_id = $1 AND is_open = true`,
+      [portfolioId]
+    );
+    
+    const positionsValue = parseFloat(positionsResult.rows[0]?.positions_value || 0);
+    
+    return cashBalance + positionsValue;
   } catch (error) {
     console.error('Error getting portfolio value:', error);
     return null;

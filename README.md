@@ -88,6 +88,8 @@ AI Live Trader is now a complete autonomous trading system with real-time monito
   - `AITraderCard` - Status display with control buttons
   - `AITraderActivityFeed` - Live scrolling event stream
   - `TradeReasoningCard` - Expandable decision analysis
+  - `TradeAlertBar` - Sticky notification bar on trade execution
+  - `TradeDetailCard` - Comprehensive trade history with full signal breakdown
   - `SignalBreakdown` - Visual signal scores and confidence
 
 - **🏆 Enhanced Leaderboard**: Clickable AI trader entries linking to dashboard

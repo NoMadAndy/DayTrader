@@ -401,12 +401,56 @@ async function updateOutcomes() {
 }
 
 /**
- * Adjust weights for AI traders with adaptive learning enabled
- * Scheduled to run weekly (Sunday 00:00)
+ * Check if current time is outside trading hours for adaptive learning
+ * Uses default trading hours (17:30 end) or can check individual trader schedules
+ * @returns {boolean} True if outside trading hours (safe to run learning)
  */
-async function adjustAdaptiveWeights() {
+function isOutsideTradingHours() {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Berlin',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+  
+  const parts = formatter.formatToParts(now);
+  const weekday = (parts.find(p => p.type === 'weekday')?.value || '').toLowerCase().substring(0, 3);
+  const hour = parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10);
+  const minute = parseInt(parts.find(p => p.type === 'minute')?.value || '0', 10);
+  const currentMinutes = hour * 60 + minute;
+  
+  // Weekend = outside trading hours
+  if (!['mon', 'tue', 'wed', 'thu', 'fri'].includes(weekday)) {
+    return true;
+  }
+  
+  // Default trading hours: 09:00 - 17:30 (Berlin)
+  const tradingStartMinutes = 9 * 60; // 09:00
+  const tradingEndMinutes = 17 * 60 + 30; // 17:30
+  
+  // Outside trading hours = before 09:00 or after 17:30
+  return currentMinutes < tradingStartMinutes || currentMinutes > tradingEndMinutes;
+}
+
+/**
+ * Adjust weights for AI traders with adaptive learning enabled
+ * Runs daily after market close (17:45) and checks if outside trading hours
+ * @param {boolean} force - Force run even during trading hours (for manual trigger)
+ */
+async function adjustAdaptiveWeights(force = false) {
   try {
-    console.log('[BackgroundJobs] Starting adaptive weight adjustments...');
+    const outsideHours = isOutsideTradingHours();
+    
+    if (!force && !outsideHours) {
+      console.log('[BackgroundJobs] Adaptive learning skipped - still within trading hours');
+      return { skipped: true, reason: 'Within trading hours' };
+    }
+    
+    console.log('[BackgroundJobs] ====== ADAPTIVE LEARNING START ======');
+    console.log(`[BackgroundJobs] Time: ${new Date().toISOString()}`);
+    console.log(`[BackgroundJobs] Outside trading hours: ${outsideHours}, Force: ${force}`);
     
     // Import dynamically to avoid circular dependencies
     const { getTradersWithLearningEnabled, adjustSignalWeights } = await import('./aiTraderLearning.js');
@@ -415,23 +459,44 @@ async function adjustAdaptiveWeights() {
     
     console.log(`[BackgroundJobs] Found ${traders.length} traders with learning enabled`);
     
+    if (traders.length === 0) {
+      console.log('[BackgroundJobs] No traders have learning enabled. Enable via Settings -> Learning -> "Lernmodus aktivieren"');
+      return { adjusted: 0, skipped: 0, reason: 'No traders with learning enabled' };
+    }
+    
+    let adjustedCount = 0;
+    let skippedCount = 0;
+    const results = [];
+    
     for (const trader of traders) {
       try {
+        console.log(`[BackgroundJobs] Processing trader: ${trader.name} (ID: ${trader.id})`);
         const result = await adjustSignalWeights(trader.id);
         
         if (result.adjusted) {
-          console.log(`[BackgroundJobs] Adjusted weights for trader ${trader.name}`);
+          adjustedCount++;
+          console.log(`[BackgroundJobs] ✓ Adjusted weights for trader ${trader.name}:`);
+          console.log(`[BackgroundJobs]   Old: ML=${(result.oldWeights?.ml * 100).toFixed(1)}%, RL=${(result.oldWeights?.rl * 100).toFixed(1)}%, Sentiment=${(result.oldWeights?.sentiment * 100).toFixed(1)}%, Technical=${(result.oldWeights?.technical * 100).toFixed(1)}%`);
+          console.log(`[BackgroundJobs]   New: ML=${(result.newWeights?.ml * 100).toFixed(1)}%, RL=${(result.newWeights?.rl * 100).toFixed(1)}%, Sentiment=${(result.newWeights?.sentiment * 100).toFixed(1)}%, Technical=${(result.newWeights?.technical * 100).toFixed(1)}%`);
         } else {
-          console.log(`[BackgroundJobs] No adjustment needed for trader ${trader.name}: ${result.reason}`);
+          skippedCount++;
+          console.log(`[BackgroundJobs] - No adjustment for trader ${trader.name}: ${result.reason}`);
         }
+        
+        results.push({ traderId: trader.id, name: trader.name, ...result });
       } catch (error) {
-        console.error(`[BackgroundJobs] Error adjusting weights for trader ${trader.id}:`, error);
+        console.error(`[BackgroundJobs] ✗ Error adjusting weights for trader ${trader.id}:`, error.message);
+        results.push({ traderId: trader.id, name: trader.name, error: error.message });
       }
     }
     
-    console.log('[BackgroundJobs] Adaptive weight adjustments complete');
+    console.log(`[BackgroundJobs] ====== ADAPTIVE LEARNING COMPLETE ======`);
+    console.log(`[BackgroundJobs] Summary: ${adjustedCount} adjusted, ${skippedCount} skipped`);
+    
+    return { adjusted: adjustedCount, skipped: skippedCount, results };
   } catch (error) {
     console.error('[BackgroundJobs] Error in adaptive weight adjustments:', error);
+    return { error: error.message };
   }
 }
 
@@ -439,31 +504,31 @@ async function adjustAdaptiveWeights() {
 let dailyReportTimer = null;
 let outcomeTrackingTimer = null;
 let adaptiveWeightsTimer = null;
+let adaptiveLearningCheckTimer = null;
 
 /**
  * Schedule AI Trader background jobs
  */
 function scheduleAITraderJobs() {
   // Daily reports at 17:35 (after market close)
-  // Run at 35 minutes past each hour for testing, or set specific time
   const now = new Date();
-  const nextRun = new Date(now);
-  nextRun.setHours(17, 35, 0, 0);
+  const nextReportRun = new Date(now);
+  nextReportRun.setHours(17, 35, 0, 0);
   
-  if (nextRun <= now) {
-    nextRun.setDate(nextRun.getDate() + 1);
+  if (nextReportRun <= now) {
+    nextReportRun.setDate(nextReportRun.getDate() + 1);
   }
   
-  const msUntilNextRun = nextRun.getTime() - now.getTime();
+  const msUntilNextReport = nextReportRun.getTime() - now.getTime();
   
   // Schedule first run
   dailyReportTimer = setTimeout(() => {
     generateDailyReports();
     // Then run daily
     dailyReportTimer = setInterval(generateDailyReports, 24 * 60 * 60 * 1000);
-  }, msUntilNextRun);
+  }, msUntilNextReport);
   
-  console.log(`[BackgroundJobs] Daily reports scheduled for ${nextRun.toISOString()}`);
+  console.log(`[BackgroundJobs] Daily reports scheduled for ${nextReportRun.toISOString()}`);
   
   // Outcome tracking hourly
   outcomeTrackingTimer = setInterval(updateOutcomes, 60 * 60 * 1000);
@@ -472,24 +537,46 @@ function scheduleAITraderJobs() {
   // Run immediately on startup
   updateOutcomes();
   
-  // Adaptive weights weekly on Sunday at 00:00
-  const nextSunday = new Date(now);
-  nextSunday.setDate(nextSunday.getDate() + (7 - nextSunday.getDay()) % 7);
-  nextSunday.setHours(0, 0, 0, 0);
+  // =========================================
+  // ADAPTIVE LEARNING - Daily after market close
+  // =========================================
+  // Primary run at 17:45 (15 min after market close)
+  const nextLearningRun = new Date(now);
+  nextLearningRun.setHours(17, 45, 0, 0);
   
-  if (nextSunday <= now) {
-    nextSunday.setDate(nextSunday.getDate() + 7);
+  if (nextLearningRun <= now) {
+    nextLearningRun.setDate(nextLearningRun.getDate() + 1);
   }
   
-  const msUntilSunday = nextSunday.getTime() - now.getTime();
+  const msUntilLearning = nextLearningRun.getTime() - now.getTime();
   
   adaptiveWeightsTimer = setTimeout(() => {
     adjustAdaptiveWeights();
-    // Then run weekly
-    adaptiveWeightsTimer = setInterval(adjustAdaptiveWeights, 7 * 24 * 60 * 60 * 1000);
-  }, msUntilSunday);
+    // Then run daily at 17:45
+    adaptiveWeightsTimer = setInterval(adjustAdaptiveWeights, 24 * 60 * 60 * 1000);
+  }, msUntilLearning);
   
-  console.log(`[BackgroundJobs] Adaptive weights scheduled for ${nextSunday.toISOString()}`);
+  console.log(`[BackgroundJobs] Adaptive learning scheduled for ${nextLearningRun.toISOString()} (daily after market close)`);
+  
+  // Also check every 2 hours if we're outside trading hours (catches weekends, holidays)
+  adaptiveLearningCheckTimer = setInterval(() => {
+    if (isOutsideTradingHours()) {
+      console.log('[BackgroundJobs] Periodic check: Outside trading hours, running adaptive learning...');
+      adjustAdaptiveWeights();
+    }
+  }, 2 * 60 * 60 * 1000); // Every 2 hours
+  
+  console.log('[BackgroundJobs] Adaptive learning periodic check scheduled every 2 hours');
+  
+  // Run immediately on startup if outside trading hours
+  setTimeout(async () => {
+    if (isOutsideTradingHours()) {
+      console.log('[BackgroundJobs] Startup: Outside trading hours, running initial adaptive learning...');
+      await adjustAdaptiveWeights();
+    } else {
+      console.log('[BackgroundJobs] Startup: Within trading hours, adaptive learning will run after market close');
+    }
+  }, 10000); // 10 seconds after startup
 }
 
 /**
@@ -513,6 +600,11 @@ function stopAITraderJobs() {
     adaptiveWeightsTimer = null;
   }
   
+  if (adaptiveLearningCheckTimer) {
+    clearInterval(adaptiveLearningCheckTimer);
+    adaptiveLearningCheckTimer = null;
+  }
+  
   console.log('[BackgroundJobs] AI Trader jobs stopped');
 }
 
@@ -528,4 +620,5 @@ export default {
   generateDailyReports,
   updateOutcomes,
   adjustAdaptiveWeights,
+  isOutsideTradingHours,
 };

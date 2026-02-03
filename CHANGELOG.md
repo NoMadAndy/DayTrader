@@ -5,9 +5,118 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.16.0] - 2026-02-03
 
 ### Added
+- **Dashboard Statistik-Zählung** - `tradesExecuted`, `winningTrades`, `losingTrades`, `totalPnl` werden jetzt korrekt aus Datenbank gezählt
+  - Neue Funktion `updateTraderStats()` in aiTrader.js
+  - Automatische Aktualisierung bei Markierung als ausgeführt
+- **Self-Training Status Proxy** - Neuer Backend-Endpoint `/api/rl/ai-trader/:id/self-training-status`
+
+### Changed
+- **Kompakteres AI Trader Dashboard** - Reduzierte Redundanz und bessere Platznutzung:
+  - AITraderCard ist jetzt eine einzeilige Header-Leiste mit Avatar, Name, Status und Buttons
+  - Portfolio-Stats und Trade-Stats in einer 6-Spalten-Zeile kombiniert
+  - "Ausgeführte Trades" Sektion nach oben verschoben (primärer Fokus)
+  - Maximale Höhen für Listen reduziert um mehr Inhalt gleichzeitig sichtbar zu haben
+
+- **Reports Tab Design** - Angepasst an globales Dark-Mode Design:
+  - Entfernung von `dark:` Präfixen (App ist immer dunkel)
+  - Kompaktere Statistik-Karten mit 4-Spalten-Grid
+  - Deutsche Beschriftungen für bessere Konsistenz
+  - Einheitliches Card-Design mit Header/Content-Trennung
+
+- **AITraderInsights Design** - Modernisiert mit konsistentem Card-Layout:
+  - Header-Bereich mit Titel
+  - Farbige Insight-Karten nach Kategorie
+  - Leere State mit Icon und Erklärung
+
+### Fixed
+- **Falsche Insights vermieden**:
+  - Win-Rate-Warnung nur bei mindestens 3 ausgewerteten Trades
+  - TEST-Symbol wird aus Insights gefiltert
+  - Extreme Verluste (>30%) werden als Ausreißer ignoriert
+  - Trading-Aktivität basiert jetzt auf tatsächlich ausgeführten Trades (nicht nur geplanten)
+
+- **Trading-Zeiten Logik** - `tradingHoursOnly` wird jetzt automatisch auf `true` gesetzt wenn Schedule aktiviert ist
+  - Behebt Problem dass "Markt offen" angezeigt wurde obwohl außerhalb der Handelszeiten
+
+- **Self-Training Anzeige für AI Trader** - Live-Status wenn der AI Trader selbstständig trainiert:
+  - Erscheint automatisch im Activity-Tab wenn Self-Training startet
+  - Zeigt Fortschrittsbalken, Schritte, durchschnittlichen Reward
+  - Trainierte Symbole werden angezeigt
+  - Erfolgsmeldung mit Final Reward nach Abschluss
+  - Kompakte Version für die AI Trader Card
+  - Neuer API-Endpoint: `GET /api/rl/ai-trader/:id/self-training-status`
+
+- **Trading-Horizont Einstellung** - Wähle zwischen verschiedenen Trading-Stilen:
+  - ⚡ **Scalping** (Minuten) - Sehr kurze Trades, schnelle Gewinne. Ziel: 1h, Max: 4h
+  - 📅 **Day-Trading** (Stunden) - Intraday-Trades, vor Marktschluss schließen. Ziel: 8h, Max: 24h
+  - 📊 **Swing-Trading** (Tage) - Mehrtägige Trades. Ziel: 3 Tage, Max: 1 Woche
+  - 📈 **Position-Trading** (Wochen) - Langfristige Trends. Ziel: 2 Wochen, Max: 1 Monat
+  - Automatische Berechnung von Ziel- und Max-Haltedauer
+  - Neue Felder in Personality: `horizon`, `targetHoldingHours`, `maxHoldingHours`
+
+- **Trade Alert Bar** - Sticky Benachrichtigungsleiste am oberen Bildschirmrand bei Trade-Ausführung:
+  - Erscheint automatisch wenn ein Trade ausgeführt wird (buy/sell/short/close)
+  - Zeigt Symbol, Aktion, Menge, Preis und Kosten auf einen Blick
+  - Aufklappbare Details mit allen 4 Signal-Scores (ML, RL, Sentiment, Technical)
+  - Kombinierter Score mit farbiger Anzeige
+  - Risk-Assessment Status (grün = bestanden, rot = Warnungen)
+  - Auto-Dismiss nach 30 Sekunden mit Fortschrittsbalken
+  - Manuelles Schließen jederzeit möglich
+
+- **Trade Detail Card** - Erweiterbares Info-Panel für Trade-Historie:
+  - Ersetzt die einfache Entscheidungsliste im "Wichtige Entscheidungen"-Bereich
+  - Kompakte Zusammenfassung: Symbol, Aktion, Confidence, Score, Zeitstempel
+  - Aufklappbar für volle Details:
+    - Alle 4 Signal-Scores mit farbiger +/- Anzeige
+    - Trade-Parameter (Menge, Preis, Stop Loss, Take Profit)
+    - Risk-Warnungen und -Blocker
+    - Vollständige Begründung (Reasoning)
+    - Outcome-Daten (P&L, Haltedauer, ob Entscheidung korrekt war)
+    - Raw-Data-Toggle für Debug-Informationen
+  - Lösch-Button zum Entfernen aus der Liste
+
+- **Live-Kurse für offene Positionen** - Positionen im Activity-Tab zeigen jetzt Echtzeit-Daten:
+  - Aktueller Kurs mit Tagesänderung (↑/↓)
+  - Unrealisierter P&L (Gesamt und Prozent)
+  - Tages-P&L (Gewinn/Verlust heute)
+  - Haltedauer (Tage oder Stunden)
+  - Abstand zu Stop Loss und Take Profit
+  - Markt-Status (offen/geschlossen)
+  - Long/Short Badge
+  - Investierter Wert und aktueller Wert
+- **Trainings-Status Anzeige für AI Trader** - Zeigt den aktuellen Trainingszustand und die Qualität des RL-Agents an:
+  - Kompakte Ansicht in der AI Trader Card (zeigt Status, letzes Training, Ø Return)
+  - Detaillierte Ansicht im Analytics-Tab mit allen Metriken
+  - Performance-Metriken: Ø Return, Max Return, Min Return
+  - Status des Self-Training (Intervall, Schritte)
+  - Status des Adaptiven Lernens (Signal-Gewichtungen)
+  - Qualitäts-Bewertung: Exzellent (>5%), Gut (>2%), Moderat (>0%), Schwach
+- **Neuer API-Endpoint**: `GET /api/ai-traders/:id/training-status` - Liefert Trainings-Status vom RL-Service
+
+### Changed
+- **Sound & Vibration nur für Trades** - Akustische/haptische Benachrichtigungen wurden verbessert:
+  - Sound und Vibration werden NUR bei tatsächlich ausgeführten Trades ausgelöst (buy/sell/short/close)
+  - Keine Benachrichtigungen mehr für HOLD/SKIP oder nicht ausgeführte Entscheidungen
+  - Neuer prominenter 4-Ton Sound: aufsteigende Melodie (660→880→1100→1320 Hz)
+  - Verstärkte Vibration: [100, 50, 100, 50, 200] ms Pattern
+  - Lauterer Sound (0.4 statt 0.25 Gain)
+
+### Fixed
+- **Adaptive Learning startet jetzt automatisch** - Das selbstlernende Gewichtungs-System funktioniert jetzt korrekt:
+  - Läuft automatisch täglich um 17:45 (nach Marktschluss)
+  - Startet sofort beim Server-Start wenn außerhalb der Handelszeiten
+  - Periodischer Check alle 2 Stunden (für Wochenenden/Feiertage)
+  - Respektiert Handelszeiten-Einstellungen (09:00-17:30 Europe/Berlin)
+  - Ausführliches Logging mit Fortschrittsanzeige
+
+### Added
+- **Neue API-Endpoints für Adaptive Learning**:
+  - `GET /api/ai-traders/learning-status` - Status des Learning-Systems
+  - `POST /api/ai-traders/trigger-learning-all` - Manuelles Triggern für alle Trader
+  - `POST /api/ai-traders/:id/trigger-learning` - Manuelles Triggern für einen Trader
 - **Self-Training Einstellungen in UI** - RL-Agent Self-Training kann jetzt in den AI Trader Einstellungen konfiguriert werden:
   - Toggle zum Aktivieren/Deaktivieren von Self-Training während Leerlaufzeiten
   - Einstellbares Trainings-Intervall (15-240 Minuten)

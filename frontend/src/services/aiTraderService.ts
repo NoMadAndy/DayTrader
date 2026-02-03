@@ -310,3 +310,63 @@ export async function getAvailableRLAgents(): Promise<RLAgentStatus[]> {
   const response = await fetch(`${RL_SERVICE_URL}/agents`);
   return handleResponse<RLAgentStatus[]>(response);
 }
+
+/**
+ * Get RL agent status for a specific agent by name
+ */
+export async function getRLAgentStatus(agentName: string): Promise<RLAgentStatus | null> {
+  const RL_SERVICE_URL = import.meta.env.VITE_RL_SERVICE_URL || '/rl-api';
+  try {
+    const response = await fetch(`${RL_SERVICE_URL}/agents/${encodeURIComponent(agentName)}`);
+    if (response.status === 404) {
+      return null;
+    }
+    return handleResponse<RLAgentStatus>(response);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get training status for an AI trader (RL agent status + ML model info)
+ */
+export async function getTraderTrainingStatus(traderId: number): Promise<TraderTrainingStatus> {
+  const response = await fetch(`${API_BASE}/ai-traders/${traderId}/training-status`);
+  return handleResponse<TraderTrainingStatus>(response);
+}
+
+/** Training status for an AI trader */
+export interface TraderTrainingStatus {
+  traderId: number;
+  traderName: string;
+  rlAgentName: string | null;
+  rlAgent: {
+    status: 'trained' | 'training' | 'not_trained' | 'not_configured';
+    isTrained: boolean;
+    lastTrained: string | null;
+    trainingProgress: number;
+    totalEpisodes: number;
+    bestReward: number | null;
+    performanceMetrics: {
+      meanReward: number;
+      meanReturnPct: number;
+      maxReturnPct: number;
+      minReturnPct: number;
+    } | null;
+  };
+  selfTraining: {
+    enabled: boolean;
+    intervalMinutes: number;
+    timesteps: number;
+    lastTrainingAt: string | null;
+  };
+  mlModel: {
+    autoTrain: boolean;
+    trainedSymbols: string[];
+  };
+  learningMode: {
+    enabled: boolean;
+    updateWeights: boolean;
+    minSamples: number;
+  };
+}

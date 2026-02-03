@@ -1000,6 +1000,49 @@ export async function createDailyReport(aiTraderId, reportData) {
 }
 
 // ============================================================================
+// Trader Statistics Updates
+// ============================================================================
+
+/**
+ * Update trader statistics by counting from decisions table
+ * This recalculates trades_executed, winning_trades, losing_trades, total_pnl
+ * @param {number} traderId 
+ */
+export async function updateTraderStats(traderId) {
+  // Count executed trades (buy, sell, short, close with executed=true)
+  const countResult = await query(
+    `SELECT 
+       COUNT(*) FILTER (WHERE decision_type IN ('buy', 'sell', 'short', 'close')) as trades_executed,
+       COUNT(*) FILTER (WHERE outcome_pnl IS NOT NULL AND outcome_pnl > 0) as winning_trades,
+       COUNT(*) FILTER (WHERE outcome_pnl IS NOT NULL AND outcome_pnl < 0) as losing_trades,
+       COALESCE(SUM(outcome_pnl_percent), 0) as total_pnl_percent
+     FROM ai_trader_decisions 
+     WHERE ai_trader_id = $1 AND executed = true`,
+    [traderId]
+  );
+  
+  const stats = countResult.rows[0];
+  const tradesExecuted = parseInt(stats.trades_executed) || 0;
+  const winningTrades = parseInt(stats.winning_trades) || 0;
+  const losingTrades = parseInt(stats.losing_trades) || 0;
+  const totalPnl = parseFloat(stats.total_pnl_percent) || 0;
+  
+  // Update the ai_traders table
+  await query(
+    `UPDATE ai_traders SET 
+       trades_executed = $2,
+       winning_trades = $3,
+       losing_trades = $4,
+       total_pnl = $5,
+       updated_at = NOW()
+     WHERE id = $1`,
+    [traderId, tradesExecuted, winningTrades, losingTrades, totalPnl]
+  );
+  
+  console.log(`[AI Trader] Updated stats for trader ${traderId}: ${tradesExecuted} trades, ${winningTrades} wins, ${losingTrades} losses, ${totalPnl.toFixed(2)}% P&L`);
+}
+
+// ============================================================================
 // Exports
 // ============================================================================
 
@@ -1022,5 +1065,6 @@ export default {
   getAITraderPortfolio,
   getDailyReports,
   createDailyReport,
+  updateTraderStats,
   DEFAULT_PERSONALITY,
 };

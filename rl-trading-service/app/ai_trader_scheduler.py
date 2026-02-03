@@ -34,6 +34,9 @@ class AITraderScheduler:
         self.last_training_time: Dict[int, datetime] = {}
         self.trainer = TradingAgentTrainer()
         self._shutdown = False
+        
+        # Self-training status tracking
+        self.self_training_status: Dict[int, Dict[str, Any]] = {}
     
     async def start_trader(self, trader_id: int, config: AITraderConfig):
         """
@@ -137,9 +140,11 @@ class AITraderScheduler:
                         # Log decision
                         await self._log_decision(trader_id, decision)
                         
-                        # Execute trade if applicable
-                        if decision.decision_type in ['buy', 'sell'] and decision.risk_checks_passed:
-                            await self._execute_trade(trader_id, decision)
+                        # Execute trade if applicable (buy, sell, short, close)
+                        if decision.decision_type in ['buy', 'sell', 'short', 'close'] and decision.risk_checks_passed:
+                            executed = await self._execute_trade(trader_id, decision)
+                            if executed:
+                                await self._mark_decision_executed(trader_id, decision)
                         
                     except Exception as e:
                         import traceback
@@ -224,15 +229,40 @@ class AITraderScheduler:
         print(f"🎓 Trader {trader_id} starting self-training (idle period)...")
         self.last_training_time[trader_id] = now
         
+        # Initialize training status
+        agent_name = config.rl_agent_name or f"trader_{trader_id}_agent"
+        self.self_training_status[trader_id] = {
+            'is_training': True,
+            'status': 'starting',
+            'agent_name': agent_name,
+            'progress': 0,
+            'timesteps': 0,
+            'total_timesteps': config.self_training_timesteps,
+            'started_at': now.isoformat(),
+            'symbols': [],
+            'message': 'Preparing training data...'
+        }
+        
         try:
-            # Fetch historical data for all symbols
+            # Fetch historical data for randomly selected symbols
             import pandas as pd
+            import random
             from .agent_config import AgentConfig
             from .indicators import prepare_data_for_training
             
             training_data = {}
             
-            for symbol in config.symbols[:3]:  # Limit to 3 symbols for quick training
+            # Randomly select up to 3 symbols for varied training
+            available_symbols = list(config.symbols)
+            random.shuffle(available_symbols)
+            selected_symbols = available_symbols[:3]
+            print(f"   🎲 Selected symbols for training: {', '.join(selected_symbols)}")
+            
+            self.self_training_status[trader_id]['symbols'] = selected_symbols
+            self.self_training_status[trader_id]['message'] = f'Loading data for {", ".join(selected_symbols)}...'
+            self.self_training_status[trader_id]['progress'] = 10
+            
+            for i, symbol in enumerate(selected_symbols):
                 try:
                     response = await self.http_client.get(
                         f"{self.backend_url}/api/yahoo/chart/{symbol}",
@@ -247,16 +277,22 @@ class AITraderScheduler:
                             if df is not None and len(df) >= 200:
                                 training_data[symbol] = df
                                 print(f"   📊 Loaded {len(df)} data points for {symbol}")
+                                self.self_training_status[trader_id]['progress'] = 10 + ((i + 1) / len(selected_symbols)) * 10
                 except Exception as e:
                     print(f"   ⚠️ Failed to load data for {symbol}: {e}")
                     continue
             
             if not training_data:
                 print(f"   ❌ No training data available for trader {trader_id}")
+                self.self_training_status[trader_id] = {
+                    'is_training': False,
+                    'status': 'failed',
+                    'message': 'No training data available',
+                    'agent_name': agent_name,
+                }
                 return
             
             # Create agent config
-            agent_name = config.rl_agent_name or f"trader_{trader_id}_agent"
             agent_config = AgentConfig(
                 name=agent_name,
                 initial_balance=config.initial_budget,
@@ -265,17 +301,50 @@ class AITraderScheduler:
                 take_profit_pct=config.take_profit_percent,
             )
             
-            # Run training
+            # Update status for training phase
+            self.self_training_status[trader_id]['status'] = 'training'
+            self.self_training_status[trader_id]['message'] = f'Training on {len(training_data)} symbols...'
+            self.self_training_status[trader_id]['progress'] = 20
+            
+            # Run training with progress callback
+            def progress_callback(progress_data: dict):
+                timesteps = progress_data.get('timesteps', 0)
+                total = progress_data.get('total_timesteps', 1)
+                mean_reward = progress_data.get('mean_reward', 0)
+                progress_pct = progress_data.get('progress', 0)
+                
+                # Map 0-1 progress to 20-95%
+                display_progress = 20 + (progress_pct * 75)
+                self.self_training_status[trader_id]['progress'] = min(display_progress, 95)
+                self.self_training_status[trader_id]['timesteps'] = timesteps
+                self.self_training_status[trader_id]['current_reward'] = mean_reward
+                self.self_training_status[trader_id]['message'] = f'Training... {timesteps:,}/{total:,} steps'
+            
             result = await self.trainer.train_agent(
                 agent_name=agent_name,
                 config=agent_config,
                 training_data=training_data,
                 total_timesteps=config.self_training_timesteps,
+                progress_callback=progress_callback,
             )
             
             if result.get('success', False):
                 reward = result.get('final_reward', 0)
                 print(f"   ✅ Trader {trader_id} self-training complete! Final reward: {reward:.2f}")
+                
+                # Update training status - complete
+                self.self_training_status[trader_id] = {
+                    'is_training': False,
+                    'status': 'complete',
+                    'agent_name': agent_name,
+                    'progress': 100,
+                    'timesteps': config.self_training_timesteps,
+                    'total_timesteps': config.self_training_timesteps,
+                    'final_reward': reward,
+                    'completed_at': datetime.now().isoformat(),
+                    'message': f'Training complete! Reward: {reward:.2f}',
+                    'symbols': selected_symbols,
+                }
                 
                 # Notify backend about the training
                 try:
@@ -294,10 +363,35 @@ class AITraderScheduler:
                 except Exception:
                     pass  # Ignore notification errors
             else:
-                print(f"   ❌ Trader {trader_id} self-training failed: {result.get('error', 'Unknown error')}")
+                error_msg = result.get('error', 'Unknown error')
+                print(f"   ❌ Trader {trader_id} self-training failed: {error_msg}")
+                self.self_training_status[trader_id] = {
+                    'is_training': False,
+                    'status': 'failed',
+                    'agent_name': agent_name,
+                    'message': f'Training failed: {error_msg}',
+                    'symbols': selected_symbols,
+                }
                 
         except Exception as e:
             print(f"   ❌ Error during self-training for trader {trader_id}: {e}")
+            self.self_training_status[trader_id] = {
+                'is_training': False,
+                'status': 'error',
+                'message': str(e),
+            }
+    
+    def get_self_training_status(self, trader_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get the current self-training status for a trader.
+        
+        Args:
+            trader_id: Trader ID
+            
+        Returns:
+            Status dictionary or None
+        """
+        return self.self_training_status.get(trader_id)
     
     async def _fetch_market_data(self, symbol: str) -> Optional[Dict]:
         """
@@ -445,13 +539,16 @@ class AITraderScheduler:
         except Exception as e:
             print(f"Error logging decision: {e}")
     
-    async def _execute_trade(self, trader_id: int, decision: TradingDecision):
+    async def _execute_trade(self, trader_id: int, decision: TradingDecision) -> bool:
         """
         Execute a trading decision.
         
         Args:
             trader_id: Trader ID
             decision: TradingDecision instance
+            
+        Returns:
+            True if trade was executed successfully
         """
         try:
             payload = {
@@ -471,11 +568,39 @@ class AITraderScheduler:
             
             if response.status_code in [200, 201]:
                 print(f"Trade executed for trader {trader_id}: {decision.decision_type} {decision.quantity} {decision.symbol} @ {decision.price}")
+                return True
             else:
                 print(f"Failed to execute trade: {response.status_code}")
+                return False
                 
         except Exception as e:
             print(f"Error executing trade: {e}")
+            return False
+    
+    async def _mark_decision_executed(self, trader_id: int, decision: TradingDecision):
+        """
+        Mark a decision as executed in the backend.
+        
+        Args:
+            trader_id: Trader ID
+            decision: TradingDecision instance
+        """
+        try:
+            # Mark the most recent decision for this symbol as executed
+            response = await self.http_client.patch(
+                f"{self.backend_url}/api/ai-traders/{trader_id}/decisions/mark-executed",
+                json={
+                    'symbol': decision.symbol,
+                    'decision_type': decision.decision_type,
+                    'timestamp': decision.timestamp.isoformat()
+                }
+            )
+            
+            if response.status_code not in [200, 204]:
+                print(f"Failed to mark decision as executed: {response.status_code}")
+                
+        except Exception as e:
+            print(f"Error marking decision as executed: {e}")
     
     async def close(self):
         """Shutdown scheduler and cleanup"""

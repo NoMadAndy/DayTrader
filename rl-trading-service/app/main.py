@@ -1010,6 +1010,44 @@ async def stop_ai_trader(trader_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/ai-trader/{trader_id}/self-training-status")
+async def get_self_training_status(trader_id: int):
+    """
+    Get the current self-training status for an AI trader.
+    
+    Args:
+        trader_id: Trader ID
+        
+    Returns:
+        Training status with progress, message, etc.
+    """
+    try:
+        sched = get_scheduler()
+        status = sched.get_self_training_status(trader_id)
+        
+        if status is None:
+            return {
+                "trader_id": trader_id,
+                "is_training": False,
+                "status": "idle",
+                "message": "No training in progress or recent training data"
+            }
+        
+        return {
+            "trader_id": trader_id,
+            **status
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting self-training status for trader {trader_id}: {e}")
+        return {
+            "trader_id": trader_id,
+            "is_training": False,
+            "status": "error",
+            "message": str(e)
+        }
+
+
 @app.post("/ai-trader/analyze")
 async def analyze_symbol_once(request: dict):
     """

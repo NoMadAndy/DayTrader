@@ -35,12 +35,22 @@ export interface AITraderSignalWeights {
 export interface AITraderSignalsConfig {
   weights: AITraderSignalWeights;
   minAgreement: number;
+  minSignalAgreement?: 'weak' | 'moderate' | 'strong';  // Agreement level string
+  requireMultipleConfirmation?: boolean;  // Require multiple signals to confirm
 }
+
+export type TradingHorizon = 'scalping' | 'day' | 'swing' | 'position';
 
 export interface AITraderTradingConfig {
   minConfidence: number;
   maxOpenPositions: number;
   diversification: boolean;
+  /** Trading horizon: scalping (minutes), day (hours), swing (days), position (weeks) */
+  horizon?: TradingHorizon;
+  /** Target holding period in hours (auto-set based on horizon) */
+  targetHoldingHours?: number;
+  /** Maximum holding period in hours before forced close consideration */
+  maxHoldingHours?: number;
 }
 
 export interface AITraderScheduleConfig {
@@ -98,6 +108,15 @@ export interface AITraderPersonality {
   selfTraining?: AITraderSelfTrainingConfig;
   /** Name of the RL agent to use for signals (optional) */
   rlAgentName?: string;
+  /** RL-specific settings (optional) */
+  rl?: {
+    enabled?: boolean;
+    weight?: number;
+    minConfidence?: number;
+    selfTrainingEnabled?: boolean;
+    selfTrainingIntervalMinutes?: number;
+    selfTrainingTimesteps?: number;
+  };
 }
 
 // ============================================================================
@@ -155,6 +174,15 @@ export interface TradeReasoning {
   };
   recommendation?: string;
   warnings?: string[];
+  // Trade execution parameters (from Python backend)
+  quantity?: number;
+  price?: number;
+  stop_loss?: number;
+  take_profit?: number;
+  // Risk assessment (from Python backend)
+  risk_checks_passed?: boolean;
+  risk_warnings?: string[];
+  risk_blockers?: string[];
 }
 
 export interface MarketContext {

@@ -87,6 +87,12 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
   const [maxShortPositions, setMaxShortPositions] = useState(trader.personality?.risk?.maxShortPositions || 3);
   const [maxShortExposure, setMaxShortExposure] = useState((trader.personality?.risk?.maxShortExposure || 0.3) * 100);
   
+  // Trading Horizon
+  type TradingHorizon = 'scalping' | 'day' | 'swing' | 'position';
+  const [tradingHorizon, setTradingHorizon] = useState<TradingHorizon>(
+    trader.personality?.trading?.horizon || 'day'
+  );
+  
   // RL Agent
   const [rlAgentName, setRlAgentName] = useState(trader.personality?.rlAgentName || '');
   const [availableRLAgents, setAvailableRLAgents] = useState<RLAgentStatus[]>([]);
@@ -132,6 +138,7 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
       setStopLoss(trader.personality?.risk?.stopLossPercent || 5);
       setTakeProfit(trader.personality?.risk?.takeProfitPercent || 10);
       setMaxPositions(trader.personality?.trading?.maxOpenPositions || 5);
+      setTradingHorizon(trader.personality?.trading?.horizon || 'day');
       setMinConfidence(trader.personality?.signals?.minAgreement || 0.6);
       setWatchlistSymbols(trader.personality?.watchlist?.symbols?.join(', ') || '');
       setUseFullWatchlist(trader.personality?.watchlist?.useFullWatchlist ?? false);
@@ -203,10 +210,19 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
           ...trader.personality?.trading,
           maxOpenPositions: maxPositions,
           minConfidence,
+          horizon: tradingHorizon,
+          // Auto-set holding periods based on horizon
+          targetHoldingHours: tradingHorizon === 'scalping' ? 1 : 
+                              tradingHorizon === 'day' ? 8 : 
+                              tradingHorizon === 'swing' ? 72 : 336,
+          maxHoldingHours: tradingHorizon === 'scalping' ? 4 : 
+                           tradingHorizon === 'day' ? 24 : 
+                           tradingHorizon === 'swing' ? 168 : 720,
         },
         schedule: {
           ...trader.personality?.schedule,
           enabled: scheduleEnabled,
+          tradingHoursOnly: scheduleEnabled, // Only trade during specified hours when schedule is enabled
           tradingStart,
           tradingEnd,
           checkIntervalSeconds: checkInterval,
@@ -667,6 +683,28 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
                   max={20}
                   className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
                 />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  ⏱️ Trading-Horizont
+                </label>
+                <select
+                  value={tradingHorizon}
+                  onChange={(e) => setTradingHorizon(e.target.value as TradingHorizon)}
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="scalping">⚡ Scalping (Minuten)</option>
+                  <option value="day">📅 Day-Trading (Stunden)</option>
+                  <option value="swing">📊 Swing-Trading (Tage)</option>
+                  <option value="position">📈 Position-Trading (Wochen)</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {tradingHorizon === 'scalping' && 'Sehr kurze Trades, schnelle Gewinne. Ziel: 1h, Max: 4h'}
+                  {tradingHorizon === 'day' && 'Intraday-Trades, vor Marktschluss schließen. Ziel: 8h, Max: 24h'}
+                  {tradingHorizon === 'swing' && 'Mehrtägige Trades. Ziel: 3 Tage, Max: 1 Woche'}
+                  {tradingHorizon === 'position' && 'Langfristige Trends. Ziel: 2 Wochen, Max: 1 Monat'}
+                </p>
               </div>
             </div>
             

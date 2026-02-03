@@ -9,11 +9,15 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { AITraderCard } from '../components/AITraderCard';
 import { AITraderActivityFeed } from '../components/AITraderActivityFeed';
 import { AITraderSettingsModal } from '../components/AITraderSettingsModal';
+import { AITraderTrainingStatus } from '../components/AITraderTrainingStatus';
 import { TradeReasoningCard } from '../components/TradeReasoningCard';
 import AITraderReportCard from '../components/AITraderReportCard';
 import AITraderInsights from '../components/AITraderInsights';
 import SignalAccuracyChart from '../components/SignalAccuracyChart';
 import AdaptiveWeightsPanel from '../components/AdaptiveWeightsPanel';
+import TradeAlertBar from '../components/TradeAlertBar';
+import TradeDetailCard from '../components/TradeDetailCard';
+import SelfTrainingIndicator from '../components/SelfTrainingIndicator';
 import { useAITraderStream } from '../hooks/useAITraderStream';
 import { useAITraderReports } from '../hooks/useAITraderReports';
 import { useNotificationFeedback } from '../hooks/useNotificationFeedback';
@@ -25,6 +29,29 @@ import type { PositionWithPnL } from '../types/trading';
 // Auto-refresh interval in milliseconds
 const AUTO_REFRESH_INTERVAL_MS = 30000; // 30 seconds
 
+// Trade alert interface for the alert bar
+interface TradeAlert {
+  id: number;
+  symbol: string;
+  action: 'buy' | 'sell' | 'short' | 'close';
+  quantity: number;
+  price: number;
+  confidence: number | null;
+  weightedScore: number | null;
+  mlScore: number | null;
+  rlScore: number | null;
+  sentimentScore: number | null;
+  technicalScore: number | null;
+  signalAgreement: string;
+  reasoning: string;
+  riskChecksPassed: boolean;
+  riskWarnings?: string[];
+  timestamp: string;
+  cost?: number;
+  pnl?: number;
+  pnlPercent?: number;
+}
+
 export function AITraderPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -33,12 +60,25 @@ export function AITraderPage() {
   const [decisions, setDecisions] = useState<AITraderDecision[]>([]);
   const [importantDecisions, setImportantDecisions] = useState<AITraderDecision[]>([]);
   const [positions, setPositions] = useState<PositionWithPnL[]>([]);
-  const [portfolio, setPortfolio] = useState<{ cash: number; totalValue: number; pnl: number } | null>(null);
+  const [portfolio, setPortfolio] = useState<{ 
+    cash: number; 
+    totalValue: number; 
+    pnl: number;
+    unrealizedPnl?: number;
+    dailyPnl?: number;
+    dailyPnlPct?: number;
+    initialCapital?: number;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'activity' | 'reports' | 'analytics'>('activity');
+  const [selectedReportIndex, setSelectedReportIndex] = useState(0);
   const lastRefreshRef = useRef<number>(0);
   const [activityPanelExpanded, setActivityPanelExpanded] = useState(false);
+  
+  // Trade alert state for sticky notification
+  const [currentTradeAlert, setCurrentTradeAlert] = useState<TradeAlert | null>(null);
+  const processedTradeAlertsRef = useRef<Set<number>>(new Set());
   
   // Notification settings (persisted in localStorage)
   const [notificationSettings, setNotificationSettings] = useState(() => {
@@ -75,6 +115,35 @@ export function AITraderPage() {
         // Trigger notification for non-skip decisions
         if (d.decisionType !== 'skip') {
           notifyDecision(d.decisionType, d.executed);
+        }
+        
+        // Show Trade Alert Bar for executed buy/sell/short/close
+        if (d.executed && ['buy', 'sell', 'short', 'close'].includes(d.decisionType) && 
+            !processedTradeAlertsRef.current.has(d.id)) {
+          processedTradeAlertsRef.current.add(d.id);
+          
+          const reasoning = typeof d.reasoning === 'object' ? d.reasoning : {};
+          setCurrentTradeAlert({
+            id: d.id,
+            symbol: d.symbol,
+            action: d.decisionType as 'buy' | 'sell' | 'short' | 'close',
+            quantity: (reasoning as { quantity?: number }).quantity || 0,
+            price: (reasoning as { price?: number }).price || 0,
+            confidence: d.confidence,
+            weightedScore: d.weightedScore,
+            mlScore: d.mlScore,
+            rlScore: d.rlScore,
+            sentimentScore: d.sentimentScore,
+            technicalScore: d.technicalScore,
+            signalAgreement: d.signalAgreement || 'unknown',
+            reasoning: d.summaryShort || 'No reasoning available',
+            riskChecksPassed: (reasoning as { risk_checks_passed?: boolean }).risk_checks_passed ?? true,
+            riskWarnings: (reasoning as { risk_warnings?: string[] }).risk_warnings || [],
+            timestamp: d.timestamp,
+            cost: (reasoning as { quantity?: number; price?: number }).quantity && (reasoning as { quantity?: number; price?: number }).price 
+              ? (reasoning as { quantity?: number; price?: number }).quantity! * (reasoning as { quantity?: number; price?: number }).price!
+              : undefined,
+          });
         }
       }
     });
@@ -170,7 +239,11 @@ export function AITraderPage() {
         setPortfolio({
           cash: portfolioData.cash || 0,
           totalValue: portfolioData.total_value || 0,
-          pnl: portfolioData.daily_pnl_pct || 0,
+          pnl: portfolioData.total_pnl_pct || 0,
+          unrealizedPnl: portfolioData.unrealized_pnl || 0,
+          dailyPnl: portfolioData.daily_pnl || 0,
+          dailyPnlPct: portfolioData.daily_pnl_pct || 0,
+          initialCapital: portfolioData.initial_capital || 100000,
         });
       }
     } catch (err) {
@@ -362,7 +435,15 @@ export function AITraderPage() {
   }
   
   return (
-    <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 space-y-6">
+    <>
+      {/* Trade Alert Bar - sticky at top */}
+      <TradeAlertBar 
+        trade={currentTradeAlert} 
+        onDismiss={() => setCurrentTradeAlert(null)}
+        autoDismissMs={30000}
+      />
+      
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
@@ -465,25 +546,47 @@ export function AITraderPage() {
         </div>
       )}
       
-      {/* Portfolio Overview */}
-      {portfolio && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-4">
-            <div className="text-sm text-gray-400 mb-1">💰 Cash Balance</div>
-            <div className="text-2xl font-bold">${portfolio.cash.toLocaleString()}</div>
-          </div>
-          <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-4">
-            <div className="text-sm text-gray-400 mb-1">📊 Total Value</div>
-            <div className="text-2xl font-bold">${portfolio.totalValue.toLocaleString()}</div>
-          </div>
-          <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-4">
-            <div className="text-sm text-gray-400 mb-1">📈 Total P&L</div>
-            <div className={`text-2xl font-bold ${portfolio.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {portfolio.pnl >= 0 ? '+' : ''}{portfolio.pnl.toFixed(2)}%
+      {/* Combined Stats Row: Portfolio + Trade Stats */}
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+        {/* Portfolio Stats */}
+        {portfolio && (
+          <>
+            <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-2 sm:p-3">
+              <div className="text-xs text-gray-400">💰 Cash</div>
+              <div className="text-base sm:text-lg font-bold">${portfolio.cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
             </div>
+            <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-2 sm:p-3">
+              <div className="text-xs text-gray-400">📊 Wert</div>
+              <div className="text-base sm:text-lg font-bold">${portfolio.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+            </div>
+            <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-2 sm:p-3">
+              <div className="text-xs text-gray-400">📈 Unrealized</div>
+              <div className={`text-base sm:text-lg font-bold ${(portfolio.unrealizedPnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {(portfolio.unrealizedPnl || 0) >= 0 ? '+' : ''}${(portfolio.unrealizedPnl || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </div>
+            </div>
+          </>
+        )}
+        {/* Trade Stats */}
+        <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-2 sm:p-3">
+          <div className="text-xs text-gray-400">🎯 Trades</div>
+          <div className="text-base sm:text-lg font-bold">{trader.tradesExecuted ?? 0}</div>
+        </div>
+        <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-2 sm:p-3">
+          <div className="text-xs text-gray-400">🏆 Win Rate</div>
+          <div className="text-base sm:text-lg font-bold">
+            {(trader.tradesExecuted ?? 0) > 0 
+              ? `${(((trader.winningTrades ?? 0) / (trader.tradesExecuted ?? 0)) * 100).toFixed(0)}%`
+              : '-'}
           </div>
         </div>
-      )}
+        <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-2 sm:p-3">
+          <div className="text-xs text-gray-400">💹 Total P&L</div>
+          <div className={`text-base sm:text-lg font-bold ${(trader.totalPnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {(trader.totalPnl ?? 0) >= 0 ? '+' : ''}{(trader.totalPnl ?? 0).toFixed(1)}%
+          </div>
+        </div>
+      </div>
       
       {/* Tab Navigation */}
       <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-1 flex gap-1">
@@ -522,14 +625,56 @@ export function AITraderPage() {
       {/* Tab Content */}
       {activeTab === 'activity' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left Column: Recent Decisions (Primary Content) */}
+          {/* Left Column: Trades & Positions */}
           <div className="space-y-4">
-            {/* Open Positions - First */}
+            {/* Self-Training Indicator - shows when training is in progress */}
+            {traderId && (
+              <SelfTrainingIndicator traderId={traderId} />
+            )}
+            
+            {/* Important Decisions Panel - FIRST - Always visible */}
+            <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-blue-500/50 border-l-4 border-l-blue-500">
+              <div className="px-4 py-3 border-b border-slate-700/50 flex items-center justify-between">
+                <h3 className="font-bold text-blue-300">
+                  ⚡ Ausgeführte Trades ({importantDecisions.length})
+                  <span className="text-xs text-gray-500 ml-2 font-normal">buy / sell / short / close</span>
+                </h3>
+                {importantDecisions.length > 0 && (
+                  <span className="text-xs text-gray-500">Klick auf ✕ zum Löschen</span>
+                )}
+              </div>
+              <div className="p-2 space-y-2 max-h-[400px] overflow-y-auto">
+                {importantDecisions.length === 0 ? (
+                  <div className="text-center text-gray-500 py-6">
+                    <div className="text-2xl mb-1">📊</div>
+                    <div className="text-sm font-medium">Keine ausgeführten Trades</div>
+                    <div className="text-xs mt-1">Trades erscheinen hier sobald der AI Trader Positionen eröffnet oder schließt</div>
+                  </div>
+                ) : (
+                  [...importantDecisions]
+                    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                    .map((decision) => (
+                      <TradeDetailCard 
+                        key={decision.id} 
+                        decision={decision}
+                        isNew={newDecisionIds.has(decision.id)}
+                        onDelete={() => {
+                          if (confirm(`Entscheidung "${decision.symbol} ${decision.decisionType}" wirklich löschen?`)) {
+                            handleDeleteDecision(decision.id);
+                          }
+                        }}
+                      />
+                    ))
+                )}
+              </div>
+            </div>
+            
+            {/* Open Positions - Second */}
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
               <div className="px-4 py-3 border-b border-slate-700/50">
                 <h3 className="font-bold">📍 Open Positions ({positions.length})</h3>
               </div>
-              <div className="p-4">
+              <div className="p-3">
                 {positions.length === 0 ? (
                   <div className="text-center text-gray-500 py-4">
                     <div className="text-xl mb-1">📭</div>
@@ -537,72 +682,76 @@ export function AITraderPage() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {positions.map((position) => (
-                      <div 
-                        key={position.id}
-                        className="bg-slate-900/50 rounded-lg p-3 flex items-center justify-between"
-                      >
-                        <div>
-                          <div className="font-bold">{position.symbol}</div>
-                          <div className="text-xs text-gray-400">
-                            {position.quantity} @ ${position.entryPrice?.toFixed(2)}
+                    {positions.map((position) => {
+                      const pnlPercent = position.unrealizedPnlPercent || 0;
+                      const pnl = position.unrealizedPnl || 0;
+                      const hoursHeld = (position as any).hoursHeld || 0;
+                      const daysHeld = (position as any).daysHeld || 0;
+                      const distanceToSL = (position as any).distanceToStopLoss;
+                      const distanceToTP = (position as any).distanceToTakeProfit;
+                      const currentPrice = position.currentPrice || position.entryPrice;
+                      
+                      return (
+                        <div 
+                          key={position.id}
+                          className="bg-slate-900/50 rounded-lg p-2 flex items-center gap-3"
+                        >
+                          {/* Symbol & Side */}
+                          <div className="w-20 flex-shrink-0">
+                            <div className="font-bold text-sm">{position.symbol}</div>
+                            <div className="text-xs text-gray-500">
+                              {position.side === 'short' ? '🔴 Short' : '🟢 Long'}
+                            </div>
+                          </div>
+                          
+                          {/* Qty & Prices */}
+                          <div className="flex-1 text-xs text-gray-400">
+                            <div>{position.quantity}x @ ${position.entryPrice?.toFixed(2)}</div>
+                            <div>→ ${currentPrice?.toFixed(2)}</div>
+                          </div>
+                          
+                          {/* P&L */}
+                          <div className="text-right flex-shrink-0 w-20">
+                            <div className={`font-bold ${pnlPercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%
+                            </div>
+                            <div className={`text-xs ${pnl >= 0 ? 'text-green-400/60' : 'text-red-400/60'}`}>
+                              ${Math.abs(pnl).toFixed(0)}
+                            </div>
+                          </div>
+                          
+                          {/* Risk Indicators */}
+                          <div className="flex-shrink-0 flex flex-col items-end gap-0.5 w-16">
+                            {distanceToSL != null && (
+                              <div className={`text-xs px-1 rounded ${distanceToSL < 3 ? 'bg-red-500/30 text-red-300' : 'text-gray-500'}`}>
+                                SL {distanceToSL.toFixed(1)}%
+                              </div>
+                            )}
+                            {distanceToTP != null && (
+                              <div className={`text-xs px-1 rounded ${distanceToTP < 3 ? 'bg-green-500/30 text-green-300' : 'text-gray-500'}`}>
+                                TP {distanceToTP.toFixed(1)}%
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* Time */}
+                          <div className="text-xs text-gray-500 w-8 text-right">
+                            {daysHeld > 0 ? `${daysHeld}d` : `${hoursHeld}h`}
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className={`font-bold ${(position.unrealizedPnlPercent || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {(position.unrealizedPnlPercent || 0) >= 0 ? '+' : ''}
-                            {(position.unrealizedPnlPercent || 0).toFixed(2)}%
-                          </div>
-                          <div className="text-xs text-gray-400">
-                            ${(position.unrealizedPnl || 0).toFixed(2)}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
             </div>
-            
-            {/* Important Decisions Panel - Manually Manageable */}
-            {importantDecisions.length > 0 && (
-              <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-blue-500/50 border-l-4 border-l-blue-500">
-                <div className="px-4 py-3 border-b border-slate-700/50 flex items-center justify-between">
-                  <h3 className="font-bold text-blue-300">⚡ Wichtige Entscheidungen ({importantDecisions.length})</h3>
-                  <span className="text-xs text-gray-500">Klick auf ✕ zum Löschen</span>
-                </div>
-                <div className="p-2 space-y-2 max-h-[600px] overflow-y-auto">
-                  {importantDecisions.map((decision) => (
-                    <div key={decision.id} className="relative group">
-                      {/* Delete Button */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (confirm(`Entscheidung "${decision.symbol} ${decision.decisionType}" wirklich löschen?`)) {
-                            handleDeleteDecision(decision.id);
-                          }
-                        }}
-                        className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/40 flex items-center justify-center opacity-50 group-hover:opacity-100 transition-opacity"
-                        title="Entscheidung löschen"
-                      >
-                        ✕
-                      </button>
-                      <TradeReasoningCard 
-                        decision={decision} 
-                        expanded={true}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
             
             {/* Recent Decisions */}
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
               <div className="px-4 py-3 border-b border-slate-700/50">
                 <h3 className="font-bold">🧠 Recent Decisions</h3>
               </div>
-              <div className="p-2 space-y-1 max-h-[500px] overflow-y-auto">
+              <div className="p-2 space-y-1 max-h-[400px] overflow-y-auto">
                 {decisions.length === 0 ? (
                   <div className="text-center text-gray-500 py-8">
                     <div className="text-2xl mb-2">🤔</div>
@@ -710,10 +859,43 @@ export function AITraderPage() {
       
       {activeTab === 'reports' && traderId && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Latest Report */}
+          {/* Report with Navigation */}
           <div>
             {reports.length > 0 ? (
-              <AITraderReportCard report={reports[0]} />
+              <div>
+                {/* Report Navigation */}
+                <div className="flex items-center justify-between mb-4 bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                  <button
+                    onClick={() => setSelectedReportIndex(Math.min(selectedReportIndex + 1, reports.length - 1))}
+                    disabled={selectedReportIndex >= reports.length - 1}
+                    className="p-2 rounded-lg bg-slate-700/50 hover:bg-slate-600/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    title="Älter"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  
+                  <div className="text-center">
+                    <span className="text-sm text-gray-400">
+                      Report {selectedReportIndex + 1} von {reports.length}
+                    </span>
+                  </div>
+                  
+                  <button
+                    onClick={() => setSelectedReportIndex(Math.max(selectedReportIndex - 1, 0))}
+                    disabled={selectedReportIndex <= 0}
+                    className="p-2 rounded-lg bg-slate-700/50 hover:bg-slate-600/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    title="Neuer"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </div>
+                
+                <AITraderReportCard report={reports[selectedReportIndex]} />
+              </div>
             ) : (
               <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-6 shadow text-center">
                 <div className="text-4xl mb-2">📊</div>
@@ -742,8 +924,16 @@ export function AITraderPage() {
           <div>
             <AdaptiveWeightsPanel trader={trader} />
           </div>
+          
+          {/* Training Status - Full View */}
+          <div className="lg:col-span-2">
+            <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-6">
+              <AITraderTrainingStatus traderId={traderId} compact={false} />
+            </div>
+          </div>
         </div>
       )}
     </div>
+    </>
   );
 }

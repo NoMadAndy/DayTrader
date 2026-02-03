@@ -54,8 +54,8 @@ export function AITraderActivityFeed({
     });
   }, [events]);
   
-  // Create notification sound using Web Audio API
-  const playNotificationSound = useCallback((isImportant: boolean = true) => {
+  // Create prominent trade notification sound using Web Audio API
+  const playNotificationSound = useCallback(() => {
     if (!enableSound) return;
     
     try {
@@ -70,46 +70,43 @@ export function AITraderActivityFeed({
         ctx.resume();
       }
       
-      if (isImportant) {
-        // Two-tone ascending sound for important events (trade executed, buy/sell)
-        const frequencies = [880, 1100];
-        frequencies.forEach((freq, i) => {
-          const oscillator = ctx.createOscillator();
-          const gainNode = ctx.createGain();
-          
-          oscillator.connect(gainNode);
-          gainNode.connect(ctx.destination);
-          
-          oscillator.frequency.value = freq;
-          oscillator.type = 'triangle';
-          
-          const startTime = ctx.currentTime + (i * 0.08);
-          gainNode.gain.setValueAtTime(0, startTime);
-          gainNode.gain.linearRampToValueAtTime(0.25, startTime + 0.02);
-          gainNode.gain.setValueAtTime(0.25, startTime + 0.06);
-          gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + 0.12);
-          
-          oscillator.start(startTime);
-          oscillator.stop(startTime + 0.12);
-        });
-      } else {
-        // Simple soft beep for info events
+      // Prominent trade alert sound - 3-tone ascending melody
+      const frequencies = [660, 880, 1100];
+      frequencies.forEach((freq, i) => {
         const oscillator = ctx.createOscillator();
         const gainNode = ctx.createGain();
         
         oscillator.connect(gainNode);
         gainNode.connect(ctx.destination);
         
-        oscillator.frequency.value = 600;
-        oscillator.type = 'sine';
+        oscillator.frequency.value = freq;
+        oscillator.type = 'triangle';
         
-        gainNode.gain.setValueAtTime(0, ctx.currentTime);
-        gainNode.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.01);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+        const startTime = ctx.currentTime + (i * 0.12);
+        gainNode.gain.setValueAtTime(0, startTime);
+        gainNode.gain.linearRampToValueAtTime(0.4, startTime + 0.03);
+        gainNode.gain.setValueAtTime(0.4, startTime + 0.1);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + 0.2);
         
-        oscillator.start(ctx.currentTime);
-        oscillator.stop(ctx.currentTime + 0.1);
-      }
+        oscillator.start(startTime);
+        oscillator.stop(startTime + 0.2);
+      });
+      
+      // Add a final confirmation tone
+      setTimeout(() => {
+        if (!audioContextRef.current) return;
+        const ctx2 = audioContextRef.current;
+        const osc = ctx2.createOscillator();
+        const gain = ctx2.createGain();
+        osc.connect(gain);
+        gain.connect(ctx2.destination);
+        osc.frequency.value = 1320;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.3, ctx2.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx2.currentTime + 0.3);
+        osc.start(ctx2.currentTime);
+        osc.stop(ctx2.currentTime + 0.3);
+      }, 400);
     } catch {
       // Ignore audio errors
     }
@@ -134,28 +131,25 @@ export function AITraderActivityFeed({
         }, 1000);
       }
       
-      // Check for important events
+      // Check for executed trades only (buy/sell/short/close)
       const newEvents = events.slice(0, newEventsCount);
-      const hasImportantEvent = newEvents.some(
-        e => ['trade_executed', 'position_closed', 'error'].includes(e.type) ||
-             (e.type === 'decision_made' && e.data?.decisionType !== 'skip')
-      );
-      
-      // Check for very important events (executed trades)
-      const hasVeryImportantEvent = newEvents.some(
+      const hasExecutedTrade = newEvents.some(
         e => ['trade_executed', 'position_closed'].includes(e.type) ||
-             (e.type === 'decision_made' && e.data?.decisionType && ['buy', 'sell'].includes(String(e.data.decisionType)) && e.data?.executed)
+             (e.type === 'decision_made' && 
+              e.data?.decisionType && 
+              ['buy', 'sell', 'short', 'close'].includes(String(e.data.decisionType)) && 
+              e.data?.executed === true)
       );
       
-      // Sound notification for important events
-      if (enableSound && hasImportantEvent) {
-        playNotificationSound(hasVeryImportantEvent);
+      // Sound notification ONLY for executed trades
+      if (enableSound && hasExecutedTrade) {
+        playNotificationSound();
       }
       
-      // Haptic feedback on mobile for important events
-      if (enableVibration && hasImportantEvent && 'vibrate' in navigator) {
-        // Stronger vibration for very important events
-        navigator.vibrate(hasVeryImportantEvent ? [50, 30, 50, 30, 100] : [80]);
+      // Haptic feedback ONLY for executed trades
+      if (enableVibration && hasExecutedTrade && 'vibrate' in navigator) {
+        // Strong vibration pattern for trades
+        navigator.vibrate([100, 50, 100, 50, 200]);
       }
     }
     prevEventCountRef.current = events.length;
