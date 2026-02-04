@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.20.0] - 2026-02-04
+
+### Added
+- **Trading-Persönlichkeiten/Strategie-Presets** - 8 vordefinierte Strategien im AI Trader Settings Modal:
+  - 🛡️ **Der Konservative Anleger**: Kapitalerhalt, Position-Trading, enge Risikogrenzen
+  - 🧐 **Der Vorsichtige Daytrader**: Sicheres Intraday-Trading, ausgewogene Signale
+  - 🏄 **Der Trend-Surfer**: Swing-Trading, reitet große Wellen mit Short-Option
+  - 🎯 **Der Momentum-Jäger**: Schnelle Momentum-Plays, Fokus auf Volumen
+  - 📰 **Der News-Trader**: Reagiert auf Nachrichten, Sentiment-gewichtet
+  - ⚡ **Der Aggressive Scalper**: Blitzschnelle Trades, enge Stop-Loss
+  - 🤖 **Der Algo-Stratege**: ML/RL-fokussiert, strenge Signal-Validierung
+  - 🔥 **Der Risiko-Liebhaber**: Hohe Risiken, große Positionen, aggressive Strategie
+  - Bei Auswahl werden alle Einstellungen (Risiko, Horizont, Gewichtungen, etc.) automatisch gesetzt
+  - Hinweis-Banner erklärt die Funktion, verschwindet nach Auswahl
+  - Zurücksetzen-Button um Auswahl zu löschen
+
+- **Horizont-abhängige Entscheidungsschwellenwerte** - AI Trader passt Sell-Trigger an den Trading-Stil an:
+  - ⚡ **Scalping**: Empfindlichere Exits (verkauft bei Score < -0.1, schließt bei < 0.05)
+  - 📈 **Day-Trading**: Standard-Schwellenwerte (verkauft bei < -0.2, schließt bei < 0)
+  - 📊 **Swing**: Toleranter gegenüber Schwankungen (verkauft bei < -0.35, schließt bei < -0.1)
+  - 💼 **Position**: Sehr tolerant für langfristige Positionen (verkauft bei < -0.45)
+
+- **Automatische SL/TP-Prüfung** - Der Scheduler prüft jetzt bei jedem Check-Intervall:
+  - Stop-Loss und Take-Profit Levels werden kontinuierlich überwacht
+  - Bei Erreichen wird die Position automatisch geschlossen
+  - Logging mit 🛑 (Stop-Loss) oder 🎯 (Take-Profit) Emoji
+  - Besonders wichtig für Scalping mit engen SL/TP Margins
+
+- **Trading-Horizont Konfiguration** - Neue Felder in AITraderConfig:
+  - `trading_horizon`: 'scalping', 'day', 'swing', 'position'
+  - `target_holding_hours`: Ziel-Haltedauer in Stunden
+  - `max_holding_hours`: Maximale Haltedauer in Stunden
+  - Werte werden vom Frontend an den RL-Service durchgereicht
+
+### Fixed
+- **Portfolio-Endpunkt erweitert** - Gibt jetzt `stop_loss`, `take_profit`, `opened_at` für jede Position zurück
+- **Trading-Horizont wurde ignoriert** - Einstellung im Frontend wurde nicht an RL-Service übertragen
+
+### Technical
+- Neue Methode `_get_horizon_thresholds()` in `AITraderEngine` für horizont-spezifische Schwellenwerte
+- Neue Methode `_check_sl_tp_exits()` in `AITraderScheduler` für automatische Exit-Überwachung
+- Config-Übergabe in `main.py` und `index.js` um Horizont-Felder erweitert
+
 ## [1.19.0] - 2026-02-04
 
 ### Added

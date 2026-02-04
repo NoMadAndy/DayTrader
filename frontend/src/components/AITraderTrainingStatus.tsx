@@ -207,8 +207,8 @@ function FullTrainingStatus({ status, onRefresh }: { status: TraderTrainingStatu
                     <div className="text-xs text-gray-400">Ø Return</div>
                   </div>
                   <div className="bg-slate-800/50 rounded p-2">
-                    <div className="text-lg font-bold text-green-400">
-                      +{rl.performanceMetrics.maxReturnPct.toFixed(1)}%
+                    <div className={`text-lg font-bold ${rl.performanceMetrics.maxReturnPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {rl.performanceMetrics.maxReturnPct >= 0 ? '+' : ''}{rl.performanceMetrics.maxReturnPct.toFixed(1)}%
                     </div>
                     <div className="text-xs text-gray-400">Max</div>
                   </div>

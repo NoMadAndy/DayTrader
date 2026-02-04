@@ -120,6 +120,9 @@ class AITraderScheduler:
                 # Get portfolio state
                 portfolio_state = await self._fetch_portfolio_state(trader_id)
                 
+                # Check SL/TP for existing positions first
+                await self._check_sl_tp_exits(trader_id, portfolio_state, config)
+                
                 # Analyze each symbol
                 for symbol in config.symbols:
                     try:
@@ -601,6 +604,102 @@ class AITraderScheduler:
             'daily_pnl_pct': 0,
             'max_value': 100000
         }
+    
+    async def _check_sl_tp_exits(
+        self, 
+        trader_id: int, 
+        portfolio_state: Dict,
+        config: AITraderConfig
+    ):
+        """
+        Check if any positions have hit their stop-loss or take-profit levels.
+        
+        This is especially important for scalping where quick exits are needed.
+        
+        Args:
+            trader_id: Trader ID
+            portfolio_state: Current portfolio state with positions
+            config: AITraderConfig instance
+        """
+        positions = portfolio_state.get('positions', {})
+        
+        for symbol, pos in positions.items():
+            try:
+                current_price = pos.get('current_price', 0)
+                stop_loss = pos.get('stop_loss')
+                take_profit = pos.get('take_profit')
+                side = pos.get('side', 'long')
+                quantity = pos.get('quantity', 0)
+                
+                if not current_price or quantity == 0:
+                    continue
+                
+                should_close = False
+                close_reason = None
+                
+                # Check Stop-Loss
+                if stop_loss:
+                    if side == 'long' and current_price <= stop_loss:
+                        should_close = True
+                        close_reason = 'stop_loss'
+                        print(f"🛑 Trader {trader_id}: {symbol} hit STOP-LOSS @ ${current_price:.2f} (SL: ${stop_loss:.2f})")
+                    elif side == 'short' and current_price >= stop_loss:
+                        should_close = True
+                        close_reason = 'stop_loss'
+                        print(f"🛑 Trader {trader_id}: {symbol} hit STOP-LOSS @ ${current_price:.2f} (SL: ${stop_loss:.2f})")
+                
+                # Check Take-Profit
+                if take_profit and not should_close:
+                    if side == 'long' and current_price >= take_profit:
+                        should_close = True
+                        close_reason = 'take_profit'
+                        print(f"🎯 Trader {trader_id}: {symbol} hit TAKE-PROFIT @ ${current_price:.2f} (TP: ${take_profit:.2f})")
+                    elif side == 'short' and current_price <= take_profit:
+                        should_close = True
+                        close_reason = 'take_profit'
+                        print(f"🎯 Trader {trader_id}: {symbol} hit TAKE-PROFIT @ ${current_price:.2f} (TP: ${take_profit:.2f})")
+                
+                # Execute close if needed
+                if should_close:
+                    # Create a synthetic close decision
+                    decision = TradingDecision(
+                        symbol=symbol,
+                        decision_type='close',
+                        confidence=1.0,  # Automatic SL/TP exit
+                        weighted_score=0,
+                        ml_score=None,
+                        rl_score=None,
+                        sentiment_score=None,
+                        technical_score=None,
+                        signal_agreement='strong',
+                        reasoning={
+                            'trigger': close_reason,
+                            'trigger_price': stop_loss if close_reason == 'stop_loss' else take_profit,
+                            'current_price': current_price,
+                            'side': side
+                        },
+                        summary_short=f"{close_reason.upper()}: Closing {side} {symbol} @ ${current_price:.2f}",
+                        quantity=abs(quantity),
+                        price=current_price,
+                        stop_loss=stop_loss,
+                        take_profit=take_profit,
+                        risk_checks_passed=True,  # SL/TP exits bypass risk checks
+                        risk_warnings=[],
+                        risk_blockers=[],
+                        market_context={},
+                        portfolio_snapshot=portfolio_state,
+                        timestamp=datetime.now()
+                    )
+                    
+                    # Log and execute
+                    await self._log_decision(trader_id, decision)
+                    executed = await self._execute_trade(trader_id, decision)
+                    if executed:
+                        await self._mark_decision_executed(trader_id, decision)
+                        
+            except Exception as e:
+                print(f"Error checking SL/TP for {symbol}: {e}")
+                continue
     
     async def _log_decision(self, trader_id: int, decision: TradingDecision):
         """

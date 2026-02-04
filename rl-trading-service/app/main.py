@@ -156,6 +156,10 @@ async def resume_running_traders():
                         'allow_short_selling': risk.get('allowShortSelling', False),
                         'max_short_positions': risk.get('maxShortPositions', 3),
                         'max_short_exposure': risk.get('maxShortExposure', 0.30),
+                        # Trading horizon config
+                        'trading_horizon': trading.get('horizon', 'day'),
+                        'target_holding_hours': trading.get('targetHoldingHours', 8),
+                        'max_holding_hours': trading.get('maxHoldingHours', 24),
                     }
                     
                     logger.info(f"resume_running_traders: Config for trader {trader_id}: rl_agent_name={config.get('rl_agent_name')}, symbols={len(config.get('symbols', []))} items")

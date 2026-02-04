@@ -4018,6 +4018,10 @@ app.post('/api/ai-traders/:id/start', authMiddleware, async (req, res) => {
       allow_short_selling: p.risk?.allowShortSelling ?? false,
       max_short_positions: p.risk?.maxShortPositions || 3,
       max_short_exposure: p.risk?.maxShortExposure || 0.30,
+      // Trading Horizon (affects decision sensitivity)
+      trading_horizon: p.trading?.horizon || 'day',
+      target_holding_hours: p.trading?.targetHoldingHours || 8,
+      max_holding_hours: p.trading?.maxHoldingHours || 24,
     };
     
     // Log the config being sent (for debugging)
@@ -4432,7 +4436,10 @@ app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
         unrealized_pnl: unrealizedPnl,
         unrealized_pnl_pct: entryPrice > 0 ? (unrealizedPnl / entryValue) * 100 : 0,
         entry_value: entryValue,
-        current_value: currentValue
+        current_value: currentValue,
+        stop_loss: pos.stopLoss || null,
+        take_profit: pos.takeProfit || null,
+        opened_at: pos.openedAt || null
       };
     }
     

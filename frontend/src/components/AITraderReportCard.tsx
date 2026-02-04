@@ -186,7 +186,7 @@ export default function AITraderReportCard({ report }: AITraderReportCardProps) 
               <div className="p-2 bg-green-500/10 rounded-lg border border-green-500/30 flex justify-between items-center">
                 <span className="text-xs text-gray-400">🏆 Bester Trade</span>
                 <span className="text-sm font-bold text-green-400">
-                  {bestTrade.symbol}: +{bestTrade.pnl_percent?.toFixed(2)}%
+                  {bestTrade.symbol}: {(bestTrade.pnl_percent ?? 0) >= 0 ? '+' : ''}{bestTrade.pnl_percent?.toFixed(2)}%
                 </span>
               </div>
             )}

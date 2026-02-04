@@ -316,7 +316,9 @@ function TrainingEntry({ entry, expanded, onToggle }: {
             {entry.max_return_pct !== null && (
               <div className="bg-slate-700/30 rounded p-2">
                 <div className="text-xs text-gray-400">Max Return</div>
-                <div className="font-medium text-green-400">+{Number(entry.max_return_pct).toFixed(1)}%</div>
+                <div className={`font-medium ${Number(entry.max_return_pct) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {Number(entry.max_return_pct) >= 0 ? '+' : ''}{Number(entry.max_return_pct).toFixed(1)}%
+                </div>
               </div>
             )}
             {entry.min_return_pct !== null && (

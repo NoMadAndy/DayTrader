@@ -25,6 +25,251 @@ const RISK_OPTIONS: { value: AITraderRiskConfig['tolerance']; labelKey: string; 
   { value: 'aggressive', labelKey: 'aiTraders.risk.aggressive', descKey: 'aiTraders.risk.aggressiveDesc' },
 ];
 
+// Strategy Presets with trading personalities
+interface StrategyPreset {
+  id: string;
+  name: string;
+  avatar: string;
+  description: string;
+  color: string;
+  // Risk settings
+  riskTolerance: AITraderRiskConfig['tolerance'];
+  maxDrawdown: number;
+  stopLoss: number;
+  takeProfit: number;
+  allowShortSelling: boolean;
+  maxShortPositions: number;
+  maxShortExposure: number;
+  // Trading settings
+  tradingHorizon: 'scalping' | 'day' | 'swing' | 'position';
+  maxPositions: number;
+  // Signal weights
+  mlWeight: number;
+  rlWeight: number;
+  sentimentWeight: number;
+  technicalWeight: number;
+  // Signal agreement
+  minConfidence: number;
+  requireAgreement: boolean;
+  minSignalAgreement: 'weak' | 'moderate' | 'strong';
+  // Schedule
+  checkInterval: number;
+  // Learning
+  learningEnabled: boolean;
+  updateWeights: boolean;
+}
+
+const STRATEGY_PRESETS: StrategyPreset[] = [
+  {
+    id: 'conservative-investor',
+    name: 'Der Konservative Anleger',
+    avatar: '🛡️',
+    description: 'Kapitalerhalt steht an erster Stelle. Langfristige Positionen mit engen Risikogrenzen.',
+    color: 'blue',
+    riskTolerance: 'conservative',
+    maxDrawdown: 10,
+    stopLoss: 8,
+    takeProfit: 15,
+    allowShortSelling: false,
+    maxShortPositions: 0,
+    maxShortExposure: 0,
+    tradingHorizon: 'position',
+    maxPositions: 5,
+    mlWeight: 0.35,
+    rlWeight: 0.15,
+    sentimentWeight: 0.15,
+    technicalWeight: 0.35,
+    minConfidence: 0.75,
+    requireAgreement: true,
+    minSignalAgreement: 'strong',
+    checkInterval: 300,
+    learningEnabled: true,
+    updateWeights: false,
+  },
+  {
+    id: 'cautious-daytrader',
+    name: 'Der Vorsichtige Daytrader',
+    avatar: '🧐',
+    description: 'Sicheres Intraday-Trading mit ausgewogenen Signalen und moderatem Risiko.',
+    color: 'cyan',
+    riskTolerance: 'moderate',
+    maxDrawdown: 15,
+    stopLoss: 4,
+    takeProfit: 8,
+    allowShortSelling: false,
+    maxShortPositions: 0,
+    maxShortExposure: 0,
+    tradingHorizon: 'day',
+    maxPositions: 6,
+    mlWeight: 0.25,
+    rlWeight: 0.25,
+    sentimentWeight: 0.20,
+    technicalWeight: 0.30,
+    minConfidence: 0.65,
+    requireAgreement: true,
+    minSignalAgreement: 'moderate',
+    checkInterval: 60,
+    learningEnabled: true,
+    updateWeights: true,
+  },
+  {
+    id: 'trend-follower',
+    name: 'Der Trend-Surfer',
+    avatar: '🏄',
+    description: 'Reitet die großen Wellen. Swing-Trading mit Fokus auf starke Trends.',
+    color: 'green',
+    riskTolerance: 'moderate',
+    maxDrawdown: 20,
+    stopLoss: 6,
+    takeProfit: 18,
+    allowShortSelling: true,
+    maxShortPositions: 2,
+    maxShortExposure: 20,
+    tradingHorizon: 'swing',
+    maxPositions: 4,
+    mlWeight: 0.35,
+    rlWeight: 0.20,
+    sentimentWeight: 0.10,
+    technicalWeight: 0.35,
+    minConfidence: 0.60,
+    requireAgreement: true,
+    minSignalAgreement: 'moderate',
+    checkInterval: 120,
+    learningEnabled: true,
+    updateWeights: true,
+  },
+  {
+    id: 'momentum-hunter',
+    name: 'Der Momentum-Jäger',
+    avatar: '🎯',
+    description: 'Schnelle Momentum-Plays mit Fokus auf Volumen und Preisbewegungen.',
+    color: 'orange',
+    riskTolerance: 'moderate',
+    maxDrawdown: 18,
+    stopLoss: 3,
+    takeProfit: 6,
+    allowShortSelling: true,
+    maxShortPositions: 3,
+    maxShortExposure: 25,
+    tradingHorizon: 'day',
+    maxPositions: 8,
+    mlWeight: 0.20,
+    rlWeight: 0.30,
+    sentimentWeight: 0.15,
+    technicalWeight: 0.35,
+    minConfidence: 0.55,
+    requireAgreement: false,
+    minSignalAgreement: 'weak',
+    checkInterval: 30,
+    learningEnabled: true,
+    updateWeights: true,
+  },
+  {
+    id: 'news-trader',
+    name: 'Der News-Trader',
+    avatar: '📰',
+    description: 'Reagiert schnell auf Nachrichten und Sentiment-Änderungen.',
+    color: 'purple',
+    riskTolerance: 'moderate',
+    maxDrawdown: 20,
+    stopLoss: 5,
+    takeProfit: 10,
+    allowShortSelling: true,
+    maxShortPositions: 2,
+    maxShortExposure: 20,
+    tradingHorizon: 'day',
+    maxPositions: 6,
+    mlWeight: 0.15,
+    rlWeight: 0.20,
+    sentimentWeight: 0.45,
+    technicalWeight: 0.20,
+    minConfidence: 0.50,
+    requireAgreement: false,
+    minSignalAgreement: 'weak',
+    checkInterval: 30,
+    learningEnabled: true,
+    updateWeights: true,
+  },
+  {
+    id: 'aggressive-scalper',
+    name: 'Der Aggressive Scalper',
+    avatar: '⚡',
+    description: 'Blitzschnelle Trades für kleine, häufige Gewinne. Hohes Tempo!',
+    color: 'yellow',
+    riskTolerance: 'aggressive',
+    maxDrawdown: 12,
+    stopLoss: 1.5,
+    takeProfit: 2.5,
+    allowShortSelling: true,
+    maxShortPositions: 5,
+    maxShortExposure: 40,
+    tradingHorizon: 'scalping',
+    maxPositions: 10,
+    mlWeight: 0.15,
+    rlWeight: 0.35,
+    sentimentWeight: 0.10,
+    technicalWeight: 0.40,
+    minConfidence: 0.50,
+    requireAgreement: false,
+    minSignalAgreement: 'weak',
+    checkInterval: 15,
+    learningEnabled: true,
+    updateWeights: true,
+  },
+  {
+    id: 'algo-strategist',
+    name: 'Der Algo-Stratege',
+    avatar: '🤖',
+    description: 'Datengetriebene Entscheidungen. ML & RL im Fokus mit strenger Validierung.',
+    color: 'indigo',
+    riskTolerance: 'moderate',
+    maxDrawdown: 15,
+    stopLoss: 5,
+    takeProfit: 12,
+    allowShortSelling: true,
+    maxShortPositions: 3,
+    maxShortExposure: 25,
+    tradingHorizon: 'swing',
+    maxPositions: 5,
+    mlWeight: 0.40,
+    rlWeight: 0.35,
+    sentimentWeight: 0.10,
+    technicalWeight: 0.15,
+    minConfidence: 0.70,
+    requireAgreement: true,
+    minSignalAgreement: 'strong',
+    checkInterval: 90,
+    learningEnabled: true,
+    updateWeights: true,
+  },
+  {
+    id: 'risk-taker',
+    name: 'Der Risiko-Liebhaber',
+    avatar: '🔥',
+    description: 'Hohe Risiken, hohe Chancen. Aggressive Positionsgrößen und weite Stopps.',
+    color: 'red',
+    riskTolerance: 'aggressive',
+    maxDrawdown: 35,
+    stopLoss: 10,
+    takeProfit: 25,
+    allowShortSelling: true,
+    maxShortPositions: 5,
+    maxShortExposure: 40,
+    tradingHorizon: 'day',
+    maxPositions: 8,
+    mlWeight: 0.25,
+    rlWeight: 0.30,
+    sentimentWeight: 0.20,
+    technicalWeight: 0.25,
+    minConfidence: 0.45,
+    requireAgreement: false,
+    minSignalAgreement: 'weak',
+    checkInterval: 45,
+    learningEnabled: true,
+    updateWeights: true,
+  },
+];
+
 export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AITraderSettingsModalProps) {
   const { t } = useSettings();
   const [saving, setSaving] = useState(false);
@@ -98,6 +343,46 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
   const [availableRLAgents, setAvailableRLAgents] = useState<RLAgentStatus[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(false);
   
+  // Selected Strategy Preset
+  const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
+  const [showStrategyHint, setShowStrategyHint] = useState(true);
+  
+  // Apply Strategy Preset
+  const applyStrategyPreset = (presetId: string) => {
+    const preset = STRATEGY_PRESETS.find(p => p.id === presetId);
+    if (!preset) return;
+    
+    setSelectedStrategy(presetId);
+    setShowStrategyHint(false);
+    
+    // Apply all preset values
+    setAvatar(preset.avatar);
+    setRiskTolerance(preset.riskTolerance);
+    setMaxDrawdown(preset.maxDrawdown);
+    setStopLoss(preset.stopLoss);
+    setTakeProfit(preset.takeProfit);
+    setAllowShortSelling(preset.allowShortSelling);
+    setMaxShortPositions(preset.maxShortPositions);
+    setMaxShortExposure(preset.maxShortExposure);
+    setTradingHorizon(preset.tradingHorizon);
+    setMaxPositions(preset.maxPositions);
+    setMlWeight(preset.mlWeight);
+    setRlWeight(preset.rlWeight);
+    setSentimentWeight(preset.sentimentWeight);
+    setTechnicalWeight(preset.technicalWeight);
+    setMinConfidence(preset.minConfidence);
+    setRequireAgreement(preset.requireAgreement);
+    setMinSignalAgreement(preset.minSignalAgreement);
+    setCheckInterval(preset.checkInterval);
+    setLearningEnabled(preset.learningEnabled);
+    setUpdateWeights(preset.updateWeights);
+    
+    // Update description if empty
+    if (!description.trim()) {
+      setDescription(preset.description);
+    }
+  };
+
   // Load available RL agents
   useEffect(() => {
     if (isOpen) {
@@ -163,6 +448,8 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
       setMaxShortPositions(trader.personality?.risk?.maxShortPositions || 3);
       setMaxShortExposure((trader.personality?.risk?.maxShortExposure || 0.3) * 100);
       setRlAgentName(trader.personality?.rlAgentName || '');
+      setSelectedStrategy(null);
+      setShowStrategyHint(true);
       setError(null);
     }
   }, [trader, isOpen]);
@@ -300,6 +587,90 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
               {error}
             </div>
           )}
+          
+          {/* Strategy Presets */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-white border-b border-slate-700 pb-2">
+              🎭 Trading-Persönlichkeit wählen
+            </h3>
+            
+            {showStrategyHint && (
+              <div className="p-3 bg-blue-500/20 border border-blue-500/40 rounded-lg text-blue-300 text-sm">
+                💡 <strong>Tipp:</strong> Wähle eine Persönlichkeit als Basis – alle Einstellungen werden automatisch angepasst. Du kannst danach jederzeit einzelne Werte ändern.
+              </div>
+            )}
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {STRATEGY_PRESETS.map((preset) => {
+                const colorClasses: Record<string, string> = {
+                  blue: 'border-blue-500 bg-blue-500/20',
+                  cyan: 'border-cyan-500 bg-cyan-500/20',
+                  green: 'border-green-500 bg-green-500/20',
+                  orange: 'border-orange-500 bg-orange-500/20',
+                  purple: 'border-purple-500 bg-purple-500/20',
+                  yellow: 'border-yellow-500 bg-yellow-500/20',
+                  indigo: 'border-indigo-500 bg-indigo-500/20',
+                  red: 'border-red-500 bg-red-500/20',
+                };
+                const isSelected = selectedStrategy === preset.id;
+                
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => applyStrategyPreset(preset.id)}
+                    className={`p-3 rounded-lg text-left transition-all ${
+                      isSelected
+                        ? `${colorClasses[preset.color]} border-2`
+                        : 'bg-slate-700/50 hover:bg-slate-600/50 border-2 border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xl">{preset.avatar}</span>
+                      <span className="font-medium text-white text-sm">{preset.name}</span>
+                    </div>
+                    <p className="text-xs text-gray-400 line-clamp-2">{preset.description}</p>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      <span className="text-[10px] px-1.5 py-0.5 bg-slate-800/50 rounded text-gray-300">
+                        {preset.tradingHorizon === 'scalping' ? '⚡ Mins' : 
+                         preset.tradingHorizon === 'day' ? '📅 Std' : 
+                         preset.tradingHorizon === 'swing' ? '📊 Tage' : '📈 Wochen'}
+                      </span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                        preset.riskTolerance === 'conservative' ? 'bg-blue-500/30 text-blue-300' :
+                        preset.riskTolerance === 'moderate' ? 'bg-yellow-500/30 text-yellow-300' :
+                        'bg-red-500/30 text-red-300'
+                      }`}>
+                        {preset.riskTolerance === 'conservative' ? '🛡️' : 
+                         preset.riskTolerance === 'moderate' ? '⚖️' : '🔥'}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            
+            {selectedStrategy && (
+              <div className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <span className="text-green-400">✓</span>
+                  <span className="text-gray-300 text-sm">
+                    <strong>{STRATEGY_PRESETS.find(p => p.id === selectedStrategy)?.name}</strong> angewendet
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedStrategy(null);
+                    setShowStrategyHint(true);
+                  }}
+                  className="text-xs text-gray-400 hover:text-white px-2 py-1"
+                >
+                  Zurücksetzen
+                </button>
+              </div>
+            )}
+          </div>
           
           {/* Basic Info */}
           <div className="space-y-4">

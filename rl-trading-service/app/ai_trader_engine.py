@@ -59,6 +59,11 @@ class AITraderConfig:
     take_profit_percent: float = 0.10  # 10% take profit
     max_holding_days: Optional[int] = 30
     
+    # Trading Horizon (affects decision sensitivity)
+    trading_horizon: str = 'day'  # 'scalping', 'day', 'swing', 'position'
+    target_holding_hours: int = 8  # Target holding period in hours
+    max_holding_hours: int = 24  # Max holding period in hours
+    
     # Short Selling
     allow_short_selling: bool = False  # Enable short selling (sell without position)
     max_short_positions: int = 3  # Maximum number of short positions
@@ -313,6 +318,48 @@ class AITraderEngine:
         
         return threshold
     
+    def _get_horizon_thresholds(self) -> Dict[str, float]:
+        """
+        Get decision thresholds based on trading horizon.
+        
+        Scalping requires more sensitive exit signals for quick trades.
+        Position trading is more tolerant of temporary drawdowns.
+        
+        Returns:
+            Dict with threshold values for the current horizon
+        """
+        horizon = self.config.trading_horizon
+        
+        # Thresholds: (sell_strong, sell_weak, buy_strong, short_trigger)
+        thresholds = {
+            'scalping': {
+                'sell_strong': -0.10,    # Sell on small bearish signal
+                'sell_weak': 0.05,       # Close on neutral/slightly positive
+                'buy_strong': 0.15,      # Buy on smaller bullish signal
+                'short_trigger': -0.15,  # Short on moderate bearish
+            },
+            'day': {
+                'sell_strong': -0.20,    # Default day trading
+                'sell_weak': 0.0,        # Close on neutral
+                'buy_strong': 0.25,
+                'short_trigger': -0.25,
+            },
+            'swing': {
+                'sell_strong': -0.35,    # More tolerant
+                'sell_weak': -0.10,
+                'buy_strong': 0.30,
+                'short_trigger': -0.35,
+            },
+            'position': {
+                'sell_strong': -0.45,    # Very tolerant of volatility
+                'sell_weak': -0.20,
+                'buy_strong': 0.35,
+                'short_trigger': -0.40,
+            }
+        }
+        
+        return thresholds.get(horizon, thresholds['day'])
+    
     def _determine_decision_type(
         self,
         aggregated,
@@ -322,6 +369,11 @@ class AITraderEngine:
     ) -> str:
         """
         Determine the trading decision type.
+        
+        Decision sensitivity adapts to trading horizon:
+        - Scalping: Quick exits, small profit targets
+        - Day: Moderate sensitivity
+        - Swing/Position: More tolerant of fluctuations
         
         Args:
             aggregated: AggregatedSignal instance
@@ -334,6 +386,9 @@ class AITraderEngine:
         """
         score = aggregated.weighted_score
         confidence = aggregated.confidence
+        
+        # Get horizon-specific thresholds
+        ht = self._get_horizon_thresholds()
         
         # Check if we have an existing position
         positions = portfolio_state.get('positions') or {}
@@ -355,41 +410,41 @@ class AITraderEngine:
             if actual_level < min_level:
                 return 'skip'
         
-        # Make decision based on score and position
+        # Make decision based on score, position, and horizon thresholds
         if has_long_position:
             # We have a LONG position
-            if score < -0.3:  # Strong bearish signal
+            if score < ht['sell_strong']:  # Strong bearish signal (horizon-adjusted)
                 return 'sell'  # Sell the long position
-            elif score < 0:  # Weak bearish signal
+            elif score < ht['sell_weak']:  # Weak bearish/neutral (horizon-adjusted)
                 return 'close'  # Just close position
             else:
                 return 'hold'  # Keep long position
                 
         elif has_short_position:
-            # We have a SHORT position
-            if score > 0.3:  # Strong bullish signal - bad for short
+            # We have a SHORT position (inverse thresholds)
+            if score > -ht['sell_strong']:  # Strong bullish signal - bad for short
                 return 'close'  # Close the short (buy to cover)
-            elif score > 0:  # Weak bullish signal
+            elif score > -ht['sell_weak']:  # Weak bullish signal
                 return 'close'  # Close to limit losses
             else:
                 return 'hold'  # Keep short position
                 
         else:
             # NO position - consider opening one
-            if score > 0.3:  # Strong bullish signal
+            if score > ht['buy_strong']:  # Strong bullish signal (horizon-adjusted)
                 return 'buy'
             elif score > 0:  # Weak bullish signal
                 if confidence > threshold + 0.10:  # Need higher confidence
                     return 'buy'
                 else:
                     return 'hold'
-            elif score < -0.3:  # Strong bearish signal
+            elif score < ht['short_trigger']:  # Strong bearish signal (horizon-adjusted)
                 # Check if short selling is allowed
                 if self.config.allow_short_selling:
                     if self._can_open_short(portfolio_state, symbol):
                         return 'short'  # Open short position
                 return 'hold'
-            elif score < -0.1:  # Moderate bearish signal
+            elif score < ht['short_trigger'] + 0.10:  # Moderate bearish signal
                 if self.config.allow_short_selling and confidence > threshold + 0.15:
                     if self._can_open_short(portfolio_state, symbol):
                         return 'short'
