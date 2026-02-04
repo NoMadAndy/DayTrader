@@ -252,35 +252,82 @@ class AITraderScheduler:
             
             training_data = {}
             
-            # Randomly select up to 3 symbols for varied training
+            # Shuffle symbols for varied training
             available_symbols = list(config.symbols)
             random.shuffle(available_symbols)
-            selected_symbols = available_symbols[:3]
-            print(f"   🎲 Selected symbols for training: {', '.join(selected_symbols)}")
+            selected_symbols = []  # Will be populated as data is loaded
+            print(f"   🔍 Looking for training data from {len(available_symbols)} available symbols...")
             
-            self.self_training_status[trader_id]['symbols'] = selected_symbols
-            self.self_training_status[trader_id]['message'] = f'Loading data for {", ".join(selected_symbols)}...'
+            self.self_training_status[trader_id]['message'] = 'Searching for training data...'
             self.self_training_status[trader_id]['progress'] = 10
             
-            for i, symbol in enumerate(selected_symbols):
+            # Try to load data for symbols, with fallback to more symbols if needed
+            symbols_tried = 0
+            max_symbols_to_try = min(len(available_symbols), 10)  # Try up to 10 symbols
+            
+            while len(training_data) < 3 and symbols_tried < max_symbols_to_try:
+                symbol = available_symbols[symbols_tried]
+                symbols_tried += 1
+                
                 try:
-                    response = await self.http_client.get(
-                        f"{self.backend_url}/api/yahoo/chart/{symbol}",
-                        params={'period': '2y', 'interval': '1d'}
-                    )
-                    
-                    if response.status_code == 200:
+                    # Try with 5y period first for more data
+                    for period in ['5y', '2y', '1y']:
+                        response = await self.http_client.get(
+                            f"{self.backend_url}/api/yahoo/chart/{symbol}",
+                            params={'period': period, 'interval': '1d'}
+                        )
+                        
+                        if response.status_code != 200:
+                            continue
+                        
                         data = response.json()
-                        quotes = data.get('quotes', [])
+                        
+                        # Parse Yahoo raw data format
+                        quotes = []
+                        if 'chart' in data and 'result' in data['chart']:
+                            results = data['chart']['result']
+                            if results and len(results) > 0:
+                                result = results[0]
+                                timestamps = result.get('timestamp', [])
+                                quote = result.get('indicators', {}).get('quote', [{}])[0]
+                                
+                                opens = quote.get('open', [])
+                                highs = quote.get('high', [])
+                                lows = quote.get('low', [])
+                                closes = quote.get('close', [])
+                                volumes = quote.get('volume', [])
+                                
+                                for i in range(len(timestamps)):
+                                    # Skip None values
+                                    if closes[i] is None or opens[i] is None:
+                                        continue
+                                    quotes.append({
+                                        'timestamp': timestamps[i] * 1000,
+                                        'open': opens[i],
+                                        'high': highs[i],
+                                        'low': lows[i],
+                                        'close': closes[i],
+                                        'volume': volumes[i] if volumes[i] else 0
+                                    })
+                        
                         if len(quotes) >= 200:
                             df = prepare_data_for_training(quotes)
                             if df is not None and len(df) >= 200:
                                 training_data[symbol] = df
-                                print(f"   📊 Loaded {len(df)} data points for {symbol}")
-                                self.self_training_status[trader_id]['progress'] = 10 + ((i + 1) / len(selected_symbols)) * 10
+                                selected_symbols.append(symbol) if symbol not in selected_symbols else None
+                                print(f"   📊 Loaded {len(df)} data points for {symbol} ({period})")
+                                self.self_training_status[trader_id]['progress'] = 10 + (len(training_data) / 3) * 10
+                                self.self_training_status[trader_id]['symbols'] = list(training_data.keys())
+                                break  # Got enough data, move to next symbol
+                        else:
+                            print(f"   ⚠️ Only {len(quotes)} points for {symbol} ({period}), trying longer period...")
+                            
                 except Exception as e:
                     print(f"   ⚠️ Failed to load data for {symbol}: {e}")
                     continue
+            
+            # Update selected symbols to actual loaded ones
+            selected_symbols = list(training_data.keys())
             
             if not training_data:
                 print(f"   ❌ No training data available for trader {trader_id}")
@@ -326,11 +373,24 @@ class AITraderScheduler:
                 training_data=training_data,
                 total_timesteps=config.self_training_timesteps,
                 progress_callback=progress_callback,
+                continue_training=True,  # Always continue from existing model to improve over time
             )
             
-            if result.get('success', False):
-                reward = result.get('final_reward', 0)
-                print(f"   ✅ Trader {trader_id} self-training complete! Final reward: {reward:.2f}")
+            # Check if training was successful
+            # The trainer returns metadata dict on success, raises exception on failure
+            if result and isinstance(result, dict):
+                # Extract metrics from the result
+                performance_metrics = result.get('performance_metrics', {})
+                mean_return = performance_metrics.get('mean_return_pct', 0)
+                best_reward = result.get('best_reward', 0)
+                cumulative_timesteps = result.get('cumulative_timesteps', config.self_training_timesteps)
+                training_sessions = result.get('training_sessions', 1)
+                continued = result.get('continued_from_previous', False)
+                
+                training_type = "continue" if continued else "fresh"
+                print(f"   ✅ Trader {trader_id} self-training complete ({training_type})! Mean return: {mean_return:.2f}%")
+                if continued:
+                    print(f"   📊 Cumulative experience: {cumulative_timesteps:,} timesteps over {training_sessions} sessions")
                 
                 # Update training status - complete
                 self.self_training_status[trader_id] = {
@@ -340,36 +400,81 @@ class AITraderScheduler:
                     'progress': 100,
                     'timesteps': config.self_training_timesteps,
                     'total_timesteps': config.self_training_timesteps,
-                    'final_reward': reward,
+                    'cumulative_timesteps': cumulative_timesteps,
+                    'training_sessions': training_sessions,
+                    'continued_training': continued,
+                    'final_reward': best_reward,
+                    'mean_return_pct': mean_return,
                     'completed_at': datetime.now().isoformat(),
-                    'message': f'Training complete! Reward: {reward:.2f}',
+                    'message': f'Training complete! Return: {mean_return:.2f}% (Total: {cumulative_timesteps:,} steps)',
                     'symbols': selected_symbols,
+                    'training_duration': result.get('training_duration_seconds', 0),
                 }
                 
-                # Notify backend about the training
+                # Persist training result to backend
+                training_started = self.self_training_status[trader_id].get('started_at', datetime.now().isoformat())
                 try:
+                    await self.http_client.post(
+                        f"{self.backend_url}/api/ai-traders/{trader_id}/training-history",
+                        json={
+                            'agent_name': agent_name,
+                            'training_type': 'continue_training' if continued else 'self_training',
+                            'status': 'completed',
+                            'started_at': training_started,
+                            'completed_at': datetime.now().isoformat(),
+                            'duration_seconds': result.get('training_duration_seconds', 0),
+                            'total_timesteps': config.self_training_timesteps,
+                            'cumulative_timesteps': cumulative_timesteps,
+                            'training_sessions': training_sessions,
+                            'continued_from_previous': continued,
+                            'final_reward': best_reward,
+                            'mean_reward': best_reward,
+                            'best_reward': best_reward,
+                            'mean_return_pct': mean_return,
+                            'max_return_pct': performance_metrics.get('max_return_pct', 0),
+                            'min_return_pct': performance_metrics.get('min_return_pct', 0),
+                            'episodes_completed': result.get('total_episodes', 0),
+                            'cumulative_episodes': result.get('cumulative_episodes', 0),
+                            'symbols_trained': selected_symbols,
+                            'metadata': {
+                                'performance_metrics': performance_metrics,
+                                'continued_training': continued,
+                                'cumulative_timesteps': cumulative_timesteps,
+                                'training_sessions': training_sessions,
+                            }
+                        }
+                    )
+                    print(f"   📝 Training result persisted to database")
+                except Exception as e:
+                    print(f"   ⚠️ Failed to persist training result: {e}")
+                
+                # Also send event notification
+                try:
+                    event_msg = f'Continue training complete. Return: {mean_return:.2f}% (Total: {cumulative_timesteps:,} steps)' if continued else f'Self-training complete. Return: {mean_return:.2f}%'
                     await self.http_client.post(
                         f"{self.backend_url}/api/ai-traders/{trader_id}/events",
                         json={
                             'event_type': 'self_training_complete',
-                            'message': f'Self-training complete. Reward: {reward:.2f}',
+                            'message': event_msg,
                             'data': {
                                 'agent_name': agent_name,
                                 'timesteps': config.self_training_timesteps,
-                                'final_reward': reward,
+                                'cumulative_timesteps': cumulative_timesteps,
+                                'training_sessions': training_sessions,
+                                'continued_training': continued,
+                                'mean_return_pct': mean_return,
                             }
                         }
                     )
                 except Exception:
                     pass  # Ignore notification errors
             else:
-                error_msg = result.get('error', 'Unknown error')
-                print(f"   ❌ Trader {trader_id} self-training failed: {error_msg}")
+                print(f"   ❌ Trader {trader_id} self-training returned unexpected result")
                 self.self_training_status[trader_id] = {
                     'is_training': False,
                     'status': 'failed',
                     'agent_name': agent_name,
-                    'message': f'Training failed: {error_msg}',
+                    'message': 'Training returned unexpected result',
                     'symbols': selected_symbols,
                 }
                 

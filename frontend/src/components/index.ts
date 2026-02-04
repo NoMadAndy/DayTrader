@@ -40,3 +40,4 @@ export { AITraderTrainingStatus } from './AITraderTrainingStatus';
 export { default as TradeAlertBar } from './TradeAlertBar';
 export { default as TradeDetailCard } from './TradeDetailCard';
 export { default as SelfTrainingIndicator } from './SelfTrainingIndicator';
+export { default as AITraderTrainingHistory } from './AITraderTrainingHistory';

@@ -454,6 +454,38 @@ export async function initializeAITraderSchema() {
       );
     `);
 
+    // Create ai_trader_training_history table for persistent training records
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ai_trader_training_history (
+        id SERIAL PRIMARY KEY,
+        ai_trader_id INTEGER REFERENCES ai_traders(id) ON DELETE CASCADE,
+        agent_name VARCHAR(100),
+        training_type VARCHAR(50) DEFAULT 'self_training',
+        status VARCHAR(20) NOT NULL DEFAULT 'started',
+        
+        started_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        completed_at TIMESTAMP WITH TIME ZONE,
+        duration_seconds INTEGER,
+        
+        symbols_trained TEXT[],
+        total_timesteps INTEGER,
+        
+        final_reward DECIMAL(12,4),
+        mean_reward DECIMAL(12,4),
+        best_reward DECIMAL(12,4),
+        
+        mean_return_pct DECIMAL(8,4),
+        max_return_pct DECIMAL(8,4),
+        min_return_pct DECIMAL(8,4),
+        
+        episodes_completed INTEGER,
+        error_message TEXT,
+        metadata JSONB,
+        
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+
     // Create indexes
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_ai_traders_status ON ai_traders(status);
@@ -468,6 +500,9 @@ export async function initializeAITraderSchema() {
       CREATE INDEX IF NOT EXISTS idx_insights_type ON ai_trader_insights(insight_type);
       CREATE INDEX IF NOT EXISTS idx_insights_active ON ai_trader_insights(is_active);
       CREATE INDEX IF NOT EXISTS idx_insights_expires_at ON ai_trader_insights(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_training_history_trader ON ai_trader_training_history(ai_trader_id);
+      CREATE INDEX IF NOT EXISTS idx_training_history_started ON ai_trader_training_history(started_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_training_history_status ON ai_trader_training_history(status);
     `);
 
     await client.query('COMMIT');
@@ -1043,6 +1078,108 @@ export async function updateTraderStats(traderId) {
 }
 
 // ============================================================================
+// Training History Functions
+// ============================================================================
+
+/**
+ * Record a training session
+ * @param {number} traderId - AI Trader ID
+ * @param {object} data - Training data
+ * @returns {Promise<object>} Created training record
+ */
+export async function recordTrainingSession(traderId, data) {
+  const result = await query(
+    `INSERT INTO ai_trader_training_history (
+       ai_trader_id, agent_name, training_type, status,
+       started_at, completed_at, duration_seconds,
+       symbols_trained, total_timesteps,
+       final_reward, mean_reward, best_reward,
+       mean_return_pct, max_return_pct, min_return_pct,
+       episodes_completed, error_message, metadata
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+     RETURNING *`,
+    [
+      traderId,
+      data.agent_name || null,
+      data.training_type || 'self_training',
+      data.status || 'completed',
+      data.started_at,
+      data.completed_at || null,
+      data.duration_seconds != null ? Math.round(data.duration_seconds) : null,
+      data.symbols_trained || null,
+      data.total_timesteps || null,
+      data.final_reward || null,
+      data.mean_reward || null,
+      data.best_reward || null,
+      data.mean_return_pct || null,
+      data.max_return_pct || null,
+      data.min_return_pct || null,
+      data.episodes_completed || null,
+      data.error_message || null,
+      data.metadata ? JSON.stringify(data.metadata) : null
+    ]
+  );
+  return result.rows[0];
+}
+
+/**
+ * Get training history for an AI trader
+ * @param {number} traderId - AI Trader ID
+ * @param {number} limit - Maximum number of records to return
+ * @returns {Promise<Array>} Training history
+ */
+export async function getTrainingHistory(traderId, limit = 20) {
+  const result = await query(
+    `SELECT * FROM ai_trader_training_history 
+     WHERE ai_trader_id = $1 
+     ORDER BY started_at DESC 
+     LIMIT $2`,
+    [traderId, limit]
+  );
+  return result.rows;
+}
+
+/**
+ * Get training statistics for an AI trader
+ * @param {number} traderId - AI Trader ID
+ * @returns {Promise<object>} Training statistics
+ */
+export async function getTrainingStats(traderId) {
+  const result = await query(
+    `SELECT 
+       COUNT(*) as total_sessions,
+       COUNT(*) FILTER (WHERE status = 'completed') as successful_sessions,
+       COUNT(*) FILTER (WHERE status = 'failed') as failed_sessions,
+       AVG(final_reward) FILTER (WHERE status = 'completed') as avg_reward,
+       MAX(final_reward) FILTER (WHERE status = 'completed') as best_reward,
+       AVG(mean_return_pct) FILTER (WHERE status = 'completed') as avg_return_pct,
+       MAX(max_return_pct) FILTER (WHERE status = 'completed') as best_return_pct,
+       SUM(total_timesteps) as total_timesteps_trained,
+       SUM(duration_seconds) as total_training_time_seconds,
+       MAX(started_at) as last_training,
+       MIN(started_at) as first_training
+     FROM ai_trader_training_history 
+     WHERE ai_trader_id = $1`,
+    [traderId]
+  );
+  
+  const stats = result.rows[0];
+  return {
+    total_sessions: parseInt(stats.total_sessions) || 0,
+    successful_sessions: parseInt(stats.successful_sessions) || 0,
+    failed_sessions: parseInt(stats.failed_sessions) || 0,
+    avg_reward: stats.avg_reward ? parseFloat(stats.avg_reward) : null,
+    best_reward: stats.best_reward ? parseFloat(stats.best_reward) : null,
+    avg_return_pct: stats.avg_return_pct ? parseFloat(stats.avg_return_pct) : null,
+    best_return_pct: stats.best_return_pct ? parseFloat(stats.best_return_pct) : null,
+    total_timesteps_trained: parseInt(stats.total_timesteps_trained) || null,
+    total_training_time_seconds: parseInt(stats.total_training_time_seconds) || null,
+    last_training: stats.last_training,
+    first_training: stats.first_training
+  };
+}
+
+// ============================================================================
 // Exports
 // ============================================================================
 
@@ -1066,5 +1203,8 @@ export default {
   getDailyReports,
   createDailyReport,
   updateTraderStats,
+  recordTrainingSession,
+  getTrainingHistory,
+  getTrainingStats,
   DEFAULT_PERSONALITY,
 };

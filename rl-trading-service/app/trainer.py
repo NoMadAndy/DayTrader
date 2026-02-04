@@ -252,6 +252,7 @@ class TradingAgentTrainer:
         total_timesteps: int = 100000,
         progress_callback: Optional[callable] = None,
         log_callback: Optional[callable] = None,
+        continue_training: bool = True,
     ) -> Dict[str, Any]:
         """
         Train an agent on multiple symbols.
@@ -263,11 +264,13 @@ class TradingAgentTrainer:
             total_timesteps: Total training timesteps
             progress_callback: Optional callback for progress updates
             log_callback: Optional callback for log messages
+            continue_training: If True, load existing model and continue training (default).
+                               If False, train from scratch.
             
         Returns:
             Training results dictionary
         """
-        logger.info(f"Starting training for agent: {agent_name}")
+        logger.info(f"Starting training for agent: {agent_name} (continue={continue_training})")
         
         # Update status
         self._configs[agent_name] = config
@@ -287,6 +290,7 @@ class TradingAgentTrainer:
             total_timesteps,
             progress_callback,
             log_callback,
+            continue_training,
         )
         return result
     
@@ -298,14 +302,75 @@ class TradingAgentTrainer:
         total_timesteps: int,
         progress_callback: Optional[callable],
         log_callback: Optional[callable] = None,
+        continue_training: bool = True,
     ) -> Dict[str, Any]:
-        """Synchronous training implementation (runs in thread pool)"""
+        """Synchronous training implementation (runs in thread pool)
+        
+        Args:
+            agent_name: Name of the agent
+            config: Agent configuration
+            training_data: Dict mapping symbol to DataFrame
+            total_timesteps: Training timesteps for this session
+            progress_callback: Optional progress callback
+            log_callback: Optional log callback
+            continue_training: If True and model exists, continue training from checkpoint
+        """
         
         def log(msg: str, level: str = "info"):
             """Helper to emit logs"""
             if log_callback:
                 log_callback(msg, level)
             logger.info(msg) if level == "info" else logger.warning(msg)
+        
+        # Check if existing model exists for continue training
+        existing_model_path = self.model_dir / agent_name / "model.zip"
+        existing_norm_path = self.model_dir / agent_name / "vec_normalize.pkl"
+        existing_metadata_path = self.model_dir / agent_name / "metadata.json"
+        
+        has_existing_model = existing_model_path.exists()
+        will_continue = continue_training and has_existing_model
+        
+        # Load existing metadata for cumulative tracking AND config preservation
+        cumulative_timesteps = 0
+        cumulative_episodes = 0
+        training_sessions = 0
+        saved_config = None
+        
+        if will_continue and existing_metadata_path.exists():
+            try:
+                with open(existing_metadata_path, 'r') as f:
+                    existing_metadata = json.load(f)
+                cumulative_timesteps = existing_metadata.get('cumulative_timesteps', 
+                                                            existing_metadata.get('total_timesteps', 0))
+                cumulative_episodes = existing_metadata.get('cumulative_episodes',
+                                                           existing_metadata.get('total_episodes', 0))
+                training_sessions = existing_metadata.get('training_sessions', 1)
+                
+                # Load saved config to preserve architecture settings
+                if 'config' in existing_metadata:
+                    saved_config = AgentConfig(**existing_metadata['config'])
+                    log(f"📚 Found existing model with {cumulative_timesteps:,} cumulative timesteps")
+                    log(f"   🏗️ Preserving architecture: transformer={saved_config.use_transformer_policy}")
+            except Exception as e:
+                log(f"⚠️ Could not load existing metadata: {e}", "warning")
+        
+        # Use saved config for continue training to preserve architecture
+        # Only override trading parameters (balance, positions, etc.) from new config
+        if will_continue and saved_config is not None:
+            # Preserve architecture but allow updating some trading parameters
+            effective_config = saved_config.model_copy(update={
+                'initial_balance': config.initial_balance,
+                'max_position_size': config.max_position_size,
+                'stop_loss_percent': config.stop_loss_percent,
+                'take_profit_percent': config.take_profit_percent,
+                # Keep architecture settings from saved model:
+                # - use_transformer_policy
+                # - transformer_d_model, transformer_n_heads, etc.
+                # - learning_rate, gamma, ent_coef
+            })
+            log(f"   📋 Using saved architecture with updated trading params")
+        else:
+            effective_config = config
         
         try:
             log(f"📦 Preparing training data for {len(training_data)} symbol(s)...")
@@ -318,7 +383,7 @@ class TradingAgentTrainer:
                     continue
                 
                 log(f"   ✓ {symbol}: {len(df)} data points")
-                env = self.create_environment(df, config)
+                env = self.create_environment(df, effective_config)
                 env = Monitor(env)
                 envs.append(env)
             
@@ -342,8 +407,8 @@ class TradingAgentTrainer:
                 clip_obs=10.0,
             )
             
-            # Determine architecture based on config
-            use_transformer = getattr(config, 'use_transformer_policy', False)
+            # Determine architecture based on effective_config (preserves saved architecture)
+            use_transformer = getattr(effective_config, 'use_transformer_policy', False)
             
             # Log GPU usage if enabled
             if settings.device == "cuda":
@@ -352,13 +417,13 @@ class TradingAgentTrainer:
             
             if use_transformer:
                 log(f"🧠 Creating PPO model with Transformer architecture...")
-                log(f"   d_model: {config.transformer_d_model}")
-                log(f"   n_heads: {config.transformer_n_heads}")
-                log(f"   n_layers: {config.transformer_n_layers}")
-                log(f"   d_ff: {config.transformer_d_ff}")
-                log(f"   dropout: {config.transformer_dropout}")
-                log(f"   Learning rate: {config.learning_rate}")
-                log(f"   Gamma: {config.gamma}")
+                log(f"   d_model: {effective_config.transformer_d_model}")
+                log(f"   n_heads: {effective_config.transformer_n_heads}")
+                log(f"   n_layers: {effective_config.transformer_n_layers}")
+                log(f"   d_ff: {effective_config.transformer_d_ff}")
+                log(f"   dropout: {effective_config.transformer_dropout}")
+                log(f"   Learning rate: {effective_config.learning_rate}")
+                log(f"   Gamma: {effective_config.gamma}")
                 
                 # Import transformer components
                 from .networks import TransformerFeaturesExtractor
@@ -370,12 +435,12 @@ class TradingAgentTrainer:
                 policy_kwargs = dict(
                     features_extractor_class=TransformerFeaturesExtractor,
                     features_extractor_kwargs=dict(
-                        seq_len=getattr(config, 'lookback_window', settings.default_lookback_window),
-                        d_model=config.transformer_d_model,
-                        n_heads=config.transformer_n_heads,
-                        n_layers=config.transformer_n_layers,
-                        d_ff=config.transformer_d_ff,
-                        dropout=config.transformer_dropout,
+                        seq_len=getattr(effective_config, 'lookback_window', settings.default_lookback_window),
+                        d_model=effective_config.transformer_d_model,
+                        n_heads=effective_config.transformer_n_heads,
+                        n_layers=effective_config.transformer_n_layers,
+                        d_ff=effective_config.transformer_d_ff,
+                        dropout=effective_config.transformer_dropout,
                         n_portfolio_features=TradingEnvironment.N_PORTFOLIO_FEATURES,
                     ),
                     net_arch=dict(pi=[256, 128], vf=[256, 128]),  # Smaller heads since features are rich
@@ -401,8 +466,8 @@ class TradingAgentTrainer:
             else:
                 log(f"🧠 Creating PPO model with MLP architecture...")
                 log(f"   Architecture: [256, 256] hidden layers")
-                log(f"   Learning rate: {config.learning_rate}")
-                log(f"   Gamma: {config.gamma}")
+                log(f"   Learning rate: {effective_config.learning_rate}")
+                log(f"   Gamma: {effective_config.gamma}")
                 
                 # Create PPO model with standard MLP
                 policy_kwargs = dict(
@@ -410,48 +475,93 @@ class TradingAgentTrainer:
                     activation_fn=torch.nn.ReLU,
                 )
             
-            # Create PPO model
+            # Create or load PPO model
             # For transformer architecture, suppress misleading SB3 GPU warning
             # Our TransformerFeaturesExtractor contains CNN+Transformer (~2.5-3M params)
             # and significantly benefits from GPU acceleration
-            if use_transformer:
-                with warnings.catch_warnings():
-                    warnings.filterwarnings(
-                        "ignore",
-                        message=".*GPU.*primarily intended to run on the CPU.*",
-                        category=UserWarning,
+            
+            model = None
+            
+            # === CONTINUE TRAINING: Load existing model if available ===
+            if will_continue:
+                try:
+                    log(f"🔄 Continue Training: Loading existing model...")
+                    
+                    # Load existing VecNormalize stats if available
+                    if existing_norm_path.exists():
+                        log(f"   📊 Loading normalization statistics...")
+                        vec_env = VecNormalize.load(str(existing_norm_path), vec_env)
+                        vec_env.training = True  # Enable training mode to update stats
+                        vec_env.norm_reward = True
+                    
+                    # Load the existing model
+                    model = PPO.load(
+                        str(existing_model_path),
+                        env=vec_env,
+                        device=self.device,
+                        tensorboard_log=str(self.checkpoint_dir / "tensorboard"),
+                        # Use effective_config learning rate (preserved from saved model)
+                        learning_rate=effective_config.learning_rate,
                     )
+                    
+                    log(f"   ✅ Model loaded successfully!")
+                    log(f"   🧠 Continuing from {cumulative_timesteps:,} previous timesteps")
+                    log(f"   📈 Previous training sessions: {training_sessions}")
+                    
+                except Exception as e:
+                    log(f"   ⚠️ Failed to load existing model: {e}", "warning")
+                    log(f"   🔄 Falling back to training from scratch...", "warning")
+                    model = None
+                    will_continue = False
+                    cumulative_timesteps = 0
+                    cumulative_episodes = 0
+                    training_sessions = 0
+            
+            # === CREATE NEW MODEL if not continuing ===
+            if model is None:
+                if has_existing_model and not continue_training:
+                    log(f"🆕 Training from scratch (continue_training=False)")
+                else:
+                    log(f"🆕 No existing model found, training from scratch...")
+                
+                if use_transformer:
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings(
+                            "ignore",
+                            message=".*GPU.*primarily intended to run on the CPU.*",
+                            category=UserWarning,
+                        )
+                        model = PPO(
+                            policy="MlpPolicy",
+                            env=vec_env,
+                            learning_rate=effective_config.learning_rate,
+                            n_steps=settings.default_n_steps,
+                            batch_size=settings.default_batch_size,
+                            n_epochs=10,
+                            gamma=effective_config.gamma,
+                            ent_coef=effective_config.ent_coef,
+                            clip_range=0.2,
+                            policy_kwargs=policy_kwargs,
+                            verbose=1,
+                            device=self.device,
+                            tensorboard_log=str(self.checkpoint_dir / "tensorboard"),
+                        )
+                else:
                     model = PPO(
                         policy="MlpPolicy",
                         env=vec_env,
-                        learning_rate=config.learning_rate,
+                        learning_rate=effective_config.learning_rate,
                         n_steps=settings.default_n_steps,
                         batch_size=settings.default_batch_size,
                         n_epochs=10,
-                        gamma=config.gamma,
-                        ent_coef=config.ent_coef,
+                        gamma=effective_config.gamma,
+                        ent_coef=effective_config.ent_coef,
                         clip_range=0.2,
                         policy_kwargs=policy_kwargs,
                         verbose=1,
                         device=self.device,
                         tensorboard_log=str(self.checkpoint_dir / "tensorboard"),
                     )
-            else:
-                model = PPO(
-                    policy="MlpPolicy",
-                    env=vec_env,
-                    learning_rate=config.learning_rate,
-                    n_steps=settings.default_n_steps,
-                    batch_size=settings.default_batch_size,
-                    n_epochs=10,
-                    gamma=config.gamma,
-                    ent_coef=config.ent_coef,
-                    clip_range=0.2,
-                    policy_kwargs=policy_kwargs,
-                    verbose=1,
-                    device=self.device,
-                    tensorboard_log=str(self.checkpoint_dir / "tensorboard"),
-                )
             
             # Setup callbacks
             progress_cb = TrainingProgressCallback(
@@ -471,12 +581,17 @@ class TradingAgentTrainer:
             )
             
             # Train
-            log(f"🎯 Starting training for {total_timesteps:,} timesteps...")
+            training_mode = "Continue Training" if will_continue else "Fresh Training"
+            log(f"🎯 Starting {training_mode} for {total_timesteps:,} timesteps...")
+            if will_continue:
+                log(f"   📊 Model will have {cumulative_timesteps + total_timesteps:,} total timesteps after this session")
+            
             start_time = datetime.now()
             model.learn(
                 total_timesteps=total_timesteps,
                 callback=[progress_cb, checkpoint_cb],
                 progress_bar=False,  # Disabled in container, use callback for progress
+                reset_num_timesteps=not will_continue,  # Don't reset timestep counter if continuing
             )
             training_duration = (datetime.now() - start_time).total_seconds()
             
@@ -495,38 +610,66 @@ class TradingAgentTrainer:
             log(f"   Max return: {eval_results['max_return_pct']:.2f}%")
             log(f"   Min return: {eval_results['min_return_pct']:.2f}%")
             
-            # Save metadata
+            # Calculate cumulative values
+            new_cumulative_timesteps = cumulative_timesteps + total_timesteps
+            new_cumulative_episodes = cumulative_episodes + len(progress_cb.episode_rewards)
+            new_training_sessions = training_sessions + 1
+            
+            # Save metadata with cumulative tracking
+            # IMPORTANT: Save effective_config to preserve architecture for future continue-training
             metadata = {
                 "agent_name": agent_name,
-                "config": config.model_dump(),
+                "config": effective_config.model_dump(),  # Use effective_config to preserve architecture!
                 "trained_at": datetime.now().isoformat(),
                 "training_duration_seconds": training_duration,
+                # Session-specific values
                 "total_timesteps": total_timesteps,
                 "total_episodes": len(progress_cb.episode_rewards),
+                # Cumulative values (for continue training tracking)
+                "cumulative_timesteps": new_cumulative_timesteps,
+                "cumulative_episodes": new_cumulative_episodes,
+                "training_sessions": new_training_sessions,
+                "continued_from_previous": will_continue,
+                # Performance
                 "best_reward": progress_cb.best_reward,
                 "device": self.device,
                 "performance_metrics": eval_results,
                 "symbols_trained": list(training_data.keys()),
             }
             
+            # Log cumulative progress
+            if will_continue:
+                log(f"📊 Cumulative Training Progress:")
+                log(f"   Total timesteps: {new_cumulative_timesteps:,}")
+                log(f"   Total episodes: {new_cumulative_episodes:,}")
+                log(f"   Training sessions: {new_training_sessions}")
+            
             with open(model_path / "metadata.json", 'w') as f:
                 json.dump(metadata, f, indent=2)
             
-            # Update status
+            # Update status with cumulative values
             self._models[agent_name] = model
             self._training_status[agent_name] = AgentStatus(
                 name=agent_name,
                 status="trained",
                 is_trained=True,
                 last_trained=metadata['trained_at'],
-                total_episodes=metadata['total_episodes'],
+                total_episodes=new_cumulative_episodes,  # Use cumulative
                 best_reward=metadata['best_reward'],
-                config=config,
-                performance_metrics=eval_results,
+                config=effective_config,  # Use effective_config to preserve architecture
+                performance_metrics={
+                    **eval_results,
+                    'cumulative_timesteps': new_cumulative_timesteps,
+                    'training_sessions': new_training_sessions,
+                    'continued_training': will_continue,
+                },
             )
             
-            log(f"🎉 Training completed in {training_duration:.1f}s!")
+            completion_msg = "Continue Training" if will_continue else "Training"
+            log(f"🎉 {completion_msg} completed in {training_duration:.1f}s!")
             log(f"   Model saved to: {model_path}")
+            if will_continue:
+                log(f"   🧠 Model now has {new_cumulative_timesteps:,} total experience!")
             logger.info(f"Training completed for {agent_name}")
             return metadata
             

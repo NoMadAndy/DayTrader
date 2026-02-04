@@ -10,6 +10,7 @@ import { AITraderCard } from '../components/AITraderCard';
 import { AITraderActivityFeed } from '../components/AITraderActivityFeed';
 import { AITraderSettingsModal } from '../components/AITraderSettingsModal';
 import { AITraderTrainingStatus } from '../components/AITraderTrainingStatus';
+import AITraderTrainingHistory from '../components/AITraderTrainingHistory';
 import { TradeReasoningCard } from '../components/TradeReasoningCard';
 import AITraderReportCard from '../components/AITraderReportCard';
 import AITraderInsights from '../components/AITraderInsights';
@@ -930,6 +931,11 @@ export function AITraderPage() {
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-6">
               <AITraderTrainingStatus traderId={traderId} compact={false} />
             </div>
+          </div>
+          
+          {/* Training History - Persistent Records */}
+          <div className="lg:col-span-2">
+            <AITraderTrainingHistory traderId={traderId} />
           </div>
         </div>
       )}

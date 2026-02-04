@@ -5,6 +5,82 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.0] - 2026-02-04
+
+### Added
+- **Robustes Yahoo-Daten-Parsing für Self-Training** - Der RL-Service parst jetzt Yahoo-Rohdaten korrekt:
+  - Yahoo-API gibt Daten im `chart.result[0]`-Format zurück (separate Arrays für timestamp, OHLCV)
+  - Self-Training wandelt diese korrekt in das erwartete Format um
+  - Logging zeigt geladene Datenpunkte pro Symbol an
+
+- **Intelligentes Nachladen bei zu wenig Daten** - Automatische Fallback-Logik:
+  - Wenn ein Symbol < 200 Datenpunkte hat, wird erst 5y, dann 2y, dann 1y Periode versucht
+  - Wenn immer noch nicht genug, werden weitere Symbole aus der Watchlist probiert
+  - Bis zu 10 Symbole werden getestet, um 3 mit ausreichend Daten zu finden
+  - Detailliertes Logging: "Loaded 1269 data points for DHL.DE (5y)"
+
+### Fixed
+- **Training-Ergebnis korrekt interpretiert** - Der Trainer gibt `metadata` Dict zurück (nicht `{success: true}`), das wird jetzt korrekt verarbeitet
+- **PostgreSQL DECIMAL als String** - Frontend konvertiert jetzt alle numerischen Werte mit `Number()` bevor `.toFixed()` aufgerufen wird
+- **POST training-history Endpoint** - Sendet jetzt alle erforderlichen Felder (`started_at`, `completed_at`, `duration_seconds`)
+- **duration_seconds als Integer** - Backend rundet jetzt `duration_seconds` auf einen Integer (PostgreSQL INTEGER-Typ)
+- **Entfernt nicht-existierende Funktion** - `aiTraderEvents.emitToTrader()` entfernt aus training-history POST
+
+### Changed
+- RL-Service: Verbesserte Fehlerbehandlung und Logging für Self-Training
+- Frontend: `AITraderTrainingHistory` Komponente zeigt jetzt korrekt formatierte Zahlen an
+
+## [1.18.0] - 2026-02-04
+
+### Added
+- **Continue Training (Inkrementelles Lernen)** - Das RL-Modell baut jetzt auf bisherigem Wissen auf:
+  - Bei Self-Training wird das bestehende Modell geladen und weiter trainiert (statt von Null)
+  - Kumulative Metriken: `cumulative_timesteps`, `cumulative_episodes`, `training_sessions`
+  - Normalisierungsstatistiken werden beim Weitertraining beibehalten
+  - Das Modell wird mit jeder Session besser, anstatt bei Null anzufangen
+  - Fallback auf Fresh Training, wenn kein bestehendes Modell existiert
+  - Neue Metadaten in `metadata.json`: `continued_from_previous`, `training_sessions`
+
+- **Architektur-Bewahrung beim Continue Training** - Die ursprüngliche Modell-Architektur bleibt erhalten:
+  - `effective_config` wird aus gespeicherter `metadata.json` geladen
+  - Transformer-Modelle bleiben Transformer, MLP bleibt MLP
+  - Learning Rate, Gamma, Entropy Coefficient bleiben konsistent
+  - Nur Trading-Parameter (Balance, Position Size, etc.) können aktualisiert werden
+  
+### Changed
+- `trainer.py`: Neue Parameter `continue_training=True` für `train_agent()` Methode
+- `trainer.py`: `effective_config` Logik um Architektur beim Weitertraining zu bewahren
+- `ai_trader_scheduler.py`: Self-Training verwendet jetzt `continue_training=True`
+- Training-Historie zeigt kumulative Statistiken (Gesamt-Timesteps über alle Sessions)
+- Log-Nachrichten zeigen jetzt an, ob Continue oder Fresh Training durchgeführt wird
+
+### Technical Details
+- Das RL-Modell ist ein **Deep Reinforcement Learning** Agent (PPO - Proximal Policy Optimization)
+- Es ist KEIN Reasoning-Modell (wie GPT-4) und KEIN RAG-Modell
+- Das Modell lernt durch Trial & Error: Beobachtet Markt → Trifft Entscheidung → Bekommt Reward
+- Continue Training: `model = PPO.load()` + `model.learn()` mit `reset_num_timesteps=False`
+- Architektur wird aus `metadata.json` geladen um Inkompatibilitäten zu vermeiden
+
+## [1.17.0] - 2026-02-04
+
+### Added
+- **Persistente Training-Historie** - Self-Training Ergebnisse werden jetzt dauerhaft in der Datenbank gespeichert:
+  - Neue Tabelle `ai_trader_training_history` mit allen Training-Metriken
+  - Backend API: `GET /api/ai-traders/:id/training-history` - Abrufen der Historie
+  - Backend API: `POST /api/ai-traders/:id/training-history` - Neue Einträge speichern
+  - Backend API: `GET /api/ai-traders/:id/training-stats` - Aggregierte Statistiken
+  - RL-Service speichert automatisch jedes Training (erfolgreich oder fehlgeschlagen)
+  
+- **Training-Historie UI Komponente** - Neue `AITraderTrainingHistory` Komponente:
+  - Statistik-Übersicht: Anzahl Trainings, Ø Reward, Ø Return, Gesamt-Trainingszeit
+  - Expandierbare Einträge mit Details (Timesteps, Episoden, Rewards, Returns)
+  - Kompakte Version für Cards verfügbar
+  - Auto-Refresh alle 60 Sekunden
+  - Deutsche Lokalisierung
+
+### Changed
+- RL-Service `ai_trader_scheduler.py` sendet jetzt Training-Ergebnisse an Backend zur Persistierung
+
 ## [1.16.0] - 2026-02-03
 
 ### Added

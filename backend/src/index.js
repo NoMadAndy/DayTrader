@@ -4906,6 +4906,54 @@ app.post('/api/ai-traders/:id/adjust-weights', authMiddleware, async (req, res) 
 });
 
 /**
+ * Get training history for an AI trader
+ * GET /api/ai-traders/:id/training-history
+ */
+app.get('/api/ai-traders/:id/training-history', async (req, res) => {
+  try {
+    const traderId = parseInt(req.params.id);
+    const limit = parseInt(req.query.limit) || 20;
+    
+    const history = await aiTrader.getTrainingHistory(traderId, limit);
+    res.json(history);
+  } catch (e) {
+    console.error('Get training history error:', e);
+    res.status(500).json({ error: 'Failed to fetch training history' });
+  }
+});
+
+/**
+ * Record a training session for an AI trader
+ * POST /api/ai-traders/:id/training-history
+ */
+app.post('/api/ai-traders/:id/training-history', async (req, res) => {
+  try {
+    const traderId = parseInt(req.params.id);
+    const record = await aiTrader.recordTrainingSession(traderId, req.body);
+    
+    res.json(record);
+  } catch (e) {
+    console.error('Record training session error:', e);
+    res.status(500).json({ error: 'Failed to record training session' });
+  }
+});
+
+/**
+ * Get training statistics for an AI trader
+ * GET /api/ai-traders/:id/training-stats
+ */
+app.get('/api/ai-traders/:id/training-stats', async (req, res) => {
+  try {
+    const traderId = parseInt(req.params.id);
+    const stats = await aiTrader.getTrainingStats(traderId);
+    res.json(stats);
+  } catch (e) {
+    console.error('Get training stats error:', e);
+    res.status(500).json({ error: 'Failed to fetch training stats' });
+  }
+});
+
+/**
  * Trigger adaptive learning for a specific AI trader
  * POST /api/ai-traders/:id/trigger-learning
  */

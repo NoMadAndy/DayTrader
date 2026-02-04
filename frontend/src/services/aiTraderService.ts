@@ -327,6 +327,68 @@ export async function getRLAgentStatus(agentName: string): Promise<RLAgentStatus
   }
 }
 
+// ============================================================================
+// Training History
+// ============================================================================
+
+/** Training history entry */
+export interface TrainingHistoryEntry {
+  id: number;
+  ai_trader_id: number;
+  agent_name: string;
+  training_type: string;
+  status: 'completed' | 'failed' | 'started';
+  started_at: string;
+  completed_at: string | null;
+  duration_seconds: number | null;
+  symbols_trained: string[] | null;
+  total_timesteps: number | null;
+  final_reward: number | null;
+  mean_reward: number | null;
+  best_reward: number | null;
+  mean_return_pct: number | null;
+  max_return_pct: number | null;
+  min_return_pct: number | null;
+  episodes_completed: number | null;
+  error_message: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+/** Training statistics */
+export interface TrainingStats {
+  total_sessions: number;
+  successful_sessions: number;
+  failed_sessions: number;
+  avg_reward: number | null;
+  best_reward: number | null;
+  avg_return_pct: number | null;
+  best_return_pct: number | null;
+  total_timesteps_trained: number | null;
+  total_training_time_seconds: number | null;
+  last_training: string | null;
+  first_training: string | null;
+}
+
+/**
+ * Get training history for an AI trader
+ */
+export async function getTrainingHistory(
+  id: number,
+  limit: number = 20
+): Promise<TrainingHistoryEntry[]> {
+  const response = await fetch(`${API_BASE}/ai-traders/${id}/training-history?limit=${limit}`);
+  return handleResponse<TrainingHistoryEntry[]>(response);
+}
+
+/**
+ * Get training statistics for an AI trader
+ */
+export async function getTrainingStats(id: number): Promise<TrainingStats> {
+  const response = await fetch(`${API_BASE}/ai-traders/${id}/training-stats`);
+  return handleResponse<TrainingStats>(response);
+}
+
 /**
  * Get training status for an AI trader (RL agent status + ML model info)
  */
