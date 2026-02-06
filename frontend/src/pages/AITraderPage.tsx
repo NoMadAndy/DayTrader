@@ -75,6 +75,9 @@ export function AITraderPage() {
     losingTrades?: number;
     winRate?: number | null;
     realizedPnl?: number;
+    // Broker fees
+    totalFees?: number;
+    brokerName?: string;
   } | null>(null);
   // Executed trades (opens + closes)
   const [executedTrades, setExecutedTrades] = useState<Array<{
@@ -108,6 +111,7 @@ export function AITraderPage() {
     technicalScore?: number | null;
     signalAgreement?: string | null;
     explanation?: string[] | null;
+    fees?: number | null;
   }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -324,6 +328,9 @@ export function AITraderPage() {
           losingTrades: portfolioData.losing_trades || 0,
           winRate: portfolioData.win_rate,
           realizedPnl: portfolioData.realized_pnl || 0,
+          // Broker fees
+          totalFees: portfolioData.total_fees || 0,
+          brokerName: portfolioData.broker_name || null,
         });
       }
       
@@ -653,37 +660,48 @@ export function AITraderPage() {
       )}
       
       {/* Compact Stats Row */}
-      <div className="grid grid-cols-6 gap-1.5">
-        {portfolio && (
-          <>
-            <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
-              <div className="text-[10px] text-gray-500">💰 Cash</div>
-              <div className="text-sm font-bold">${portfolio.cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-            </div>
-            <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
-              <div className="text-[10px] text-gray-500">📊 Wert</div>
-              <div className="text-sm font-bold">${portfolio.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-            </div>
-            <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
-              <div className="text-[10px] text-gray-500">📈 Unreal.</div>
-              <div className={`text-sm font-bold ${(portfolio.unrealizedPnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {(portfolio.unrealizedPnl || 0) >= 0 ? '+' : ''}${(portfolio.unrealizedPnl || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+      <div className="space-y-1.5">
+        <div className="grid grid-cols-4 lg:grid-cols-7 gap-1.5">
+          {portfolio && (
+            <>
+              <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
+                <div className="text-[10px] text-gray-500">💰 Cash</div>
+                <div className="text-sm font-bold">${portfolio.cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
               </div>
+              <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
+                <div className="text-[10px] text-gray-500">📊 Wert</div>
+                <div className="text-sm font-bold">${portfolio.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+              </div>
+              <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
+                <div className="text-[10px] text-gray-500">📈 Unreal.</div>
+                <div className={`text-sm font-bold ${(portfolio.unrealizedPnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {(portfolio.unrealizedPnl || 0) >= 0 ? '+' : ''}${(portfolio.unrealizedPnl || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </div>
+              </div>
+            </>
+          )}
+          <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
+            <div className="text-[10px] text-gray-500">🎯 Trades</div>
+            <div className="text-sm font-bold">{portfolio?.tradesExecuted ?? 0}</div>
+          </div>
+          <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
+            <div className="text-[10px] text-gray-500">🏆 Win</div>
+            <div className="text-sm font-bold">{portfolio?.winRate != null ? `${portfolio.winRate.toFixed(0)}%` : '-'}</div>
+          </div>
+          <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
+            <div className="text-[10px] text-gray-500">💹 P&L</div>
+            <div className={`text-sm font-bold ${(portfolio?.pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {(portfolio?.pnl ?? 0) >= 0 ? '+' : ''}{(portfolio?.pnl ?? 0).toFixed(1)}%
             </div>
-          </>
-        )}
-        <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
-          <div className="text-[10px] text-gray-500">🎯 Trades</div>
-          <div className="text-sm font-bold">{portfolio?.tradesExecuted ?? 0}</div>
-        </div>
-        <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
-          <div className="text-[10px] text-gray-500">🏆 Win</div>
-          <div className="text-sm font-bold">{portfolio?.winRate != null ? `${portfolio.winRate.toFixed(0)}%` : '-'}</div>
-        </div>
-        <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
-          <div className="text-[10px] text-gray-500">💹 P&L</div>
-          <div className={`text-sm font-bold ${(portfolio?.pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-            {(portfolio?.pnl ?? 0) >= 0 ? '+' : ''}{(portfolio?.pnl ?? 0).toFixed(1)}%
+          </div>
+          <div className="bg-slate-800/50 rounded border border-orange-500/30 px-2 py-1.5">
+            <div className="text-[10px] text-orange-400/70">🏦 Gebühren</div>
+            <div className="text-sm font-bold text-orange-400">
+              ${(portfolio?.totalFees ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </div>
+            {portfolio?.brokerName && (
+              <div className="text-[8px] text-gray-500 truncate">{portfolio.brokerName}</div>
+            )}
           </div>
         </div>
       </div>
@@ -853,10 +871,17 @@ export function AITraderPage() {
                               <div className="text-[10px] text-gray-500">Wert</div>
                               <div className="text-xs font-mono">${trade.cost.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
                             </div>
-                            <div className="bg-slate-800/50 rounded px-2 py-1">
-                              <div className="text-[10px] text-gray-500">Seite</div>
-                              <div className="text-xs font-mono">{trade.side === 'short' ? '🔴 Short' : '🟢 Long'}</div>
-                            </div>
+                            {trade.fees != null && trade.fees > 0 ? (
+                              <div className="bg-orange-900/20 rounded px-2 py-1 border border-orange-500/20">
+                                <div className="text-[10px] text-orange-400/70">🏦 Gebühren</div>
+                                <div className="text-xs font-mono text-orange-400">${trade.fees.toFixed(2)}</div>
+                              </div>
+                            ) : (
+                              <div className="bg-slate-800/50 rounded px-2 py-1">
+                                <div className="text-[10px] text-gray-500">Seite</div>
+                                <div className="text-xs font-mono">{trade.side === 'short' ? '🔴 Short' : '🟢 Long'}</div>
+                              </div>
+                            )}
                           </div>
                           
                           {/* Entry price for close trades */}

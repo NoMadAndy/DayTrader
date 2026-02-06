@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.29.0] - 2026-02-06
+
+### Added
+- **Realistische Broker-Gebühren** - flatex (~$8.50 flat/Order) und ING DiBa ($5.30 + 0.25%, min $10.70, max $75.50 + $2.05 Börsengebühr) als wählbare Broker-Profile
+- **Gebühren bei jedem Trade** - AI Trader zahlen beim Öffnen und Schließen von Positionen Ordergebühren, die vom Bargeld abgezogen werden
+- **Netto-P&L** - Gewinn/Verlust wird nach Abzug aller Gebühren (Eröffnung + Schließung) berechnet
+- **🏦 Gebühren-Box im Portfolio-Dashboard** - Zeigt kumulierte Gebühren und aktiven Broker in der Stats-Zeile
+- **Gebühren pro Trade** - Aufklappbare Trade-Details zeigen die berechnete Ordergebühr an
+- **Broker-Auswahl beim Erstellen** - Neues Formularfeld zur Auswahl des Brokers (flatex/ING DiBa) beim Anlegen eines AI Traders
+
+### Changed
+- **Trade-Karten Layout** - 4. Grid-Zelle zeigt Gebühren statt Seite wenn Gebühren vorhanden
+- **Portfolio-API erweitert** - Liefert jetzt `total_fees`, `broker_name` und `broker_profile`
+- **Trades-API erweitert** - Jeder Trade enthält `fees` Feld mit berechneter Gebühr
+- **Stats-Zeile 7-spaltig** - Desktop-Layout nutzt jetzt 7 Spalten (vorher 6) für die Gebühren-Box
+
 ## [1.28.1] - 2026-02-06
 
 ### Changed

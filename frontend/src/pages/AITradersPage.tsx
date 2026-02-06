@@ -91,6 +91,7 @@ export default function AITradersPage() {
   const [formDescription, setFormDescription] = useState('');
   const [formAvatar, setFormAvatar] = useState('🤖');
   const [formInitialCapital, setFormInitialCapital] = useState(100000);
+  const [formBrokerProfile, setFormBrokerProfile] = useState<'flatex' | 'ingdiba'>('flatex');
   const [formRiskTolerance, setFormRiskTolerance] = useState<'conservative' | 'moderate' | 'aggressive'>('moderate');
   const [formWatchlistSymbols, setFormWatchlistSymbols] = useState('AAPL,MSFT,GOOGL,AMZN,TSLA');
   
@@ -245,6 +246,7 @@ export default function AITradersPage() {
         capital: {
           ...(defaultPersonality?.capital || { initialBudget: 100000, maxPositionSize: 25, reserveCashPercent: 10 }),
           initialBudget: formInitialCapital,
+          brokerProfile: formBrokerProfile,
         },
         risk: {
           ...(defaultPersonality?.risk || { tolerance: 'moderate', maxDrawdown: 20, stopLossPercent: 5, takeProfitPercent: 10 }),
@@ -325,6 +327,7 @@ export default function AITradersPage() {
     setFormDescription('');
     setFormAvatar('🤖');
     setFormInitialCapital(100000);
+    setFormBrokerProfile('flatex');
     setFormRiskTolerance('moderate');
     // Reset to all available symbols or default
     if (availableSymbols.length > 0) {
@@ -517,6 +520,33 @@ export default function AITradersPage() {
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">{t('aiTraders.form.capitalHint')}</p>
+                </div>
+
+                {/* Broker Profile */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    🏦 Broker
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { value: 'flatex' as const, label: 'flatex', desc: '~$8.50 flat/Order' },
+                      { value: 'ingdiba' as const, label: 'ING DiBa', desc: '$5.30 + 0.25% (min $10.70)' },
+                    ].map((broker) => (
+                      <button
+                        key={broker.value}
+                        onClick={() => setFormBrokerProfile(broker.value)}
+                        className={`p-3 rounded-lg text-left transition-colors ${
+                          formBrokerProfile === broker.value
+                            ? 'bg-orange-600/30 border-2 border-orange-500'
+                            : 'bg-slate-700 hover:bg-slate-600 border-2 border-transparent'
+                        }`}
+                      >
+                        <div className="font-medium text-white">{broker.label}</div>
+                        <div className="text-xs text-gray-400">{broker.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Broker-Gebühren werden bei jedem Trade abgezogen</p>
                 </div>
 
                 {/* Risk Tolerance */}

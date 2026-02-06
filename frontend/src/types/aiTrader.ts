@@ -12,6 +12,7 @@ export interface AITraderCapitalConfig {
   initialBudget: number;
   maxPositionSize: number;
   reserveCashPercent: number;
+  brokerProfile?: 'flatex' | 'ingdiba' | 'discount' | 'standard' | 'premium';
 }
 
 export interface AITraderRiskConfig {

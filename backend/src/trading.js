@@ -47,6 +47,27 @@ export const BROKER_PROFILES = {
     cfdOvernight: { longRate: 0.03, shortRate: 0.03 },
     leverageLimits: { stock: 5, index: 20, forex: 30, crypto: 2 },
   },
+  flatex: {
+    name: 'flatex',
+    description: 'flatex – 5,90€ flat + Börsengebühr',
+    // €5,90 flat order fee + ~€2,00 Xetra venue fee ≈ $8,50 (EUR→USD ~1.08)
+    stockCommission: { type: 'flat', flatFee: 8.50, percentageFee: 0, minimumFee: 8.50, maximumFee: 8.50 },
+    spreadPercent: 0.05,  // Xetra has tight spreads
+    cfdOvernight: { longRate: 0.02, shortRate: 0.02 },
+    leverageLimits: { stock: 1, index: 5, forex: 30, crypto: 2 },
+  },
+  ingdiba: {
+    name: 'ING (DiBa)',
+    description: 'ING – 4,90€ + 0,25% (min 9,90€, max 69,90€) + Handelsplatz',
+    // €4,90 base + 0.25% of order volume, min €9,90 max €69,90, + €1,90 venue fee
+    // All converted to USD at ~1.08 rate
+    stockCommission: { type: 'mixed', flatFee: 5.30, percentageFee: 0.25, minimumFee: 10.70, maximumFee: 75.50 },
+    // Plus €1,90 venue (Direkthandel) ≈ $2,05 added via exchangeFee
+    exchangeFee: 2.05,
+    spreadPercent: 0.05,
+    cfdOvernight: { longRate: 0.02, shortRate: 0.02 },
+    leverageLimits: { stock: 1, index: 5, forex: 30, crypto: 2 },
+  },
 };
 
 /**
@@ -426,6 +447,11 @@ export function calculateFees(params) {
   } else if (comm.type === 'mixed') {
     const percentagePart = notionalValue * (comm.percentageFee / 100);
     commission = Math.max(comm.minimumFee, Math.min(comm.maximumFee, comm.flatFee + percentagePart));
+  }
+  
+  // Exchange/venue fee (e.g. ING Handelsplatzgebühr)
+  if (broker.exchangeFee) {
+    commission += broker.exchangeFee;
   }
   
   // Spread cost
