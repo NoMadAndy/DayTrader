@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.28.0] - 2026-02-06
+
+### Changed
+- **Training-Events als Toast** - Self-Training Start/Abschluss/Fehler werden jetzt als Toast im Stack angezeigt statt als große Karte. Inline-Progress-Balken bleibt für laufendes Training
+- **Ton nur bei echten Trades** - Entscheidungen (hold, skip etc.) spielen keinen Sound mehr. Sound kommt nur noch bei buy/sell/short/close Toasts
+
+### Fixed
+- `notifyDecision` Sound-Aufruf entfernt (war Ursache für Töne bei Nicht-Trade-Entscheidungen)
+
 ## [1.27.0] - 2026-02-06
 
 ### Changed

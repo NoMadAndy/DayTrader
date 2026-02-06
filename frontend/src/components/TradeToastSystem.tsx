@@ -11,7 +11,7 @@ import { useNavigate } from 'react-router-dom';
 
 export interface TradeToast {
   id: number;
-  action: 'buy' | 'sell' | 'short' | 'close';
+  action: 'buy' | 'sell' | 'short' | 'close' | 'training_start' | 'training_complete' | 'training_failed';
   symbol: string;
   quantity: number;
   price: number;
@@ -106,6 +106,9 @@ const ACTION_CONFIG: Record<string, { label: string; emoji: string; bg: string; 
   sell:  { label: 'VERKAUF', emoji: '📉', bg: 'from-red-900/95 to-red-800/95',     border: 'border-red-400',   accent: 'text-red-400' },
   close: { label: 'CLOSE',   emoji: '📤', bg: 'from-amber-900/95 to-amber-800/95', border: 'border-amber-400', accent: 'text-amber-400' },
   short: { label: 'SHORT',   emoji: '🔻', bg: 'from-purple-900/95 to-purple-800/95', border: 'border-purple-400', accent: 'text-purple-400' },
+  training_start:    { label: 'TRAINING',    emoji: '🎓', bg: 'from-blue-900/95 to-indigo-800/95',   border: 'border-blue-400',   accent: 'text-blue-400' },
+  training_complete: { label: 'TRAINING ✓', emoji: '✅', bg: 'from-emerald-900/95 to-teal-800/95', border: 'border-emerald-400', accent: 'text-emerald-400' },
+  training_failed:   { label: 'TRAINING ✗', emoji: '❌', bg: 'from-red-900/95 to-rose-800/95',     border: 'border-red-400',    accent: 'text-red-400' },
 };
 
 // ─── Single Toast Component ──────────────────────────────────────
@@ -117,6 +120,7 @@ function ToastItem({ toast, onDismiss, index }: { toast: TradeToast; onDismiss: 
   const navigate = useNavigate();
 
   const config = ACTION_CONFIG[toast.action] || ACTION_CONFIG.buy;
+  const isTraining = toast.action.startsWith('training');
 
   const navigateToSymbol = useCallback((symbol: string) => {
     window.dispatchEvent(new CustomEvent('selectSymbol', { detail: symbol }));
@@ -167,53 +171,67 @@ function ToastItem({ toast, onDismiss, index }: { toast: TradeToast; onDismiss: 
           <span className="text-gray-400 text-xs font-mono">{timeStr}</span>
         </div>
 
-        {/* Symbol + Price */}
-        <div className="flex items-center justify-between mb-1.5">
-          <button
-            onClick={(e) => { e.stopPropagation(); navigateToSymbol(toast.symbol); }}
-            className="text-blue-300 hover:text-blue-200 hover:underline font-bold text-lg transition-colors"
-            title={`${toast.symbol} im Dashboard anzeigen`}
-          >
-            {toast.symbol}
-          </button>
-          <span className="text-white font-mono text-base">${toast.price.toFixed(2)}</span>
-        </div>
+        {isTraining ? (
+          <>
+            {/* Training toast: just reasoning text */}
+            {toast.reasoning && (
+              <div className="text-sm text-gray-200">{toast.reasoning}</div>
+            )}
+            {toast.symbol && toast.symbol !== 'TRAINING' && (
+              <div className="mt-1 text-xs text-gray-400">Agent: {toast.symbol}</div>
+            )}
+          </>
+        ) : (
+          <>
+            {/* Trade toast: Symbol + Price + Details */}
+            <div className="flex items-center justify-between mb-1.5">
+              <button
+                onClick={(e) => { e.stopPropagation(); navigateToSymbol(toast.symbol); }}
+                className="text-blue-300 hover:text-blue-200 hover:underline font-bold text-lg transition-colors"
+                title={`${toast.symbol} im Dashboard anzeigen`}
+              >
+                {toast.symbol}
+              </button>
+              <span className="text-white font-mono text-base">${toast.price.toFixed(2)}</span>
+            </div>
 
-        {/* Details row */}
-        <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center gap-3">
-            <span className="text-gray-300">
-              <span className="text-gray-500">Stk:</span> {toast.quantity}
-            </span>
-            <span className="text-gray-300">
-              <span className="text-gray-500">Wert:</span> ${cost.toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-            </span>
-          </div>
-          {toast.confidence !== null && toast.confidence !== undefined && (
-            <span className={`font-mono ${toast.confidence >= 0.7 ? 'text-green-400' : toast.confidence >= 0.4 ? 'text-yellow-400' : 'text-red-400'}`}>
-              {(toast.confidence * 100).toFixed(0)}% Konf.
-            </span>
-          )}
-        </div>
-
-        {/* P&L for close/sell */}
-        {toast.pnl !== null && toast.pnl !== undefined && (
-          <div className={`mt-1.5 pt-1.5 border-t border-white/10 flex items-center justify-between text-xs`}>
-            <span className="text-gray-400">Realisiert:</span>
-            <span className={`font-mono font-bold ${toast.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {toast.pnl >= 0 ? '+' : ''}{toast.pnl.toFixed(2)}$
-              {toast.pnlPercent !== null && toast.pnlPercent !== undefined && (
-                <span className="ml-1 text-gray-400">({toast.pnlPercent >= 0 ? '+' : ''}{toast.pnlPercent.toFixed(1)}%)</span>
+            {/* Details row */}
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-3">
+                <span className="text-gray-300">
+                  <span className="text-gray-500">Stk:</span> {toast.quantity}
+                </span>
+                <span className="text-gray-300">
+                  <span className="text-gray-500">Wert:</span> ${cost.toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                </span>
+              </div>
+              {toast.confidence !== null && toast.confidence !== undefined && (
+                <span className={`font-mono ${toast.confidence >= 0.7 ? 'text-green-400' : toast.confidence >= 0.4 ? 'text-yellow-400' : 'text-red-400'}`}>
+                  {(toast.confidence * 100).toFixed(0)}% Konf.
+                </span>
               )}
-            </span>
-          </div>
-        )}
+            </div>
 
-        {/* Short reasoning */}
-        {toast.reasoning && (
-          <div className="mt-1.5 text-gray-400 text-xs truncate italic">
-            {toast.reasoning}
-          </div>
+            {/* P&L for close/sell */}
+            {toast.pnl !== null && toast.pnl !== undefined && (
+              <div className={`mt-1.5 pt-1.5 border-t border-white/10 flex items-center justify-between text-xs`}>
+                <span className="text-gray-400">Realisiert:</span>
+                <span className={`font-mono font-bold ${toast.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {toast.pnl >= 0 ? '+' : ''}{toast.pnl.toFixed(2)}$
+                  {toast.pnlPercent !== null && toast.pnlPercent !== undefined && (
+                    <span className="ml-1 text-gray-400">({toast.pnlPercent >= 0 ? '+' : ''}{toast.pnlPercent.toFixed(1)}%)</span>
+                  )}
+                </span>
+              </div>
+            )}
+
+            {/* Short reasoning */}
+            {toast.reasoning && (
+              <div className="mt-1.5 text-gray-400 text-xs truncate italic">
+                {toast.reasoning}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -236,12 +254,12 @@ function ToastItem({ toast, onDismiss, index }: { toast: TradeToast; onDismiss: 
 export function TradeToastSystem({ toasts, onDismiss, soundEnabled }: TradeToastSystemProps) {
   const playedSoundsRef = useRef<Set<number>>(new Set());
 
-  // Play sound for new toasts
+  // Play sound only for actual trades (not training events)
   useEffect(() => {
     toasts.forEach(toast => {
-      if (!playedSoundsRef.current.has(toast.id) && soundEnabled) {
+      if (!playedSoundsRef.current.has(toast.id) && soundEnabled && !toast.action.startsWith('training')) {
         playedSoundsRef.current.add(toast.id);
-        playTradeSound(toast.action);
+        playTradeSound(toast.action as 'buy' | 'sell' | 'short' | 'close');
       }
     });
   }, [toasts, soundEnabled]);

@@ -136,7 +136,8 @@ export function AITraderPage() {
   const [newDecisionIds, setNewDecisionIds] = useState<Set<number>>(new Set());
   
   // Notification feedback hook (for non-trade notifications)
-  const { notifyDecision } = useNotificationFeedback({ settings: notificationSettings });
+  // Notification feedback hook (kept for future use)
+  useNotificationFeedback({ settings: notificationSettings });
   
   // Trade toast notifications
   const { toasts: tradeToasts, addToast: addTradeToast, dismissToast: dismissTradeToast } = useTradeToasts();
@@ -192,10 +193,6 @@ export function AITraderPage() {
         newIds.add(d.id);
         tryCreateToast(d);
         
-        if (d.decisionType !== 'skip' && !d.executed) {
-          notifyDecision(d.decisionType, d.executed);
-        }
-        
         // Show Trade Alert Bar for executed buy/sell/short/close
         if (d.executed && ['buy', 'sell', 'short', 'close'].includes(d.decisionType) && 
             !processedTradeAlertsRef.current.has(d.id)) {
@@ -239,7 +236,7 @@ export function AITraderPage() {
     
     prevDecisionIdsRef.current = currentIds;
     prevExecutedIdsRef.current = currentExecutedIds;
-  }, [decisions, notifyDecision, addTradeToast]);
+  }, [decisions, addTradeToast]);
   
   const traderId = id ? parseInt(id) : undefined;
   
@@ -723,7 +720,17 @@ export function AITraderPage() {
       {activeTab === 'activity' && (
         <>
         {/* Self-Training Indicator */}
-        {traderId && <SelfTrainingIndicator traderId={traderId} />}
+        {traderId && <SelfTrainingIndicator traderId={traderId} onTrainingEvent={(evt) => {
+          addTradeToast({
+            action: evt.action,
+            symbol: evt.agentName || 'TRAINING',
+            quantity: 0,
+            price: 0,
+            confidence: null,
+            reasoning: evt.message,
+            timestamp: new Date().toISOString(),
+          });
+        }} />}
         
         {/* Desktop: 3 columns (Trades, Positions, Decisions) | Mobile: stacked */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
