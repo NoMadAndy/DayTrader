@@ -4801,17 +4801,53 @@ app.get('/api/ai-traders/:id/trades', async (req, res) => {
       return res.json([]);
     }
     
-    // Get ALL positions: open (= buy trades) and closed (= buy + close trades)
+    // Get ALL positions with matching decision reasoning (JOIN on symbol + trader + closest timestamp)
     const result = await db.query(
       `SELECT 
-         id, symbol, side, quantity, entry_price, close_price,
-         opened_at, closed_at, realized_pnl, close_reason,
-         stop_loss, take_profit, is_open
-       FROM positions 
-       WHERE portfolio_id = $1
-       ORDER BY COALESCE(closed_at, opened_at) DESC
-       LIMIT $2`,
-      [portfolio.id, parseInt(limit)]
+         p.id, p.symbol, p.side, p.quantity, p.entry_price, p.close_price,
+         p.opened_at, p.closed_at, p.realized_pnl, p.close_reason,
+         p.stop_loss, p.take_profit, p.is_open,
+         -- Buy/open decision reasoning (closest executed decision for this symbol around open time)
+         open_d.summary_short AS open_summary,
+         open_d.reasoning AS open_reasoning,
+         open_d.confidence AS open_confidence,
+         open_d.weighted_score AS open_weighted_score,
+         open_d.ml_score AS open_ml_score,
+         open_d.rl_score AS open_rl_score,
+         open_d.sentiment_score AS open_sentiment_score,
+         open_d.technical_score AS open_technical_score,
+         open_d.signal_agreement AS open_signal_agreement,
+         -- Close decision reasoning
+         close_d.summary_short AS close_summary,
+         close_d.reasoning AS close_reasoning,
+         close_d.confidence AS close_confidence
+       FROM positions p
+       LEFT JOIN LATERAL (
+         SELECT summary_short, reasoning, confidence, weighted_score,
+                ml_score, rl_score, sentiment_score, technical_score, signal_agreement
+         FROM ai_trader_decisions
+         WHERE ai_trader_id = $2
+           AND symbol = p.symbol
+           AND executed = true
+           AND decision_type IN ('buy', 'short')
+         ORDER BY ABS(EXTRACT(EPOCH FROM (timestamp - p.opened_at)))
+         LIMIT 1
+       ) open_d ON true
+       LEFT JOIN LATERAL (
+         SELECT summary_short, reasoning, confidence
+         FROM ai_trader_decisions
+         WHERE ai_trader_id = $2
+           AND symbol = p.symbol
+           AND executed = true
+           AND decision_type IN ('sell', 'close')
+           AND p.closed_at IS NOT NULL
+         ORDER BY ABS(EXTRACT(EPOCH FROM (timestamp - p.closed_at)))
+         LIMIT 1
+       ) close_d ON true
+       WHERE p.portfolio_id = $1
+       ORDER BY COALESCE(p.closed_at, p.opened_at) DESC
+       LIMIT $3`,
+      [portfolio.id, parseInt(req.params.id), parseInt(limit)]
     );
     
     // Build trade entries: each position generates 1 open trade + optionally 1 close trade
@@ -4822,7 +4858,36 @@ app.get('/api/ai-traders/:id/trades', async (req, res) => {
       const entryPrice = parseFloat(row.entry_price);
       const entryValue = entryPrice * qty;
       
+      // Build human-readable explanation from reasoning
+      const buildExplanation = (reasoning, summary, scores) => {
+        if (!reasoning && !summary) return null;
+        const parts = [];
+        if (summary) parts.push(summary);
+        if (reasoning) {
+          const r = typeof reasoning === 'string' ? JSON.parse(reasoning) : reasoning;
+          // Signal details
+          if (r.signals) {
+            const sigs = r.signals;
+            const sigParts = [];
+            if (sigs.ml?.score != null) sigParts.push(`ML: ${(sigs.ml.score * 100).toFixed(0)}%`);
+            if (sigs.rl?.score != null) sigParts.push(`RL: ${(sigs.rl.score * 100).toFixed(0)}%`);
+            if (sigs.sentiment?.score != null) sigParts.push(`Sentiment: ${(sigs.sentiment.score * 100).toFixed(0)}%`);
+            if (sigs.technical?.score != null) sigParts.push(`Technik: ${(sigs.technical.score * 100).toFixed(0)}%`);
+            if (sigParts.length) parts.push(`Signale: ${sigParts.join(', ')}`);
+          }
+          // Risk info
+          if (r.risk_checks && !r.risk_checks.passed) {
+            parts.push('⚠️ Risiko-Checks nicht bestanden');
+          }
+          // Trigger for SL/TP
+          if (r.trigger === 'stop_loss') parts.push('🛑 Stop-Loss ausgelöst');
+          if (r.trigger === 'take_profit') parts.push('🎯 Take-Profit erreicht');
+        }
+        return parts.length > 0 ? parts : null;
+      };
+
       // BUY/SHORT entry trade
+      const openReasoning = row.open_reasoning ? (typeof row.open_reasoning === 'string' ? JSON.parse(row.open_reasoning) : row.open_reasoning) : null;
       trades.push({
         id: row.id,
         tradeType: 'open',
@@ -4839,6 +4904,16 @@ app.get('/api/ai-traders/:id/trades', async (req, res) => {
         takeProfit: row.take_profit ? parseFloat(row.take_profit) : null,
         isOpen: row.is_open,
         positionId: row.id,
+        // Decision data
+        summary: row.open_summary || null,
+        confidence: row.open_confidence ? parseFloat(row.open_confidence) : null,
+        weightedScore: row.open_weighted_score ? parseFloat(row.open_weighted_score) : null,
+        mlScore: row.open_ml_score ? parseFloat(row.open_ml_score) : null,
+        rlScore: row.open_rl_score ? parseFloat(row.open_rl_score) : null,
+        sentimentScore: row.open_sentiment_score ? parseFloat(row.open_sentiment_score) : null,
+        technicalScore: row.open_technical_score ? parseFloat(row.open_technical_score) : null,
+        signalAgreement: row.open_signal_agreement || null,
+        explanation: buildExplanation(openReasoning, row.open_summary, null),
       });
       
       // CLOSE/SELL trade (only for closed positions)
@@ -4848,6 +4923,7 @@ app.get('/api/ai-traders/:id/trades', async (req, res) => {
         const pnlPercent = entryValue > 0 ? (pnl / entryValue) * 100 : 0;
         const holdingMs = new Date(row.closed_at).getTime() - new Date(row.opened_at).getTime();
         
+        const closeReasoning = row.close_reasoning ? (typeof row.close_reasoning === 'string' ? JSON.parse(row.close_reasoning) : row.close_reasoning) : null;
         trades.push({
           id: row.id * 100000,  // unique ID for close trade
           tradeType: 'close',
@@ -4869,6 +4945,10 @@ app.get('/api/ai-traders/:id/trades', async (req, res) => {
           takeProfit: row.take_profit ? parseFloat(row.take_profit) : null,
           isOpen: false,
           positionId: row.id,
+          // Decision data
+          summary: row.close_summary || null,
+          confidence: row.close_confidence ? parseFloat(row.close_confidence) : null,
+          explanation: buildExplanation(closeReasoning, row.close_summary, null),
         });
       }
     }

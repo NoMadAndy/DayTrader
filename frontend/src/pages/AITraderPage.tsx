@@ -98,6 +98,16 @@ export function AITraderPage() {
     takeProfit: number | null;
     isOpen: boolean;
     positionId: number;
+    // Decision reasoning
+    summary?: string | null;
+    confidence?: number | null;
+    weightedScore?: number | null;
+    mlScore?: number | null;
+    rlScore?: number | null;
+    sentimentScore?: number | null;
+    technicalScore?: number | null;
+    signalAgreement?: string | null;
+    explanation?: string[] | null;
   }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -845,6 +855,66 @@ export function AITraderPage() {
                             <div className="bg-slate-800/50 rounded px-2 py-1">
                               <div className="text-[10px] text-gray-500">Grund</div>
                               <div className="text-xs text-gray-300">{trade.closeReason}</div>
+                            </div>
+                          )}
+                          
+                          {/* AI Decision Explanation */}
+                          {(trade.explanation || trade.summary) && (
+                            <div className="bg-blue-900/20 border border-blue-500/20 rounded px-2 py-1.5 space-y-1">
+                              <div className="text-[10px] text-blue-400/80 font-medium">🧠 Warum diese Entscheidung?</div>
+                              {trade.explanation ? (
+                                <ul className="space-y-0.5">
+                                  {trade.explanation.map((line, i) => (
+                                    <li key={i} className="text-xs text-gray-300 flex items-start gap-1">
+                                      <span className="text-blue-400/60 mt-0.5">•</span>
+                                      <span>{line}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : trade.summary ? (
+                                <div className="text-xs text-gray-300">{trade.summary}</div>
+                              ) : null}
+                            </div>
+                          )}
+                          
+                          {/* Signal Scores */}
+                          {(trade.mlScore != null || trade.rlScore != null || trade.sentimentScore != null || trade.technicalScore != null) && (
+                            <div className="grid grid-cols-4 gap-1">
+                              {[
+                                { label: 'ML', value: trade.mlScore, color: 'blue' },
+                                { label: 'RL', value: trade.rlScore, color: 'purple' },
+                                { label: 'Sent.', value: trade.sentimentScore, color: 'cyan' },
+                                { label: 'Tech.', value: trade.technicalScore, color: 'amber' },
+                              ].map(({ label, value, color }) => (
+                                value != null && (
+                                  <div key={label} className="bg-slate-800/50 rounded px-1.5 py-1 text-center">
+                                    <div className={`text-[9px] text-${color}-400/60`}>{label}</div>
+                                    <div className={`text-xs font-mono font-bold ${value > 0 ? 'text-green-400' : value < 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                                      {(value * 100).toFixed(0)}%
+                                    </div>
+                                  </div>
+                                )
+                              ))}
+                            </div>
+                          )}
+                          
+                          {/* Confidence + Agreement */}
+                          {(trade.confidence != null || trade.signalAgreement) && (
+                            <div className="flex items-center gap-2 text-[10px]">
+                              {trade.confidence != null && (
+                                <span className={`font-mono ${trade.confidence >= 0.7 ? 'text-green-400' : trade.confidence >= 0.4 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                  Konfidenz: {(trade.confidence * 100).toFixed(0)}%
+                                </span>
+                              )}
+                              {trade.signalAgreement && (
+                                <span className={`px-1 py-0.5 rounded ${
+                                  trade.signalAgreement === 'strong' ? 'bg-green-500/20 text-green-400' :
+                                  trade.signalAgreement === 'moderate' ? 'bg-yellow-500/20 text-yellow-400' :
+                                  'bg-red-500/20 text-red-400'
+                                }`}>
+                                  {trade.signalAgreement === 'strong' ? 'Starke' : trade.signalAgreement === 'moderate' ? 'Moderate' : 'Schwache'} Übereinstimmung
+                                </span>
+                              )}
                             </div>
                           )}
                           
