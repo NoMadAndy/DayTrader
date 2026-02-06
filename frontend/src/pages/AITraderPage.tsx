@@ -105,6 +105,7 @@ export function AITraderPage() {
   const [selectedReportIndex, setSelectedReportIndex] = useState(0);
   const lastRefreshRef = useRef<number>(0);
   const [activityPanelExpanded, setActivityPanelExpanded] = useState(false);
+  const [expandedTradeId, setExpandedTradeId] = useState<number | null>(null);
   
   // Trade alert state for sticky notification
   const [currentTradeAlert, setCurrentTradeAlert] = useState<TradeAlert | null>(null);
@@ -128,6 +129,12 @@ export function AITraderPage() {
   
   // Trade toast notifications
   const { toasts: tradeToasts, addToast: addTradeToast, dismissToast: dismissTradeToast } = useTradeToasts();
+  
+  // Navigate to stock dashboard for a symbol
+  const navigateToSymbol = useCallback((symbol: string) => {
+    window.dispatchEvent(new CustomEvent('selectSymbol', { detail: symbol }));
+    navigate('/dashboard');
+  }, [navigate]);
   
   // Persist notification settings
   useEffect(() => {
@@ -713,18 +720,32 @@ export function AITraderPage() {
                     const borderColor = isBuy
                       ? 'border-l-blue-500'
                       : (trade.wasWinner ? 'border-l-green-500' : 'border-l-red-500');
+                    const isExpanded = expandedTradeId === trade.id;
                     
                     return (
                     <div 
                       key={trade.id}
-                      className={`bg-slate-900/50 rounded p-2 border-l-2 ${borderColor}`}
+                      className={`bg-slate-900/50 rounded border-l-2 ${borderColor} transition-all`}
                     >
-                      <div className="flex items-center justify-between">
+                      {/* Compact header - always visible, click to expand */}
+                      <div
+                        className="flex items-center justify-between p-2 cursor-pointer hover:bg-slate-800/50 transition-colors"
+                        onClick={() => setExpandedTradeId(isExpanded ? null : trade.id)}
+                      >
                         <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-sm">{trade.symbol}</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); navigateToSymbol(trade.symbol); }}
+                            className="font-bold text-sm text-blue-400 hover:text-blue-300 hover:underline transition-colors"
+                            title={`${trade.symbol} im Dashboard anzeigen`}
+                          >
+                            {trade.symbol}
+                          </button>
                           <span className={`text-[10px] px-1 py-0.5 rounded ${actionColor}`}>
                             {isBuy ? '📥' : '📤'} {actionLabel}
                           </span>
+                          <svg className={`w-3 h-3 text-gray-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
                         </div>
                         {!isBuy && trade.pnlPercent != null ? (
                           <div className={`text-sm font-bold ${(trade.pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -734,17 +755,103 @@ export function AITraderPage() {
                           <div className="text-[10px] text-gray-500">${trade.cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
                         )}
                       </div>
-                      <div className="flex items-center justify-between text-[10px] text-gray-500 mt-0.5">
-                        <span>{trade.quantity}x @ ${trade.price.toFixed(2)}</span>
-                        <span>
-                          {new Date(trade.timestamp).toLocaleString('de-DE', { 
-                            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' 
-                          })}
-                        </span>
-                      </div>
-                      {!isBuy && trade.closeReason && (
-                        <div className="mt-0.5 text-[10px] text-gray-600 truncate" title={trade.closeReason}>
-                          {trade.closeReason}
+                      
+                      {/* Expanded details */}
+                      {isExpanded && (
+                        <div className="px-2 pb-2 pt-0 space-y-1.5 border-t border-slate-700/30">
+                          {/* Price & Quantity */}
+                          <div className="grid grid-cols-2 gap-1.5 mt-1.5">
+                            <div className="bg-slate-800/50 rounded px-2 py-1">
+                              <div className="text-[10px] text-gray-500">Preis</div>
+                              <div className="text-xs font-mono">${trade.price.toFixed(2)}</div>
+                            </div>
+                            <div className="bg-slate-800/50 rounded px-2 py-1">
+                              <div className="text-[10px] text-gray-500">Stück</div>
+                              <div className="text-xs font-mono">{trade.quantity}</div>
+                            </div>
+                            <div className="bg-slate-800/50 rounded px-2 py-1">
+                              <div className="text-[10px] text-gray-500">Wert</div>
+                              <div className="text-xs font-mono">${trade.cost.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                            </div>
+                            <div className="bg-slate-800/50 rounded px-2 py-1">
+                              <div className="text-[10px] text-gray-500">Seite</div>
+                              <div className="text-xs font-mono">{trade.side === 'short' ? '🔴 Short' : '🟢 Long'}</div>
+                            </div>
+                          </div>
+                          
+                          {/* Entry price for close trades */}
+                          {!isBuy && trade.entryPrice && (
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <div className="bg-slate-800/50 rounded px-2 py-1">
+                                <div className="text-[10px] text-gray-500">Einstieg</div>
+                                <div className="text-xs font-mono">${trade.entryPrice.toFixed(2)}</div>
+                              </div>
+                              <div className="bg-slate-800/50 rounded px-2 py-1">
+                                <div className="text-[10px] text-gray-500">P&L</div>
+                                <div className={`text-xs font-mono font-bold ${(trade.pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                  {(trade.pnl ?? 0) >= 0 ? '+' : ''}${(trade.pnl ?? 0).toFixed(2)}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* SL/TP */}
+                          {(trade.stopLoss || trade.takeProfit) && (
+                            <div className="grid grid-cols-2 gap-1.5">
+                              {trade.stopLoss && (
+                                <div className="bg-red-900/20 rounded px-2 py-1">
+                                  <div className="text-[10px] text-red-400/60">Stop Loss</div>
+                                  <div className="text-xs font-mono text-red-400">${trade.stopLoss.toFixed(2)}</div>
+                                </div>
+                              )}
+                              {trade.takeProfit && (
+                                <div className="bg-green-900/20 rounded px-2 py-1">
+                                  <div className="text-[10px] text-green-400/60">Take Profit</div>
+                                  <div className="text-xs font-mono text-green-400">${trade.takeProfit.toFixed(2)}</div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          
+                          {/* Holding time */}
+                          {(trade.holdingDays || trade.holdingHours) && (
+                            <div className="bg-slate-800/50 rounded px-2 py-1">
+                              <div className="text-[10px] text-gray-500">Haltezeit</div>
+                              <div className="text-xs font-mono">
+                                {trade.holdingDays ? `${trade.holdingDays} Tage` : ''}
+                                {trade.holdingDays && trade.holdingHours ? ', ' : ''}
+                                {trade.holdingHours ? `${trade.holdingHours}h` : ''}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Close reason */}
+                          {!isBuy && trade.closeReason && (
+                            <div className="bg-slate-800/50 rounded px-2 py-1">
+                              <div className="text-[10px] text-gray-500">Grund</div>
+                              <div className="text-xs text-gray-300">{trade.closeReason}</div>
+                            </div>
+                          )}
+                          
+                          {/* Timestamp */}
+                          <div className="text-[10px] text-gray-600 text-right">
+                            {new Date(trade.timestamp).toLocaleString('de-DE', { 
+                              day: '2-digit', month: '2-digit', year: '2-digit',
+                              hour: '2-digit', minute: '2-digit', second: '2-digit'
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Collapsed: minimal info line */}
+                      {!isExpanded && (
+                        <div className="flex items-center justify-between text-[10px] text-gray-500 px-2 pb-1.5 -mt-0.5">
+                          <span>{trade.quantity}x @ ${trade.price.toFixed(2)}</span>
+                          <span>
+                            {new Date(trade.timestamp).toLocaleString('de-DE', { 
+                              day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' 
+                            })}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -785,7 +892,13 @@ export function AITraderPage() {
                         >
                           {/* Symbol & Side */}
                           <div className="w-20 flex-shrink-0">
-                            <div className="font-bold text-sm">{position.symbol}</div>
+                            <button
+                              onClick={() => navigateToSymbol(position.symbol)}
+                              className="font-bold text-sm text-blue-400 hover:text-blue-300 hover:underline transition-colors"
+                              title={`${position.symbol} im Dashboard anzeigen`}
+                            >
+                              {position.symbol}
+                            </button>
                             <div className="text-xs text-gray-500">
                               {position.side === 'short' ? '🔴 Short' : '🟢 Long'}
                             </div>

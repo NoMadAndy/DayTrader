@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { AITraderEvent } from '../types/aiTrader';
 
 interface AITraderActivityFeedProps {
@@ -220,7 +221,7 @@ export function AITraderActivityFeed({
           <div className={`flex items-center gap-2 py-1.5 px-2 rounded border ${typeColorClass} ${flashClass}`}>
             <span className="text-gray-500 w-14 text-xs font-mono">{time}</span>
             <span>🧠</span>
-            <span className="font-mono font-semibold w-14">{symbol}</span>
+            <button onClick={() => navigateToSymbol(symbol)} className="font-mono font-semibold w-14 text-blue-400 hover:text-blue-300 hover:underline transition-colors" title={`${symbol} anzeigen`}>{symbol}</button>
             <span className={`text-xs px-1.5 py-0.5 rounded uppercase font-bold`}>
               {decisionType}
             </span>
@@ -244,7 +245,7 @@ export function AITraderActivityFeed({
           <div className={`flex items-center gap-2 py-1.5 px-2 rounded border ${isBuy ? 'bg-green-500/20 border-green-500/40' : 'bg-red-500/20 border-red-500/40'} ${flashClass}`}>
             <span className="text-gray-500 w-14 text-xs font-mono">{time}</span>
             <span>💼</span>
-            <span className="font-mono font-semibold w-14">{symbol}</span>
+            <button onClick={() => navigateToSymbol(symbol)} className="font-mono font-semibold w-14 text-blue-400 hover:text-blue-300 hover:underline transition-colors" title={`${symbol} anzeigen`}>{symbol}</button>
             <span className={`text-xs px-1.5 py-0.5 rounded font-bold ${isBuy ? 'bg-green-500/30 text-green-300' : 'bg-red-500/30 text-red-300'}`}>
               {action}
             </span>
@@ -264,7 +265,7 @@ export function AITraderActivityFeed({
           <div className={`flex items-center gap-2 py-1.5 px-2 rounded border ${isProfitable ? 'bg-green-500/15 border-green-500/30' : 'bg-red-500/15 border-red-500/30'} ${flashClass}`}>
             <span className="text-gray-500 w-14 text-xs font-mono">{time}</span>
             <span>🔒</span>
-            <span className="font-mono font-semibold w-14">{symbol}</span>
+            <button onClick={() => navigateToSymbol(symbol)} className="font-mono font-semibold w-14 text-blue-400 hover:text-blue-300 hover:underline transition-colors" title={`${symbol} anzeigen`}>{symbol}</button>
             <span className="text-xs text-gray-400">Geschlossen</span>
             <span className={`text-sm font-bold ml-auto ${isProfitable ? 'text-green-400' : 'text-red-400'}`}>
               {isProfitable ? '+' : ''}{pnl.toFixed(2)}%

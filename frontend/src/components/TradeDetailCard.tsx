@@ -6,6 +6,7 @@
  */
 
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { AITraderDecision } from '../types/aiTrader';
 
 interface TradeDetailCardProps {
@@ -16,6 +17,12 @@ interface TradeDetailCardProps {
 
 export default function TradeDetailCard({ decision, isNew = false, onDelete }: TradeDetailCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const navigate = useNavigate();
+  
+  const navigateToSymbol = (symbol: string) => {
+    window.dispatchEvent(new CustomEvent('selectSymbol', { detail: symbol }));
+    navigate('/dashboard');
+  };
 
   const isBuyAction = decision.decisionType === 'buy' || decision.decisionType === 'short';
   const isSellAction = decision.decisionType === 'sell' || decision.decisionType === 'close';
@@ -112,7 +119,13 @@ export default function TradeDetailCard({ decision, isNew = false, onDelete }: T
             <span className="text-xl">{getActionIcon()}</span>
             <div className="flex flex-wrap items-center gap-2">
               <span className={getActionBadge()}>{decision.decisionType}</span>
-              <span className="font-mono font-bold text-white">{decision.symbol}</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); navigateToSymbol(decision.symbol); }}
+                className="font-mono font-bold text-blue-400 hover:text-blue-300 hover:underline transition-colors"
+                title={`${decision.symbol} im Dashboard anzeigen`}
+              >
+                {decision.symbol}
+              </button>
               {isExecuted && (
                 <span className="text-xs text-green-400 bg-green-900/30 px-1.5 py-0.5 rounded">
                   ✓ Executed

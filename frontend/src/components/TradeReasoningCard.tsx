@@ -5,6 +5,7 @@
  */
 
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { AITraderDecision, DecisionType } from '../types/aiTrader';
 import { SignalBreakdown } from './SignalBreakdown';
 
@@ -70,7 +71,13 @@ export function TradeReasoningCard({ decision, expanded: controlledExpanded, onT
       >
         {/* Symbol & Decision */}
         <span className="text-base">{signalStyle.emoji}</span>
-        <span className="font-bold text-sm">{decision.symbol}</span>
+        <button
+          onClick={(e) => { e.stopPropagation(); navigateToSymbol(decision.symbol); }}
+          className="font-bold text-sm text-blue-400 hover:text-blue-300 hover:underline transition-colors"
+          title={`${decision.symbol} im Dashboard anzeigen`}
+        >
+          {decision.symbol}
+        </button>
         <span className={`px-1 py-0.5 rounded text-[10px] font-bold uppercase ${signalStyle.bg} ${signalStyle.text}`}>
           {decision.decisionType}
         </span>

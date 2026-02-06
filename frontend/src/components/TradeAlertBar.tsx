@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 interface TradeDetails {
   id: number;
@@ -36,8 +37,12 @@ interface TradeAlertBarProps {
 }
 
 export default function TradeAlertBar({ trade, onDismiss, autoDismissMs = 30000 }: TradeAlertBarProps) {
-  const [expanded, setExpanded] = useState(false);
-  const [progress, setProgress] = useState(100);
+  const [expanded, setExpanded] = useState(false);  const navigate = useNavigate();
+  
+  const navigateToSymbol = (symbol: string) => {
+    window.dispatchEvent(new CustomEvent('selectSymbol', { detail: symbol }));
+    navigate('/dashboard');
+  };  const [progress, setProgress] = useState(100);
 
   // Auto-dismiss countdown
   useEffect(() => {
@@ -110,7 +115,14 @@ export default function TradeAlertBar({ trade, onDismiss, autoDismissMs = 30000 
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-bold text-lg">{actionText}</span>
                 <span className="font-mono bg-black/20 px-2 py-0.5 rounded">
-                  {trade.quantity} {trade.symbol}
+                  {trade.quantity}{' '}
+                  <button
+                    onClick={() => navigateToSymbol(trade.symbol)}
+                    className="text-blue-200 hover:text-white hover:underline transition-colors"
+                    title={`${trade.symbol} im Dashboard anzeigen`}
+                  >
+                    {trade.symbol}
+                  </button>
                 </span>
                 <span className="text-white/80">@</span>
                 <span className="font-mono">{formatCurrency(trade.price)}</span>

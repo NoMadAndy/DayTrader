@@ -7,6 +7,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 export interface TradeToast {
   id: number;
@@ -113,8 +114,14 @@ function ToastItem({ toast, onDismiss, index }: { toast: TradeToast; onDismiss: 
   const [isVisible, setIsVisible] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const navigate = useNavigate();
 
   const config = ACTION_CONFIG[toast.action] || ACTION_CONFIG.buy;
+
+  const navigateToSymbol = useCallback((symbol: string) => {
+    window.dispatchEvent(new CustomEvent('selectSymbol', { detail: symbol }));
+    navigate('/dashboard');
+  }, [navigate]);
 
   useEffect(() => {
     // Slide in after mount
@@ -162,7 +169,13 @@ function ToastItem({ toast, onDismiss, index }: { toast: TradeToast; onDismiss: 
 
         {/* Symbol + Price */}
         <div className="flex items-center justify-between mb-1.5">
-          <span className="text-white font-bold text-lg">{toast.symbol}</span>
+          <button
+            onClick={(e) => { e.stopPropagation(); navigateToSymbol(toast.symbol); }}
+            className="text-blue-300 hover:text-blue-200 hover:underline font-bold text-lg transition-colors"
+            title={`${toast.symbol} im Dashboard anzeigen`}
+          >
+            {toast.symbol}
+          </button>
           <span className="text-white font-mono text-base">${toast.price.toFixed(2)}</span>
         </div>
 
