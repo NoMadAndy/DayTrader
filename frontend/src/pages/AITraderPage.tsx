@@ -18,7 +18,7 @@ import AdaptiveWeightsPanel from '../components/AdaptiveWeightsPanel';
 import TradeAlertBar from '../components/TradeAlertBar';
 import TradeDetailCard from '../components/TradeDetailCard';
 import SelfTrainingIndicator from '../components/SelfTrainingIndicator';
-import { TradeToastSystem, useTradeToasts, playTradeSound } from '../components/TradeToastSystem';
+import { TradeToastSystem, useTradeToasts } from '../components/TradeToastSystem';
 import { useAITraderStream } from '../hooks/useAITraderStream';
 import { useAITraderReports } from '../hooks/useAITraderReports';
 import { useNotificationFeedback } from '../hooks/useNotificationFeedback';
@@ -152,22 +152,10 @@ export function AITraderPage() {
     decisions.forEach(d => {
       if (!prevDecisionIdsRef.current.has(d.id)) {
         newIds.add(d.id);
-        // Trigger toast + sound ONLY for executed trades (buy/sell/short/close)
-        if (d.executed && ['buy', 'sell', 'short', 'close'].includes(d.decisionType)) {
-          const reasoning = typeof d.reasoning === 'object' ? d.reasoning : {};
-          const rObj = reasoning as { quantity?: number; price?: number };
-          addTradeToast({
-            action: d.decisionType as 'buy' | 'sell' | 'short' | 'close',
-            symbol: d.symbol,
-            quantity: rObj.quantity || 0,
-            price: rObj.price || 0,
-            confidence: d.confidence,
-            pnl: (reasoning as { pnl?: number }).pnl ?? null,
-            pnlPercent: (reasoning as { pnl_percent?: number }).pnl_percent ?? null,
-            reasoning: d.summaryShort || undefined,
-            timestamp: d.timestamp,
-          });
-        } else if (d.decisionType !== 'skip') {
+        // NOTE: Toasts are now triggered by SSE trade_executed events (see handleSSEEvent)
+        // to avoid race condition where decision is seen with executed=false first
+        
+        if (d.decisionType !== 'skip' && !d.executed) {
           // Non-trade notifications (hold etc.) - no sound, only visual
           notifyDecision(d.decisionType, d.executed);
         }
@@ -367,8 +355,35 @@ export function AITraderPage() {
     return () => clearInterval(intervalId);
   }, [traderId, loadTraderData]);
   
-  // Handle SSE events - trigger refresh on important events
+  // Handle SSE events - trigger refresh on important events AND create toasts
   const handleSSEEvent = useCallback((event: AITraderEvent) => {
+    // Create toast directly from SSE trade_executed event (avoids polling race condition)
+    if (event.type === 'trade_executed' && event.data) {
+      const d = event.data as {
+        symbol?: string;
+        action?: string;
+        quantity?: number;
+        price?: number;
+        pnl?: string | number;
+        proceeds?: number;
+        cost?: number;
+      };
+      const action = d.action as 'buy' | 'sell' | 'short' | 'close';
+      if (['buy', 'sell', 'short', 'close'].includes(action)) {
+        addTradeToast({
+          action,
+          symbol: d.symbol || '???',
+          quantity: d.quantity || 0,
+          price: d.price || 0,
+          confidence: null,
+          pnl: d.pnl ? parseFloat(String(d.pnl)) : null,
+          pnlPercent: null,
+          reasoning: undefined,
+          timestamp: event.timestamp || new Date().toISOString(),
+        });
+      }
+    }
+    
     // On decision_made, trade_executed, or status_changed, refresh data immediately
     if (['decision_made', 'trade_executed', 'status_changed', 'position_closed'].includes(event.type)) {
       // Debounce: only refresh if last refresh was more than 2 seconds ago
@@ -376,7 +391,7 @@ export function AITraderPage() {
         loadTraderData(false);
       }
     }
-  }, [loadTraderData]);
+  }, [loadTraderData, addTradeToast]);
   
   // Subscribe to SSE events
   const { events: sseEvents, connected, mode, reconnect, clearEvents } = useAITraderStream({ 

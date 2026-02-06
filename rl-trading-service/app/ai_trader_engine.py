@@ -394,8 +394,26 @@ class AITraderEngine:
         positions = portfolio_state.get('positions') or {}
         position = positions.get(symbol) or {}
         position_quantity = position.get('quantity') or 0
-        has_long_position = position_quantity > 0
-        has_short_position = position_quantity < 0
+        position_side = position.get('side', '')
+        # Use 'side' field for detection because quantity is always positive in portfolio API
+        has_long_position = position_quantity > 0 and position_side != 'short'
+        has_short_position = position_quantity > 0 and position_side == 'short'
+        
+        # Enforce minimum holding time before allowing close/sell (except SL/TP which bypass engine)
+        if (has_long_position or has_short_position) and position.get('opened_at'):
+            try:
+                opened_at = datetime.fromisoformat(position['opened_at'].replace('Z', '+00:00'))
+                # Make opened_at offset-naive if comparing with naive datetime
+                if opened_at.tzinfo is not None:
+                    opened_at = opened_at.replace(tzinfo=None)
+                minutes_held = (datetime.now() - opened_at).total_seconds() / 60
+                # Minimum holding: 15 min for scalping, 30 min for day, 60 min for swing/position
+                min_hold = {'scalping': 15, 'day': 30, 'swing': 60, 'position': 120}
+                min_hold_minutes = min_hold.get(self.config.trading_horizon, 30)
+                if minutes_held < min_hold_minutes:
+                    return 'hold'  # Too early to close
+            except (ValueError, TypeError):
+                pass  # If parsing fails, proceed normally
         
         # If confidence below threshold, skip
         if confidence < threshold:

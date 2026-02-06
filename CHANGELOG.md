@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.1] - 2026-02-06
+
+### Fixed
+- **DIS Buy-Sell-Loop** - Position-Side-Bug im AI Trader Engine behoben: `has_short_position` war immer `false`, weil `quantity` im Portfolio-API immer positiv ist. Jetzt wird `side`-Feld korrekt ausgewertet
+- **Keine Trade-Toasts** - Race Condition behoben: Decision-Polling sah Decisions mit `executed=false`, trackte die ID, und beim nächsten Poll war sie schon bekannt. Toasts kommen nun direkt aus SSE `trade_executed` Events (sofortig, keine Race Condition)
+- **Sofortige Position-Schließung** - Mindest-Haltedauer eingeführt (15min Scalping, 30min Day, 60min Swing, 120min Position). SL/TP-Exits umgehen diese Prüfung
+- **Ungenutzter `playTradeSound` Import** entfernt aus AITraderPage
+
 ## [1.25.0] - 2026-02-06
 
 ### Added
