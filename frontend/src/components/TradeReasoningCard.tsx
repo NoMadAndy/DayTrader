@@ -71,13 +71,16 @@ export function TradeReasoningCard({ decision, expanded: controlledExpanded, onT
       >
         {/* Symbol & Decision */}
         <span className="text-base">{signalStyle.emoji}</span>
-        <button
+        <span
           onClick={(e) => { e.stopPropagation(); navigateToSymbol(decision.symbol); }}
-          className="font-bold text-sm text-blue-400 hover:text-blue-300 hover:underline transition-colors"
+          role="link"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); navigateToSymbol(decision.symbol); } }}
+          className="font-bold text-sm text-blue-400 hover:text-blue-300 hover:underline transition-colors cursor-pointer"
           title={`${decision.symbol} im Dashboard anzeigen`}
         >
           {decision.symbol}
-        </button>
+        </span>
         <span className={`px-1 py-0.5 rounded text-[10px] font-bold uppercase ${signalStyle.bg} ${signalStyle.text}`}>
           {decision.decisionType}
         </span>

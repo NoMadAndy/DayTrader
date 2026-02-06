@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.26.2] - 2026-02-06
+
+### Changed
+- **Dreispaltiges Layout auf Desktop** - Trades, Positionen und Entscheidungen nebeneinander statt gestapelt. Notifications + Activity in separate Reihe darunter
+- **Trades: maximal 3 sichtbar** - Ausgeführte Trades zeigen die ersten 3, Rest per Scroll erreichbar (`max-h-[280px]`)
+
+### Fixed
+- **Button-in-Button Fehler (TradeReasoningCard)** - Symbol-Link war `<button>` innerhalb `<button>` → Invalid HTML/Hydration-Error. Jetzt `<span role="link">` mit Keyboard-Support
+
 ## [1.26.1] - 2026-02-06
 
 ### Fixed

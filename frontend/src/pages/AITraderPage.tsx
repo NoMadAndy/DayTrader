@@ -753,9 +753,9 @@ export function AITraderPage() {
         {/* Self-Training Indicator */}
         {traderId && <SelfTrainingIndicator traderId={traderId} />}
         
-        {/* Desktop: Trades left, Positions right | Mobile: stacked */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          {/* Left: Executed Trades */}
+        {/* Desktop: 3 columns (Trades, Positions, Decisions) | Mobile: stacked */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          {/* Col 1: Executed Trades */}
           <div>
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-blue-500/50 border-l-4 border-l-blue-500">
               <div className="px-3 py-2 border-b border-slate-700/50 flex items-center justify-between">
@@ -764,7 +764,7 @@ export function AITraderPage() {
                   <span className="text-[10px] text-gray-500 ml-1 font-normal">geschlossen</span>
                 </h3>
               </div>
-              <div className="p-1.5 space-y-1.5 max-h-[calc(100vh-280px)] overflow-y-auto">
+              <div className="p-1.5 space-y-1.5 max-h-[280px] overflow-y-auto">
                 {executedTrades.length === 0 ? (
                   <div className="text-center text-gray-500 py-4">
                     <div className="text-lg mb-1">📊</div>
@@ -982,13 +982,13 @@ export function AITraderPage() {
             </div>
           </div>
           
-          {/* Right: Open Positions */}
+          {/* Col 2: Open Positions */}
           <div>
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
               <div className="px-3 py-2 border-b border-slate-700/50">
                 <h3 className="font-bold text-sm">📍 Positionen ({positions.length})</h3>
               </div>
-              <div className="p-2 max-h-[calc(100vh-280px)] overflow-y-auto">
+              <div className="p-2 max-h-[280px] overflow-y-auto">
                 {positions.length === 0 ? (
                   <div className="text-center text-gray-500 py-4">
                     <div className="text-lg mb-1">📭</div>
@@ -1066,16 +1066,13 @@ export function AITraderPage() {
               </div>
             </div>
           </div>
-        </div>
-        
-        {/* Bottom row: Decisions + Notifications + Activity */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mt-3">
-          {/* Recent Decisions */}
-          <div className="lg:col-span-2 bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
+          
+          {/* Col 3: Recent Decisions */}
+          <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
             <div className="px-3 py-2 border-b border-slate-700/50">
               <h3 className="font-bold text-sm">🧠 Entscheidungen</h3>
             </div>
-            <div className="p-2 space-y-1 max-h-[350px] overflow-y-auto">
+            <div className="p-2 space-y-1 max-h-[280px] overflow-y-auto">
               {decisions.length === 0 ? (
                 <div className="text-center text-gray-500 py-6">
                   <div className="text-xl mb-1">🤔</div>
@@ -1092,64 +1089,64 @@ export function AITraderPage() {
               )}
             </div>
           </div>
+        </div>
+        
+        {/* Bottom row: Notifications + Activity Feed */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+          {/* Notification Settings - compact */}
+          <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 px-3 py-2">
+            <div className="flex items-center justify-between flex-wrap gap-1">
+              <span className="text-xs font-medium text-gray-400">🔔</span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setNotificationSettings((s: { sound: boolean; vibration: boolean; flash: boolean }) => ({ ...s, flash: !s.flash }))}
+                  className={`px-1.5 py-0.5 text-[10px] rounded transition-colors ${notificationSettings.flash ? 'bg-yellow-500/30 text-yellow-400' : 'bg-slate-700/50 text-gray-500'}`}
+                >✨ Flash</button>
+                <button
+                  onClick={() => setNotificationSettings((s: { sound: boolean; vibration: boolean; flash: boolean }) => ({ ...s, sound: !s.sound }))}
+                  className={`px-1.5 py-0.5 text-[10px] rounded transition-colors ${notificationSettings.sound ? 'bg-green-500/30 text-green-400' : 'bg-slate-700/50 text-gray-500'}`}
+                >🔔 Ton</button>
+                <button
+                  onClick={() => setNotificationSettings((s: { sound: boolean; vibration: boolean; flash: boolean }) => ({ ...s, vibration: !s.vibration }))}
+                  className={`px-1.5 py-0.5 text-[10px] rounded transition-colors ${notificationSettings.vibration ? 'bg-purple-500/30 text-purple-400' : 'bg-slate-700/50 text-gray-500'}`}
+                >📳 Vibr.</button>
+              </div>
+            </div>
+            {wakeLock.isSupported && (
+              <div className="flex items-center justify-between mt-1 pt-1 border-t border-slate-700/50">
+                <span className="text-[10px] text-gray-500">📱 Display an</span>
+                <button onClick={() => wakeLock.toggle()}
+                  className={`px-2 py-0.5 text-[10px] rounded-full transition-colors ${
+                    wakeLock.isActive ? 'bg-cyan-500/30 text-cyan-400' : 'bg-slate-700/50 text-gray-500'
+                  }`}
+                >{wakeLock.isActive ? '☀️ AN' : '🌙 AUS'}</button>
+              </div>
+            )}
+          </div>
           
-          {/* Right: Notifications + Activity Feed */}
-          <div className="space-y-3">
-            {/* Notification Settings - compact */}
-            <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 px-3 py-2">
-              <div className="flex items-center justify-between flex-wrap gap-1">
-                <span className="text-xs font-medium text-gray-400">🔔</span>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setNotificationSettings((s: { sound: boolean; vibration: boolean; flash: boolean }) => ({ ...s, flash: !s.flash }))}
-                    className={`px-1.5 py-0.5 text-[10px] rounded transition-colors ${notificationSettings.flash ? 'bg-yellow-500/30 text-yellow-400' : 'bg-slate-700/50 text-gray-500'}`}
-                  >✨ Flash</button>
-                  <button
-                    onClick={() => setNotificationSettings((s: { sound: boolean; vibration: boolean; flash: boolean }) => ({ ...s, sound: !s.sound }))}
-                    className={`px-1.5 py-0.5 text-[10px] rounded transition-colors ${notificationSettings.sound ? 'bg-green-500/30 text-green-400' : 'bg-slate-700/50 text-gray-500'}`}
-                  >🔔 Ton</button>
-                  <button
-                    onClick={() => setNotificationSettings((s: { sound: boolean; vibration: boolean; flash: boolean }) => ({ ...s, vibration: !s.vibration }))}
-                    className={`px-1.5 py-0.5 text-[10px] rounded transition-colors ${notificationSettings.vibration ? 'bg-purple-500/30 text-purple-400' : 'bg-slate-700/50 text-gray-500'}`}
-                  >📳 Vibr.</button>
-                </div>
+          {/* Activity Feed */}
+          <div className="bg-slate-800/50 rounded-lg border border-slate-700/50">
+            <div onClick={() => setActivityPanelExpanded(!activityPanelExpanded)}
+              className="w-full px-3 py-2 flex items-center justify-between hover:bg-slate-700/30 transition-colors rounded-t-lg cursor-pointer">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-sm">🔴 Activity</span>
+                <span className="text-[10px] text-gray-500">({allEvents.length})</span>
               </div>
-              {wakeLock.isSupported && (
-                <div className="flex items-center justify-between mt-1 pt-1 border-t border-slate-700/50">
-                  <span className="text-[10px] text-gray-500">📱 Display an</span>
-                  <button onClick={() => wakeLock.toggle()}
-                    className={`px-2 py-0.5 text-[10px] rounded-full transition-colors ${
-                      wakeLock.isActive ? 'bg-cyan-500/30 text-cyan-400' : 'bg-slate-700/50 text-gray-500'
-                    }`}
-                  >{wakeLock.isActive ? '☀️ AN' : '🌙 AUS'}</button>
-                </div>
-              )}
+              <svg className={`w-4 h-4 text-gray-400 transition-transform ${activityPanelExpanded ? 'rotate-180' : ''}`}
+                fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
             </div>
-            
-            {/* Activity Feed */}
-            <div className="bg-slate-800/50 rounded-lg border border-slate-700/50">
-              <div onClick={() => setActivityPanelExpanded(!activityPanelExpanded)}
-                className="w-full px-3 py-2 flex items-center justify-between hover:bg-slate-700/30 transition-colors rounded-t-lg cursor-pointer">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm">🔴 Activity</span>
-                  <span className="text-[10px] text-gray-500">({allEvents.length})</span>
-                </div>
-                <svg className={`w-4 h-4 text-gray-400 transition-transform ${activityPanelExpanded ? 'rotate-180' : ''}`}
-                  fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
+            {activityPanelExpanded && (
+              <div className="border-t border-slate-700/50">
+                <AITraderActivityFeed 
+                  events={allEvents} maxHeight="300px" autoScroll={true}
+                  enableFlash={notificationSettings.flash}
+                  enableSound={notificationSettings.sound}
+                  enableVibration={notificationSettings.vibration}
+                />
               </div>
-              {activityPanelExpanded && (
-                <div className="border-t border-slate-700/50">
-                  <AITraderActivityFeed 
-                    events={allEvents} maxHeight="300px" autoScroll={true}
-                    enableFlash={notificationSettings.flash}
-                    enableSound={notificationSettings.sound}
-                    enableVibration={notificationSettings.vibration}
-                  />
-                </div>
-              )}
-            </div>
+            )}
           </div>
         </div>
         </>
