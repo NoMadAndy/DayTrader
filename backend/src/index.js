@@ -4306,7 +4306,7 @@ app.patch('/api/ai-traders/:id/decisions/mark-executed', async (req, res) => {
          WHERE ai_trader_id = $1 
            AND symbol = $2 
            AND decision_type = $3
-         ORDER BY created_at DESC 
+         ORDER BY timestamp DESC 
          LIMIT 1
        )
        RETURNING id`,
@@ -4859,30 +4859,78 @@ app.get('/api/ai-traders/:id/trades', async (req, res) => {
       const entryValue = entryPrice * qty;
       
       // Build human-readable explanation from reasoning
-      const buildExplanation = (reasoning, summary, scores) => {
+      const buildExplanation = (reasoning, summary, decisionType) => {
         if (!reasoning && !summary) return null;
         const parts = [];
-        if (summary) parts.push(summary);
+        
         if (reasoning) {
           const r = typeof reasoning === 'string' ? JSON.parse(reasoning) : reasoning;
-          // Signal details
+          
+          // Trigger-based close reasons (most understandable)
+          if (r.trigger === 'stop_loss') {
+            parts.push('🛑 Stop-Loss wurde ausgelöst – Verlustbegrenzung aktiv');
+          } else if (r.trigger === 'take_profit') {
+            parts.push('🎯 Take-Profit erreicht – Gewinn gesichert');
+          } else if (r.trigger === 'max_holding') {
+            parts.push('⏰ Maximale Haltezeit überschritten');
+          }
+          
+          // Signal-based reasoning in plain language
           if (r.signals) {
             const sigs = r.signals;
-            const sigParts = [];
-            if (sigs.ml?.score != null) sigParts.push(`ML: ${(sigs.ml.score * 100).toFixed(0)}%`);
-            if (sigs.rl?.score != null) sigParts.push(`RL: ${(sigs.rl.score * 100).toFixed(0)}%`);
-            if (sigs.sentiment?.score != null) sigParts.push(`Sentiment: ${(sigs.sentiment.score * 100).toFixed(0)}%`);
-            if (sigs.technical?.score != null) sigParts.push(`Technik: ${(sigs.technical.score * 100).toFixed(0)}%`);
-            if (sigParts.length) parts.push(`Signale: ${sigParts.join(', ')}`);
+            const bullish = [];
+            const bearish = [];
+            
+            if (sigs.ml?.score != null) {
+              const pct = Math.abs(sigs.ml.score * 100).toFixed(0);
+              if (sigs.ml.score > 0.2) bullish.push(`KI-Prognose positiv (${pct}%)`);
+              else if (sigs.ml.score < -0.2) bearish.push(`KI-Prognose negativ (${pct}%)`);
+            }
+            if (sigs.rl?.score != null) {
+              const pct = Math.abs(sigs.rl.score * 100).toFixed(0);
+              if (sigs.rl.score > 0.2) bullish.push(`Handelsagent empfiehlt Kauf (${pct}%)`);
+              else if (sigs.rl.score < -0.2) bearish.push(`Handelsagent empfiehlt Verkauf (${pct}%)`);
+            }
+            if (sigs.sentiment?.score != null) {
+              const pct = Math.abs(sigs.sentiment.score * 100).toFixed(0);
+              if (sigs.sentiment.score > 0.15) bullish.push(`Marktstimmung positiv (${pct}%)`);
+              else if (sigs.sentiment.score < -0.15) bearish.push(`Marktstimmung negativ (${pct}%)`);
+            }
+            if (sigs.technical?.score != null) {
+              const pct = Math.abs(sigs.technical.score * 100).toFixed(0);
+              if (sigs.technical.score > 0.2) bullish.push(`Technische Indikatoren bullisch (${pct}%)`);
+              else if (sigs.technical.score < -0.2) bearish.push(`Technische Indikatoren bärisch (${pct}%)`);
+            }
+            
+            if (decisionType === 'buy' || decisionType === 'short') {
+              // For opening: show why we entered
+              if (decisionType === 'buy' && bullish.length > 0) {
+                parts.push(...bullish);
+              } else if (decisionType === 'short' && bearish.length > 0) {
+                parts.push(...bearish);
+              }
+            } else {
+              // For closing: show what changed
+              if (bearish.length > 0) parts.push(...bearish);
+              if (bullish.length > 0) parts.push(...bullish);
+            }
           }
-          // Risk info
+          
+          // Agreement info
+          if (r.agreement === 'strong') parts.push('Alle Signale stimmen überein');
+          else if (r.agreement === 'moderate') parts.push('Mehrheit der Signale stimmt überein');
+          
+          // Risk blockers
           if (r.risk_checks && !r.risk_checks.passed) {
             parts.push('⚠️ Risiko-Checks nicht bestanden');
           }
-          // Trigger for SL/TP
-          if (r.trigger === 'stop_loss') parts.push('🛑 Stop-Loss ausgelöst');
-          if (r.trigger === 'take_profit') parts.push('🎯 Take-Profit erreicht');
         }
+        
+        // Fallback to summary if no detailed explanation built
+        if (parts.length === 0 && summary) {
+          parts.push(summary);
+        }
+        
         return parts.length > 0 ? parts : null;
       };
 
@@ -4913,7 +4961,7 @@ app.get('/api/ai-traders/:id/trades', async (req, res) => {
         sentimentScore: row.open_sentiment_score ? parseFloat(row.open_sentiment_score) : null,
         technicalScore: row.open_technical_score ? parseFloat(row.open_technical_score) : null,
         signalAgreement: row.open_signal_agreement || null,
-        explanation: buildExplanation(openReasoning, row.open_summary, null),
+        explanation: buildExplanation(openReasoning, row.open_summary, row.side === 'short' ? 'short' : 'buy'),
       });
       
       // CLOSE/SELL trade (only for closed positions)
@@ -4948,7 +4996,7 @@ app.get('/api/ai-traders/:id/trades', async (req, res) => {
           // Decision data
           summary: row.close_summary || null,
           confidence: row.close_confidence ? parseFloat(row.close_confidence) : null,
-          explanation: buildExplanation(closeReasoning, row.close_summary, null),
+          explanation: buildExplanation(closeReasoning, row.close_summary, 'close'),
         });
       }
     }

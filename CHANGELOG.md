@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.28.1] - 2026-02-06
 
+### Changed
+- **Trade-Gründe verständlich anzeigen** - Aufklappbare Trade-Liste zeigt jetzt als Erstes den Grund für Eröffnung/Schließung in verständlicher Sprache (z.B. "KI-Prognose negativ", "Handelsagent empfiehlt Kauf", "Stop-Loss ausgelöst")
+- **Schließgründe übersetzt** - Rohe close_reason-Werte (TAKE_PROFIT, stop_loss, etc.) werden zu verständlichen deutschen Texten mit Emoji
+- **Reason-Reihenfolge optimiert** - Erklärung steht beim Aufklappen ganz oben, nicht mehr versteckt unter den Zahlen
+
 ### Fixed
+- **KRITISCH: Decisions wurden nie als ausgeführt markiert** - SQL-Spalte `created_at` existiert nicht (heißt `timestamp`). `mark-executed` Endpoint warf immer Fehler → LATERAL JOIN fand nie passende Decisions → alle Trade-Erklärungen waren `null`
 - **Short-Selling komplett repariert** - 5 Bugs behoben, die Short-Positionen verhinderten:
   - `quantity`/`price` waren `None` für Short-Entscheidungen (nur `buy`/`sell` war erlaubt, `short` fehlte)
   - `_can_open_short()` prüfte `quantity < 0` statt `side == 'short'` (Quantity ist immer positiv)

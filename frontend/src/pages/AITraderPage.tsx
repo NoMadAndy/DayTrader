@@ -798,8 +798,49 @@ export function AITraderPage() {
                       {/* Expanded details */}
                       {isExpanded && (
                         <div className="px-2 pb-2 pt-0 space-y-1.5 border-t border-slate-700/30">
+                          {/* AI Decision Explanation - FIRST so reason is immediately visible */}
+                          {(trade.explanation || trade.summary) ? (
+                            <div className="bg-blue-900/20 border border-blue-500/20 rounded px-2 py-1.5 space-y-1 mt-1.5">
+                              <div className="text-[10px] text-blue-400/80 font-medium">🧠 {isBuy ? 'Warum geöffnet?' : 'Warum geschlossen?'}</div>
+                              {trade.explanation ? (
+                                <ul className="space-y-0.5">
+                                  {trade.explanation.map((line, i) => (
+                                    <li key={i} className="text-xs text-gray-300 flex items-start gap-1">
+                                      <span className="text-blue-400/60 mt-0.5">•</span>
+                                      <span>{line}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : trade.summary ? (
+                                <div className="text-xs text-gray-300">{trade.summary}</div>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div className="bg-slate-800/30 border border-slate-700/30 rounded px-2 py-1.5 mt-1.5">
+                              <div className="text-[10px] text-gray-500 italic">🧠 {isBuy ? 'Kein Entscheidungsgrund verfügbar' : 'Kein Schließgrund verfügbar'}</div>
+                            </div>
+                          )}
+                          
+                          {/* Close reason for closed trades */}
+                          {!isBuy && trade.closeReason && (
+                            <div className="bg-slate-800/50 rounded px-2 py-1">
+                              <div className="text-[10px] text-gray-500">Auslöser</div>
+                              <div className="text-xs text-gray-300">{(() => {
+                                const cr = trade.closeReason?.toLowerCase() || '';
+                                if (cr.includes('stop_loss') || cr.startsWith('stop_loss')) return '🛑 Stop-Loss ausgelöst – Verlustbegrenzung';
+                                if (cr.includes('take_profit') || cr.startsWith('take_profit')) return '🎯 Take-Profit erreicht – Gewinn gesichert';
+                                if (cr.includes('max_holding') || cr.includes('expired')) return '⏰ Maximale Haltezeit überschritten';
+                                if (cr.includes('signal') || cr.includes('bearish') || cr.includes('reversal')) return '📉 Signalumkehr – Trend geändert';
+                                if (cr.includes('user') || cr.includes('manual')) return '👤 Manuell geschlossen';
+                                if (cr.includes('capital') || cr.includes('reset')) return '💰 Portfolio-Anpassung';
+                                if (cr.includes('risk')) return '⚠️ Risiko-Management';
+                                return trade.closeReason;
+                              })()}</div>
+                            </div>
+                          )}
+
                           {/* Price & Quantity */}
-                          <div className="grid grid-cols-2 gap-1.5 mt-1.5">
+                          <div className="grid grid-cols-2 gap-1.5">
                             <div className="bg-slate-800/50 rounded px-2 py-1">
                               <div className="text-[10px] text-gray-500">Preis</div>
                               <div className="text-xs font-mono">${trade.price.toFixed(2)}</div>
@@ -864,32 +905,6 @@ export function AITraderPage() {
                             </div>
                           )}
                           
-                          {/* Close reason */}
-                          {!isBuy && trade.closeReason && (
-                            <div className="bg-slate-800/50 rounded px-2 py-1">
-                              <div className="text-[10px] text-gray-500">Grund</div>
-                              <div className="text-xs text-gray-300">{trade.closeReason}</div>
-                            </div>
-                          )}
-                          
-                          {/* AI Decision Explanation */}
-                          {(trade.explanation || trade.summary) && (
-                            <div className="bg-blue-900/20 border border-blue-500/20 rounded px-2 py-1.5 space-y-1">
-                              <div className="text-[10px] text-blue-400/80 font-medium">🧠 Warum diese Entscheidung?</div>
-                              {trade.explanation ? (
-                                <ul className="space-y-0.5">
-                                  {trade.explanation.map((line, i) => (
-                                    <li key={i} className="text-xs text-gray-300 flex items-start gap-1">
-                                      <span className="text-blue-400/60 mt-0.5">•</span>
-                                      <span>{line}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : trade.summary ? (
-                                <div className="text-xs text-gray-300">{trade.summary}</div>
-                              ) : null}
-                            </div>
-                          )}
                           
                           {/* Signal Scores */}
                           {(trade.mlScore != null || trade.rlScore != null || trade.sentimentScore != null || trade.technicalScore != null) && (
