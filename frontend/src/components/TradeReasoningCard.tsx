@@ -85,46 +85,16 @@ export function TradeReasoningCard({ decision, expanded: controlledExpanded, onT
           {decision.decisionType}
         </span>
         
-        {/* Signal Markers - Hidden on mobile */}
-        {signals && (
-          <div className="hidden sm:flex items-center gap-1 text-[10px] font-mono">
-            {signals.ml !== undefined && (
-              <span className={`px-1 rounded ${getSignalColor(signals.ml.score)}`} title={`ML: ${formatScore(signals.ml.score)}`}>
-                ML{formatScore(signals.ml.score)}
-              </span>
-            )}
-            {signals.rl !== undefined && (
-              <span className={`px-1 rounded ${getSignalColor(signals.rl.score)}`} title={`RL: ${formatScore(signals.rl.score)}`}>
-                RL{formatScore(signals.rl.score)}
-              </span>
-            )}
-            {signals.sentiment !== undefined && (
-              <span className={`px-1 rounded ${getSignalColor(signals.sentiment.score)}`} title={`Sentiment: ${formatScore(signals.sentiment.score)}`}>
-                S{formatScore(signals.sentiment.score)}
-              </span>
-            )}
-            {signals.technical !== undefined && (
-              <span className={`px-1 rounded ${getSignalColor(signals.technical.score)}`} title={`Technical: ${formatScore(signals.technical.score)}`}>
-                T{formatScore(signals.technical.score)}
-              </span>
-            )}
-          </div>
-        )}
-        
-        {/* Weighted Score & Confidence */}
-        <span className="hidden sm:inline text-gray-500">→</span>
-        <span className={`font-bold ${(decision.weightedScore || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+        {/* Weighted Score */}
+        <span className={`font-bold text-[11px] ${(decision.weightedScore || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
           {(decision.weightedScore || 0) >= 0 ? '+' : ''}{(decision.weightedScore || 0).toFixed(2)}
         </span>
-        <span className="hidden sm:inline text-gray-500 text-[10px]">{((decision.confidence || 0) * 100).toFixed(0)}%</span>
         
-        {/* Important/Executed badge */}
+        {/* Executed badge - compact */}
         {isImportantDecision ? (
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/30 text-blue-300 border border-blue-500/50">
-            ⚡ AUSGEFÜHRT
-          </span>
+          <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-blue-500/30 text-blue-300">⚡</span>
         ) : decision.executed && (
-          <span className="hidden sm:inline px-1 py-0.5 rounded text-[10px] font-medium bg-blue-500/20 text-blue-400">✓</span>
+          <span className="text-[10px] text-blue-400">✓</span>
         )}
         
         {/* Timestamp - pushed to right */}

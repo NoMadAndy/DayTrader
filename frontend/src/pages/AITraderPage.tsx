@@ -764,7 +764,7 @@ export function AITraderPage() {
                   <span className="text-[10px] text-gray-500 ml-1 font-normal">geschlossen</span>
                 </h3>
               </div>
-              <div className="p-1.5 space-y-1.5 max-h-[500px] overflow-y-auto">
+              <div className="p-1.5 space-y-1.5 max-h-[200px] lg:max-h-[500px] overflow-y-auto">
                 {executedTrades.length === 0 ? (
                   <div className="text-center text-gray-500 py-4">
                     <div className="text-lg mb-1">📊</div>
@@ -988,7 +988,7 @@ export function AITraderPage() {
               <div className="px-3 py-2 border-b border-slate-700/50">
                 <h3 className="font-bold text-sm">📍 Positionen ({positions.length})</h3>
               </div>
-              <div className="p-2 max-h-[500px] overflow-y-auto">
+              <div className="p-2 max-h-[200px] lg:max-h-[500px] overflow-y-auto">
                 {positions.length === 0 ? (
                   <div className="text-center text-gray-500 py-4">
                     <div className="text-lg mb-1">📭</div>
@@ -1072,7 +1072,7 @@ export function AITraderPage() {
             <div className="px-3 py-2 border-b border-slate-700/50">
               <h3 className="font-bold text-sm">🧠 Entscheidungen</h3>
             </div>
-            <div className="p-2 space-y-1 max-h-[500px] overflow-y-auto">
+            <div className="p-2 space-y-1 max-h-[200px] lg:max-h-[500px] overflow-y-auto">
               {decisions.length === 0 ? (
                 <div className="text-center text-gray-500 py-6">
                   <div className="text-xl mb-1">🤔</div>
