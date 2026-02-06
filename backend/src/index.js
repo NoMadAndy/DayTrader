@@ -4038,7 +4038,8 @@ app.post('/api/ai-traders/:id/start', authMiddleware, async (req, res) => {
       sentiment_weight: p.signals?.weights?.sentiment || 0.25,
       technical_weight: p.signals?.weights?.technical || 0.25,
       // Schedule settings
-      schedule_enabled: p.schedule?.enabled ?? true,
+      // schedule_enabled = enabled AND tradingHoursOnly (both must be true for schedule to apply)
+      schedule_enabled: (p.schedule?.enabled ?? true) && (p.schedule?.tradingHoursOnly ?? true),
       check_interval_seconds: p.schedule?.checkIntervalSeconds || 60,
       trading_start: p.schedule?.tradingStart || '09:00',
       trading_end: p.schedule?.tradingEnd || '17:30',

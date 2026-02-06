@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.2] - 2026-02-06
+
+### Fixed
+- **Training blockierte Handelsloop (KRITISCH)** - `_maybe_self_train()` lief inline im Hauptloop und blockierte 10-30+ Min. Marktöffnung wurde verpasst. Training läuft jetzt als `asyncio.create_task()` im Hintergrund und wird bei Marktstart automatisch abgebrochen
+- **`tradingHoursOnly` Inkonsistenz** - Backend sendete nur `enabled` als `schedule_enabled` ans RL-Service; `tradingHoursOnly=false` wurde ignoriert. Jetzt wird `schedule_enabled = enabled AND tradingHoursOnly` konsistent an beiden Stellen berechnet
+- **`training_tasks` nie befüllt** - Guard-Check "bereits trainierend" war toter Code, weil `self.training_tasks` nie beschrieben wurde. Jetzt wird der Task korrekt gespeichert und geprüft
+
+### Added
+- **Mode-Wechsel Logging** - Emojis (📈 Markt offen / 📉 Markt geschlossen) und State-Tracking (`was_trading_time`) für zuverlässige Erkennung von Übergängen
+- **`_notify_mode_change()`** - Backend wird per PUT über Modus-Wechsel informiert (Status-Message Update)
+- **Training-Abbruch bei Marktstart** - Laufendes Self-Training wird gecancelt wenn Handelszeit beginnt; `stop_trader()` bricht ebenfalls Training ab
+
 ## [1.30.1] - 2026-02-06
 
 ### Fixed

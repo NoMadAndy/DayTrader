@@ -22,8 +22,10 @@ import { query, getClient } from './db.js';
 export function isWithinTradingTime(personality) {
   const scheduleConfig = personality?.schedule || DEFAULT_PERSONALITY.schedule;
   
-  // If scheduling is disabled, always return true
-  if (!scheduleConfig.enabled || !scheduleConfig.tradingHoursOnly) {
+  // Schedule applies only when both enabled AND tradingHoursOnly are true
+  // This matches the RL service logic: schedule_enabled = enabled AND tradingHoursOnly
+  const scheduleActive = (scheduleConfig.enabled ?? true) && (scheduleConfig.tradingHoursOnly ?? true);
+  if (!scheduleActive) {
     return true;
   }
   

@@ -87,6 +87,15 @@ class AITraderScheduler:
         except asyncio.CancelledError:
             pass
         
+        # Cancel any running training task
+        if trader_id in self.training_tasks and not self.training_tasks[trader_id].done():
+            self.training_tasks[trader_id].cancel()
+            try:
+                await self.training_tasks[trader_id]
+            except asyncio.CancelledError:
+                pass
+            del self.training_tasks[trader_id]
+        
         # Cleanup
         del self.running_tasks[trader_id]
         
@@ -111,17 +120,44 @@ class AITraderScheduler:
             config: AITraderConfig instance
         """
         print(f"Trader {trader_id} loop started")
+        was_trading_time = False
         
         try:
             while not self._shutdown:
-                # Check if it's trading time
-                if not self._is_trading_time(config):
-                    # Not trading time - opportunity for self-training
+                is_trading = self._is_trading_time(config)
+                
+                # Log state transitions
+                if is_trading and not was_trading_time:
+                    print(f"📈 Trader {trader_id}: Markt geöffnet → Wechsel zu TRADING-Modus")
+                    # Cancel any running self-training immediately
+                    if trader_id in self.training_tasks and not self.training_tasks[trader_id].done():
+                        print(f"⏹️ Trader {trader_id}: Breche laufendes Self-Training ab (Markt offen)")
+                        self.training_tasks[trader_id].cancel()
+                        try:
+                            await self.training_tasks[trader_id]
+                        except asyncio.CancelledError:
+                            pass
+                        self.self_training_status[trader_id] = {
+                            'is_training': False,
+                            'status': 'cancelled',
+                            'message': 'Abgebrochen: Markt hat geöffnet',
+                        }
+                    # Notify backend of mode change
+                    await self._notify_mode_change(trader_id, 'trading', 'Handelszeit begonnen')
+                elif not is_trading and was_trading_time:
+                    print(f"📉 Trader {trader_id}: Markt geschlossen → Wechsel zu IDLE/TRAINING-Modus")
+                    await self._notify_mode_change(trader_id, 'idle', 'Wartet auf Handelszeit')
+                
+                was_trading_time = is_trading
+                
+                if not is_trading:
+                    # Not trading time - opportunity for self-training (non-blocking)
                     if config.self_training_enabled:
-                        await self._maybe_self_train(trader_id, config)
+                        self._start_background_training(trader_id, config)
                     await asyncio.sleep(60)  # Check again in 1 minute
                     continue
                 
+                # === TRADING MODE ===
                 # Get portfolio state
                 portfolio_state = await self._fetch_portfolio_state(trader_id)
                 
@@ -223,9 +259,74 @@ class AITraderScheduler:
             print(f"Error checking trading time: {e}")
             return False
     
+    async def _notify_mode_change(self, trader_id: int, mode: str, message: str):
+        """
+        Notify backend about trading/idle mode changes via status_message update.
+        This ensures the frontend displays the correct state.
+        
+        Args:
+            trader_id: Trader ID
+            mode: 'trading' or 'idle'
+            message: Human-readable status message
+        """
+        try:
+            status_msg = message
+            if mode == 'idle':
+                # Check if training is active
+                training_status = self.self_training_status.get(trader_id, {})
+                if training_status.get('is_training'):
+                    status_msg = 'Self-Training aktiv (außerhalb Handelszeit)'
+            
+            await self.http_client.put(
+                f"{self.backend_url}/api/ai-traders/{trader_id}",
+                json={'status_message': status_msg}
+            )
+        except Exception as e:
+            print(f"⚠️ Failed to notify mode change for trader {trader_id}: {e}")
+    
+    def _start_background_training(self, trader_id: int, config: AITraderConfig):
+        """
+        Start self-training as a non-blocking background task.
+        The main trading loop continues checking market status every 60s.
+        Training is cancelled automatically when market opens.
+        
+        Args:
+            trader_id: Trader ID
+            config: AITraderConfig instance
+        """
+        # Check if already training
+        if trader_id in self.training_tasks and not self.training_tasks[trader_id].done():
+            return  # Already training in background
+        
+        # Check if enough time has passed since last training
+        now = datetime.now()
+        last_train = self.last_training_time.get(trader_id)
+        if last_train:
+            minutes_since_train = (now - last_train).total_seconds() / 60
+            if minutes_since_train < config.self_training_interval_minutes:
+                return  # Not time yet
+        
+        # Launch training as background task
+        task = asyncio.create_task(
+            self._maybe_self_train(trader_id, config)
+        )
+        self.training_tasks[trader_id] = task
+        
+        # Add done callback for cleanup
+        def _on_training_done(t):
+            try:
+                exc = t.exception()
+                if exc and not isinstance(exc, asyncio.CancelledError):
+                    print(f"⚠️ Trader {trader_id} training task error: {exc}")
+            except asyncio.CancelledError:
+                print(f"⏹️ Trader {trader_id} training task was cancelled")
+        
+        task.add_done_callback(_on_training_done)
+
     async def _maybe_self_train(self, trader_id: int, config: AITraderConfig):
         """
         Perform self-training during idle periods.
+        This runs as a background task and can be cancelled when market opens.
         
         Args:
             trader_id: Trader ID
@@ -239,10 +340,6 @@ class AITraderScheduler:
             minutes_since_train = (now - last_train).total_seconds() / 60
             if minutes_since_train < config.self_training_interval_minutes:
                 return  # Not time yet
-        
-        # Check if already training
-        if trader_id in self.training_tasks and not self.training_tasks[trader_id].done():
-            return  # Already training
         
         # Start self-training
         print(f"🎓 Trader {trader_id} starting self-training (idle period)...")
@@ -497,6 +594,15 @@ class AITraderScheduler:
                     'message': 'Training returned unexpected result',
                     'symbols': selected_symbols,
                 }
+                
+        except asyncio.CancelledError:
+            print(f"   ⏹️ Self-training for trader {trader_id} cancelled (market opened)")
+            self.self_training_status[trader_id] = {
+                'is_training': False,
+                'status': 'cancelled',
+                'message': 'Training abgebrochen: Markt hat geöffnet',
+            }
+            raise  # Re-raise so the task shows as cancelled
                 
         except Exception as e:
             print(f"   ❌ Error during self-training for trader {trader_id}: {e}")
