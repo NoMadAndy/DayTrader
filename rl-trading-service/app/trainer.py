@@ -82,6 +82,7 @@ class TrainingProgressCallback(BaseCallback):
         self.episode_rewards = []
         self.episode_lengths = []
         self.last_log_timestep = 0
+        self.start_timesteps = 0  # Will be set on training start to handle continue_training
         self.log_interval = max(1000, total_timesteps // 100)  # Log every 1% or 1000 steps
         
     def _log(self, message: str, level: str = "info"):
@@ -90,8 +91,12 @@ class TrainingProgressCallback(BaseCallback):
             self.log_callback(message, level)
         
     def _on_training_start(self) -> None:
+        self.start_timesteps = self.model.num_timesteps  # Capture starting point for continue_training
+        self.last_log_timestep = self.start_timesteps
         self._log(f"🚀 Training started for agent '{self.agent_name}'")
         self._log(f"   Total timesteps: {self.total_timesteps:,}")
+        if self.start_timesteps > 0:
+            self._log(f"   Continuing from timestep: {self.start_timesteps:,}")
         self._log(f"   Device: {self.model.device}")
         
     def _on_step(self) -> bool:
@@ -119,15 +124,16 @@ class TrainingProgressCallback(BaseCallback):
                 if old_best is not None:
                     self._log(f"🏆 New best reward: {self.best_reward:.2f} (was {old_best:.2f})", "success")
         
-        # Calculate progress
-        progress = self.num_timesteps / self.total_timesteps
+        # Calculate session-relative progress (handles continue_training correctly)
+        session_timesteps = self.num_timesteps - self.start_timesteps
+        progress = min(session_timesteps / self.total_timesteps, 1.0)
         
         # Log progress at intervals
         if self.num_timesteps - self.last_log_timestep >= self.log_interval:
             self.last_log_timestep = self.num_timesteps
             pct = progress * 100
             mean_rew = np.mean(self.episode_rewards[-100:]) if self.episode_rewards else 0
-            self._log(f"⏳ Progress: {pct:.1f}% ({self.num_timesteps:,}/{self.total_timesteps:,} steps) | Mean reward: {mean_rew:.2f}")
+            self._log(f"⏳ Progress: {pct:.1f}% ({session_timesteps:,}/{self.total_timesteps:,} steps) | Mean reward: {mean_rew:.2f}")
         
         if self.progress_callback:
             # Calculate mean reward and ensure it's finite
@@ -140,7 +146,7 @@ class TrainingProgressCallback(BaseCallback):
             self.progress_callback({
                 "agent_name": self.agent_name,
                 "progress": progress,
-                "timesteps": self.num_timesteps,
+                "timesteps": session_timesteps,
                 "total_timesteps": self.total_timesteps,
                 "episodes": len(self.episode_rewards),
                 "mean_reward": mean_reward,

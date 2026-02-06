@@ -383,6 +383,7 @@ class AITraderScheduler:
                 display_progress = 20 + (progress_pct * 75)
                 self.self_training_status[trader_id]['progress'] = min(display_progress, 95)
                 self.self_training_status[trader_id]['timesteps'] = timesteps
+                self.self_training_status[trader_id]['total_timesteps'] = total
                 self.self_training_status[trader_id]['current_reward'] = mean_reward
                 self.self_training_status[trader_id]['message'] = f'Training... {timesteps:,}/{total:,} steps'
             
