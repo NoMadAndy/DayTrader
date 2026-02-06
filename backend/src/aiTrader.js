@@ -886,17 +886,17 @@ function determineDecisionCorrectness(decisionType, pnl, decision) {
  * @param {number} initialCapital - Starting capital
  * @returns {Promise<object>} Created portfolio
  */
-export async function createAITraderPortfolio(aiTraderId, initialCapital = 100000) {
+export async function createAITraderPortfolio(aiTraderId, initialCapital = 100000, brokerProfile = 'flatex') {
   const client = await getClient();
   try {
     await client.query('BEGIN');
 
     // Create portfolio (without user_id since it's an AI trader)
     const portfolioResult = await client.query(
-      `INSERT INTO portfolios (name, initial_capital, cash_balance, ai_trader_id)
-       VALUES ($1, $2, $2, $3)
+      `INSERT INTO portfolios (name, initial_capital, cash_balance, ai_trader_id, broker_profile)
+       VALUES ($1, $2, $2, $3, $4)
        RETURNING *`,
-      [`AI Trader Portfolio`, initialCapital, aiTraderId]
+      [`AI Trader Portfolio`, initialCapital, aiTraderId, brokerProfile]
     );
     const portfolio = portfolioResult.rows[0];
 

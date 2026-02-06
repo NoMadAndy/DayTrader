@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.1] - 2026-02-06
+
+### Fixed
+- **broker_profile auf DB-Spalte umgestellt** - Portfolio API und Execute Endpoint lesen Broker aus DB-Spalte statt Personality JSON (Source of Truth)
+- **createAITraderPortfolio setzt broker_profile** - Neue Portfolio-Erstellung übernimmt brokerProfile aus Personality in die DB-Spalte
+- **PUT brokerProfile synct Personality** - Broker-Änderung via PUT aktualisiert sowohl DB-Spalte als auch personality.capital.brokerProfile
+- **DB Migration benutzt korrekte query() Funktion** - `db.query()` → `query()` für open_fee Spalten-Migration
+- **AI-Trader Equity Curve Fallback** - Endpoint unterstützt AI-Trader-Portfolios mit user_id=NULL
+
 ## [1.30.0] - 2026-02-06
 
 ### Added

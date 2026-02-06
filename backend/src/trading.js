@@ -416,7 +416,7 @@ export async function initializeTradingSchema() {
     
     // Migrations for existing databases
     try {
-      await db.query(`
+      await query(`
         DO $$ BEGIN
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'positions' AND column_name = 'open_fee') THEN
             ALTER TABLE positions ADD COLUMN open_fee DECIMAL(10,4) DEFAULT 0;
@@ -589,14 +589,23 @@ export async function getUserPortfolios(userId) {
 }
 
 /**
- * Get portfolio by ID (with user validation)
+ * Get portfolio by ID (with optional user validation)
+ * If userId is null, skips ownership check (for AI trader portfolios)
  */
 export async function getPortfolio(portfolioId, userId) {
   try {
-    const result = await query(
-      `SELECT * FROM portfolios WHERE id = $1 AND user_id = $2`,
-      [portfolioId, userId]
-    );
+    let result;
+    if (userId != null) {
+      result = await query(
+        `SELECT * FROM portfolios WHERE id = $1 AND user_id = $2`,
+        [portfolioId, userId]
+      );
+    } else {
+      result = await query(
+        `SELECT * FROM portfolios WHERE id = $1`,
+        [portfolioId]
+      );
+    }
     
     if (result.rows.length === 0) {
       return null;
@@ -611,18 +620,32 @@ export async function getPortfolio(portfolioId, userId) {
 
 /**
  * Update portfolio settings
+ * If userId is null, skips ownership check (for AI trader portfolios)
  */
 export async function updatePortfolioSettings(portfolioId, userId, settings) {
   try {
-    const result = await query(
-      `UPDATE portfolios 
-       SET settings = settings || $3::jsonb, 
-           broker_profile = COALESCE($4, broker_profile),
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1 AND user_id = $2
-       RETURNING *`,
-      [portfolioId, userId, JSON.stringify(settings), settings.brokerProfile]
-    );
+    let result;
+    if (userId != null) {
+      result = await query(
+        `UPDATE portfolios 
+         SET settings = settings || $3::jsonb, 
+             broker_profile = COALESCE($4, broker_profile),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND user_id = $2
+         RETURNING *`,
+        [portfolioId, userId, JSON.stringify(settings), settings.brokerProfile]
+      );
+    } else {
+      result = await query(
+        `UPDATE portfolios 
+         SET settings = settings || $2::jsonb, 
+             broker_profile = COALESCE($3, broker_profile),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+         RETURNING *`,
+        [portfolioId, JSON.stringify(settings), settings.brokerProfile]
+      );
+    }
     
     return result.rows.length > 0 ? formatPortfolio(result.rows[0]) : null;
   } catch (e) {

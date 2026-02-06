@@ -3329,7 +3329,17 @@ app.post('/api/trading/check-triggers', authMiddleware, express.json(), async (r
 app.get('/api/trading/portfolio/:id/equity-curve', authMiddleware, async (req, res) => {
   try {
     const days = parseInt(req.query.days) || 30;
-    const data = await trading.getEquityCurve(parseInt(req.params.id), req.user.id, days);
+    const portfolioId = parseInt(req.params.id);
+    
+    // Try with user's ID first, then without (for AI trader portfolios)
+    let data;
+    try {
+      data = await trading.getEquityCurve(portfolioId, req.user.id, days);
+    } catch (e) {
+      // Fallback: AI trader portfolios have user_id=NULL
+      data = await trading.getEquityCurve(portfolioId, null, days);
+    }
+    
     res.json(data);
   } catch (e) {
     res.status(500).json({ error: 'Failed to get equity curve' });
@@ -3903,8 +3913,9 @@ app.post('/api/ai-traders', authMiddleware, async (req, res) => {
     );
     
     // Create portfolio for the AI trader
+    const brokerProfileCreate = personality?.capital?.brokerProfile || 'flatex';
     if (initialCapital) {
-      await aiTrader.createAITraderPortfolio(trader.id, initialCapital);
+      await aiTrader.createAITraderPortfolio(trader.id, initialCapital, brokerProfileCreate);
     }
     
     // Re-fetch to get complete data including portfolio_id
@@ -3927,15 +3938,33 @@ app.post('/api/ai-traders', authMiddleware, async (req, res) => {
 app.put('/api/ai-traders/:id', authMiddleware, async (req, res) => {
   try {
     const traderId = parseInt(req.params.id);
-    const trader = await aiTrader.updateAITrader(traderId, req.body);
+    const { brokerProfile, ...traderUpdates } = req.body;
     
-    // If brokerProfile is being changed, also update the portfolio
-    if (req.body.brokerProfile) {
+    // Update AI trader fields (name, personality, etc.) if any provided
+    let trader;
+    if (Object.keys(traderUpdates).length > 0) {
+      trader = await aiTrader.updateAITrader(traderId, traderUpdates);
+    } else {
+      // Only brokerProfile change — just fetch current trader
+      const existingResult = await aiTrader.getAITrader(traderId);
+      trader = existingResult;
+    }
+    
+    // If brokerProfile is being changed, update portfolio DB column AND personality
+    if (brokerProfile) {
       const portfolio = await aiTrader.getAITraderPortfolio(traderId);
       if (portfolio) {
-        await trading.updatePortfolioSettings(portfolio.id, portfolio.userId, {
-          brokerProfile: req.body.brokerProfile
+        await trading.updatePortfolioSettings(portfolio.id, portfolio.user_id || null, {
+          brokerProfile
         });
+      }
+      // Sync personality.capital.brokerProfile
+      const currentTrader = trader || await aiTrader.getAITrader(traderId);
+      if (currentTrader) {
+        const updatedPersonality = JSON.parse(JSON.stringify(currentTrader.personality || {}));
+        if (!updatedPersonality.capital) updatedPersonality.capital = {};
+        updatedPersonality.capital.brokerProfile = brokerProfile;
+        trader = await aiTrader.updateAITrader(traderId, { personality: updatedPersonality });
       }
     }
     
@@ -4355,7 +4384,8 @@ app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
       }
       
       const initialCapital = trader.personality?.capital?.initialBudget || 100000;
-      const newPortfolio = await aiTrader.createAITraderPortfolio(traderId, initialCapital);
+      const brokerProfileReset = trader.personality?.capital?.brokerProfile || 'flatex';
+      const newPortfolio = await aiTrader.createAITraderPortfolio(traderId, initialCapital, brokerProfileReset);
       
       return res.json({
         cash: newPortfolio.cash_balance,
@@ -4488,9 +4518,9 @@ app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
     const totalFeesAll = totalFeesClosed + totalFeesOpen;
     const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : null;
     
-    // Determine broker name
+    // Determine broker name (source of truth: DB column, fallback: personality)
     const traderObj = await aiTrader.getAITrader(parseInt(req.params.id));
-    const brokerKey = traderObj?.personality?.capital?.brokerProfile || 'flatex';
+    const brokerKey = portfolio.broker_profile || traderObj?.personality?.capital?.brokerProfile || 'flatex';
     const brokerName = trading.BROKER_PROFILES[brokerKey]?.name || brokerKey;
     
     res.json({
@@ -4543,17 +4573,17 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
     const trader = await aiTrader.getAITrader(traderId);
     const traderName = trader?.name || `Trader #${traderId}`;
     
-    // Determine broker profile from trader personality
-    const brokerProfile = trader?.personality?.capital?.brokerProfile || 'flatex';
-    
     // Get AI trader's portfolio
     let portfolio = await aiTrader.getAITraderPortfolio(traderId);
+    
+    // Determine broker profile (source of truth: DB column, fallback: personality)
+    const brokerProfile = portfolio?.broker_profile || trader?.personality?.capital?.brokerProfile || 'flatex';
     if (!portfolio) {
       if (!trader) {
         return res.status(404).json({ error: 'AI trader not found' });
       }
       const initialCapital = trader.personality?.capital?.initialBudget || 100000;
-      portfolio = await aiTrader.createAITraderPortfolio(traderId, initialCapital);
+      portfolio = await aiTrader.createAITraderPortfolio(traderId, initialCapital, brokerProfile);
     }
     
     // Use direct SQL queries for AI trader position management
