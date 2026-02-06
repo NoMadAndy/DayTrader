@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.29.2] - 2026-02-06
+
+### Fixed
+- **RL-Training: standard min_fee war falsch** - min_fee war 9.95 statt korrekt 4.95 (verursachte zu hohe Trainingskosten bei kleinen Trades)
+- **RL-Training: max_fee bei discount/premium/marketMaker falsch** - Werte waren pauschal 100 statt den korrekten Backend-Werten (1.00/9.90/0.00)
+- **Gebühren-Anzeige bei $0** - total_fees_paid=0 wurde fälschlich als null angezeigt statt $0.00 (truthy-Check statt null-Check)
+
 ## [1.29.1] - 2026-02-06
 
 ### Fixed
