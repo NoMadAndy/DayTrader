@@ -16,7 +16,7 @@ import AITraderInsights from '../components/AITraderInsights';
 import SignalAccuracyChart from '../components/SignalAccuracyChart';
 import AdaptiveWeightsPanel from '../components/AdaptiveWeightsPanel';
 import TradeAlertBar from '../components/TradeAlertBar';
-import TradeDetailCard from '../components/TradeDetailCard';
+// TradeDetailCard removed (unused)
 import SelfTrainingIndicator from '../components/SelfTrainingIndicator';
 import { TradeToastSystem, useTradeToasts } from '../components/TradeToastSystem';
 import { useAITraderStream } from '../hooks/useAITraderStream';
@@ -59,7 +59,7 @@ export function AITraderPage() {
   const [trader, setTrader] = useState<AITrader | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [decisions, setDecisions] = useState<AITraderDecision[]>([]);
-  const [importantDecisions, setImportantDecisions] = useState<AITraderDecision[]>([]);
+  // importantDecisions removed (was set but never read)
   const [positions, setPositions] = useState<PositionWithPnL[]>([]);
   const [portfolio, setPortfolio] = useState<{ 
     cash: number; 
@@ -299,12 +299,6 @@ export function AITraderPage() {
         const decisionsData = await decisionsRes.json();
         const transformedDecisions = (Array.isArray(decisionsData) ? decisionsData : []).map(transformDecision);
         setDecisions(transformedDecisions);
-        
-        // Extract important decisions (executed buy/sell/close/short)
-        const important = transformedDecisions.filter(
-          (d: AITraderDecision) => d.executed && ['buy', 'sell', 'close', 'short'].includes(d.decisionType)
-        );
-        setImportantDecisions(important);
       }
       
       // Fetch positions (with cache-busting)
@@ -353,27 +347,6 @@ export function AITraderPage() {
       }
     }
   }, [traderId, transformDecision]);
-  
-  // Delete a decision
-  const handleDeleteDecision = useCallback(async (decisionId: number) => {
-    if (!traderId) return;
-    
-    try {
-      const res = await fetch(`/api/ai-traders/${traderId}/decisions/${decisionId}`, {
-        method: 'DELETE',
-      });
-      
-      if (res.ok) {
-        // Remove from both lists
-        setDecisions(prev => prev.filter(d => d.id !== decisionId));
-        setImportantDecisions(prev => prev.filter(d => d.id !== decisionId));
-      } else {
-        console.error('Failed to delete decision');
-      }
-    } catch (err) {
-      console.error('Error deleting decision:', err);
-    }
-  }, [traderId]);
   
   // Initial load
   useEffect(() => {
@@ -564,7 +537,6 @@ export function AITraderPage() {
   
   return (
     <>
-      {/* Trade Alert Bar - sticky at top */}
       {/* Trade Alert Bar - sticky at top */}
       <TradeAlertBar 
         trade={currentTradeAlert} 
@@ -1209,28 +1181,29 @@ export function AITraderPage() {
       )}
       
       {activeTab === 'analytics' && traderId && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Signal Accuracy */}
-          <div>
-            <SignalAccuracyChart traderId={traderId} days={30} />
-          </div>
-          
-          {/* Adaptive Weights */}
-          <div>
-            <AdaptiveWeightsPanel trader={trader} />
-          </div>
-          
-          {/* Training Status - Full View */}
-          <div className="lg:col-span-2">
-            <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-6">
-              <AITraderTrainingStatus traderId={traderId} compact={false} />
+        <div className="space-y-4">
+          {/* Top row: 3 columns on desktop */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Signal Accuracy */}
+            <div>
+              <SignalAccuracyChart traderId={traderId} days={30} />
+            </div>
+            
+            {/* Adaptive Weights */}
+            <div>
+              <AdaptiveWeightsPanel trader={trader} />
+            </div>
+            
+            {/* Training Status */}
+            <div>
+              <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-4">
+                <AITraderTrainingStatus traderId={traderId} compact={false} />
+              </div>
             </div>
           </div>
           
-          {/* Training History - Persistent Records */}
-          <div className="lg:col-span-2">
-            <AITraderTrainingHistory traderId={traderId} />
-          </div>
+          {/* Training History - Full Width */}
+          <AITraderTrainingHistory traderId={traderId} />
         </div>
       )}
     </div>

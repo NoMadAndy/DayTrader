@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.27.0] - 2026-02-06
+
+### Changed
+- **Analytics Tab dreispaltig** - Signal Accuracy, Adaptive Weights, Training Status nebeneinander auf Desktop; Training History volle Breite darunter
+- **Responsive Box-Höhen** - Mobile: 200px (~3 Einträge), Desktop: 500px. Entscheidungen-Header verschlankt (Signal-Scores entfernt, nur Symbol + Typ + Score)
+
+### Fixed
+- **KRITISCH: navigateToSymbol in TradeReasoningCard** - Funktion war nicht definiert → Runtime-Crash bei Klick auf Symbol. Jetzt eigener `useNavigateToSymbol` Hook
+- **Dead Code bereinigt** - `TradeDetailCard` Import, `importantDecisions` State, `handleDeleteDecision` Callback, `signals`/`getSignalColor`/`formatScore` in TradeReasoningCard entfernt
+- **Duplizierter Kommentar** in AITraderPage entfernt
+
 ## [1.26.2] - 2026-02-06
 
 ### Changed

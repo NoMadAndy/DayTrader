@@ -9,6 +9,15 @@ import { useNavigate } from 'react-router-dom';
 import type { AITraderDecision, DecisionType } from '../types/aiTrader';
 import { SignalBreakdown } from './SignalBreakdown';
 
+/** Navigate to stock dashboard for a symbol */
+function useNavigateToSymbol() {
+  const navigate = useNavigate();
+  return (symbol: string) => {
+    window.dispatchEvent(new CustomEvent('selectSymbol', { detail: symbol }));
+    navigate('/dashboard');
+  };
+}
+
 interface TradeReasoningCardProps {
   decision: AITraderDecision;
   expanded?: boolean;
@@ -26,6 +35,8 @@ const SIGNAL_COLORS: Record<DecisionType, { bg: string; text: string; emoji: str
 };
 
 export function TradeReasoningCard({ decision, expanded: controlledExpanded, onToggle, isNew = false }: TradeReasoningCardProps) {
+  const navigateToSymbol = useNavigateToSymbol();
+  
   // Important decisions (executed buy/sell/close/short) should be expanded by default
   const isImportantDecision = decision.executed && ['buy', 'sell', 'close', 'short'].includes(decision.decisionType);
   
@@ -52,15 +63,6 @@ export function TradeReasoningCard({ decision, expanded: controlledExpanded, onT
   const importantClass = isImportantDecision 
     ? 'border-l-4 border-l-blue-500 bg-slate-800/70' 
     : '';
-  
-  // Extract signal scores for compact display
-  const signals = decision.reasoning?.signals;
-  const getSignalColor = (score: number) => {
-    if (score >= 0.3) return 'text-green-400';
-    if (score <= -0.3) return 'text-red-400';
-    return 'text-gray-400';
-  };
-  const formatScore = (score: number) => score >= 0 ? `+${score.toFixed(2)}` : score.toFixed(2);
   
   return (
     <div className={`bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 transition-all duration-500 ${flashClass} ${importantClass}`}>
