@@ -69,6 +69,9 @@ class AITraderConfig:
     max_short_positions: int = 3  # Maximum number of short positions
     max_short_exposure: float = 0.30  # Max 30% of portfolio in short positions
     
+    # Broker Profile (fees during execution are calculated backend-side)
+    broker_profile: str = 'flatex'  # 'flatex', 'ingdiba', 'discount', 'standard', 'premium'
+    
     # ML Auto-Training
     auto_train_ml: bool = True  # Automatically train ML models if missing
     ml_training_period: str = "2y"  # Period of data to use for training

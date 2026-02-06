@@ -46,6 +46,8 @@ class BrokerProfile(str, Enum):
     STANDARD = "standard"
     PREMIUM = "premium"
     MARKET_MAKER = "marketMaker"
+    FLATEX = "flatex"
+    INGDIBA = "ingdiba"
 
 
 class AgentConfig(BaseModel):

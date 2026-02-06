@@ -38,22 +38,50 @@ BROKER_FEES = {
     "discount": {
         "flat_fee": 1.00,
         "percentage_fee": 0.0,
+        "min_fee": 1.00,
+        "max_fee": 100.0,
+        "exchange_fee": 0.0,
         "spread_percent": 0.10,
     },
     "standard": {
         "flat_fee": 4.95,
         "percentage_fee": 0.25,
+        "min_fee": 9.95,
+        "max_fee": 59.00,
+        "exchange_fee": 0.0,
         "spread_percent": 0.15,
     },
     "premium": {
         "flat_fee": 9.90,
         "percentage_fee": 0.0,
+        "min_fee": 9.90,
+        "max_fee": 100.0,
+        "exchange_fee": 0.0,
         "spread_percent": 0.05,
     },
     "marketMaker": {
         "flat_fee": 0.0,
         "percentage_fee": 0.0,
+        "min_fee": 0.0,
+        "max_fee": 100.0,
+        "exchange_fee": 0.0,
         "spread_percent": 0.30,
+    },
+    "flatex": {
+        "flat_fee": 8.50,
+        "percentage_fee": 0.0,
+        "min_fee": 8.50,
+        "max_fee": 8.50,
+        "exchange_fee": 0.0,
+        "spread_percent": 0.05,
+    },
+    "ingdiba": {
+        "flat_fee": 5.30,
+        "percentage_fee": 0.25,
+        "min_fee": 10.70,
+        "max_fee": 75.50,
+        "exchange_fee": 2.05,
+        "spread_percent": 0.05,
     },
 }
 
@@ -117,10 +145,13 @@ class TradingEnvironment(gym.Env):
         self.trailing_stop = config.trailing_stop
         self.trailing_distance = config.trailing_stop_distance
         
-        # Broker fees
+        # Broker fees (matching backend calculateFees formula)
         broker = BROKER_FEES.get(config.broker_profile, BROKER_FEES["standard"])
         self.flat_fee = broker["flat_fee"]
         self.percentage_fee = broker["percentage_fee"] / 100
+        self.min_fee = broker.get("min_fee", broker["flat_fee"])
+        self.max_fee = broker.get("max_fee", 100.0)
+        self.exchange_fee = broker.get("exchange_fee", 0.0)
         self.spread_pct = broker["spread_percent"] / 100
         
         # Holding period targets (in steps)
@@ -328,8 +359,11 @@ class TradingEnvironment(gym.Env):
         }
     
     def _calculate_transaction_cost(self, trade_value: float) -> float:
-        """Calculate total transaction cost including spread"""
-        commission = max(self.flat_fee, trade_value * self.percentage_fee)
+        """Calculate total transaction cost including spread (matches backend calculateFees)"""
+        # Formula: max(min_fee, min(max_fee, flat_fee + percentage_part)) + exchange_fee
+        percentage_part = trade_value * self.percentage_fee
+        commission = max(self.min_fee, min(self.max_fee, self.flat_fee + percentage_part))
+        commission += self.exchange_fee
         spread_cost = trade_value * self.spread_pct
         return commission + spread_cost
     

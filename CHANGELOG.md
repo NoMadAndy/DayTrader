@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.29.1] - 2026-02-06
+
+### Fixed
+- **Trade-Gebühren Doppelzählung** - Open- und Close-Trade zeigen jetzt jeweils nur ihren Anteil der Gebühren (vorher zeigte jeder den kumulierten Gesamtwert)
+- **UI: Seite + Gebühren gleichzeitig sichtbar** - Trade-Details zeigen jetzt Seite (Long/Short) UND Gebühren untereinander, nicht mehr entweder/oder
+- **RL-Training: Fee-Formel divergierte vom Backend** - Trainingsumgebung verwendete `max(flat, pct)` statt Backend-Formel `max(min_fee, min(max_fee, flat + pct)) + exchange_fee`
+- **RL-Training: flatex/ING DiBa fehlten** - Broker-Profile waren nur im Backend definiert, Training verwendete Fallback mit falschen Kosten → Agent lernte suboptimale Policy
+- **broker_profile wird jetzt vom AI Trader zum RL-Service durchgereicht** - Config-Mapping in main.py + AITraderConfig-Feld ergänzt
+
+### Changed
+- RL-Service `BROKER_FEES` erweitert um `min_fee`, `max_fee`, `exchange_fee` Felder für alle Broker
+- `BrokerProfile` Enum erweitert um `FLATEX` und `INGDIBA`
+
 ## [1.29.0] - 2026-02-06
 
 ### Added

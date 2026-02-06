@@ -5010,7 +5010,10 @@ app.get('/api/ai-traders/:id/trades', async (req, res) => {
         technicalScore: row.open_technical_score ? parseFloat(row.open_technical_score) : null,
         signalAgreement: row.open_signal_agreement || null,
         explanation: buildExplanation(openReasoning, row.open_summary, row.side === 'short' ? 'short' : 'buy'),
-        fees: row.total_fees_paid ? parseFloat(row.total_fees_paid) : null,
+        fees: row.total_fees_paid ? (row.is_open 
+          ? parseFloat(row.total_fees_paid) 
+          : parseFloat(row.total_fees_paid) / 2  // Approximate open-fee as half of total (open+close)
+        ) : null,
       });
       
       // CLOSE/SELL trade (only for closed positions)
@@ -5046,7 +5049,7 @@ app.get('/api/ai-traders/:id/trades', async (req, res) => {
           summary: row.close_summary || null,
           confidence: row.close_confidence ? parseFloat(row.close_confidence) : null,
           explanation: buildExplanation(closeReasoning, row.close_summary, 'close'),
-          fees: row.total_fees_paid ? parseFloat(row.total_fees_paid) : null,
+          fees: row.total_fees_paid ? parseFloat(row.total_fees_paid) / 2 : null,  // Approximate close-fee as half of total
         });
       }
     }

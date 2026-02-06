@@ -871,18 +871,18 @@ export function AITraderPage() {
                               <div className="text-[10px] text-gray-500">Wert</div>
                               <div className="text-xs font-mono">${trade.cost.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
                             </div>
-                            {trade.fees != null && trade.fees > 0 ? (
-                              <div className="bg-orange-900/20 rounded px-2 py-1 border border-orange-500/20">
-                                <div className="text-[10px] text-orange-400/70">🏦 Gebühren</div>
-                                <div className="text-xs font-mono text-orange-400">${trade.fees.toFixed(2)}</div>
-                              </div>
-                            ) : (
-                              <div className="bg-slate-800/50 rounded px-2 py-1">
-                                <div className="text-[10px] text-gray-500">Seite</div>
-                                <div className="text-xs font-mono">{trade.side === 'short' ? '🔴 Short' : '🟢 Long'}</div>
-                              </div>
-                            )}
+                            <div className="bg-slate-800/50 rounded px-2 py-1">
+                              <div className="text-[10px] text-gray-500">Seite</div>
+                              <div className="text-xs font-mono">{trade.side === 'short' ? '🔴 Short' : '🟢 Long'}</div>
+                            </div>
                           </div>
+                          {/* Broker fee */}
+                          {trade.fees != null && trade.fees > 0 && (
+                            <div className="bg-orange-900/20 rounded px-2 py-1 border border-orange-500/20 flex items-center justify-between">
+                              <span className="text-[10px] text-orange-400/70">🏦 Ordergebühr</span>
+                              <span className="text-xs font-mono text-orange-400">${trade.fees.toFixed(2)}</span>
+                            </div>
+                          )}
                           
                           {/* Entry price for close trades */}
                           {!isBuy && trade.entryPrice && (

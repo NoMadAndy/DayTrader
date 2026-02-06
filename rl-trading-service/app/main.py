@@ -160,6 +160,8 @@ async def resume_running_traders():
                         'trading_horizon': trading.get('horizon', 'day'),
                         'target_holding_hours': trading.get('targetHoldingHours', 8),
                         'max_holding_hours': trading.get('maxHoldingHours', 24),
+                        # Broker profile
+                        'broker_profile': capital.get('brokerProfile', 'flatex'),
                     }
                     
                     logger.info(f"resume_running_traders: Config for trader {trader_id}: rl_agent_name={config.get('rl_agent_name')}, symbols={len(config.get('symbols', []))} items")
