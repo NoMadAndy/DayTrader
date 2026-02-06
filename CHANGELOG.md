@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.22.0] - 2026-02-06
+
+### Added
+- **Trade-Stats aus Positionen** - Portfolio-API berechnet Trades, Win Rate und Realized P&L direkt aus geschlossenen Positionen statt aus Entscheidungen
+- **Ausgeführte Trades Endpoint** - Neuer `/api/ai-traders/:id/trades` Endpoint liefert alle Käufe und Verkäufe
+- **Käufe + Verkäufe im Dashboard** - "Ausgeführte Trades" Panel zeigt jetzt sowohl Positionseröffnungen (📥 Kauf/Short) als auch Schließungen (📤 Verkauf) an
+- **Post-Close Cooldown** - 30-Minuten Cooldown nach Position-Close verhindert sofortige Re-Buy-Loops
+
+### Fixed
+- **Buy-Close-Endlosschleife** - AI Trader kaufte und verkaufte dasselbe Symbol im Minutentakt (SL/TP sofort getriggert → Re-Buy → Re-Close)
+- **Stats zeigten 0 Trades** - Trade-Zähler war 0, weil Entscheidungen nicht als executed markiert wurden; jetzt aus geschlossenen Positionen berechnet
+- **`query is not defined` Fehler** - Portfolio- und Trades-API benutzten `query()` statt `db.query()`, was 500-Fehler verursachte
+- **Cash/Wert/Unrealized fehlten** - Portfolio-Daten wurden wegen des Backend-Fehlers nicht geladen
+
 ## [1.20.0] - 2026-02-04
 
 ### Added

@@ -69,7 +69,36 @@ export function AITraderPage() {
     dailyPnl?: number;
     dailyPnlPct?: number;
     initialCapital?: number;
+    // Trade stats from closed positions
+    tradesExecuted?: number;
+    winningTrades?: number;
+    losingTrades?: number;
+    winRate?: number | null;
+    realizedPnl?: number;
   } | null>(null);
+  // Executed trades (opens + closes)
+  const [executedTrades, setExecutedTrades] = useState<Array<{
+    id: number;
+    tradeType: 'open' | 'close';
+    symbol: string;
+    side: string;
+    action: string;
+    quantity: number;
+    price: number;
+    cost: number;
+    timestamp: string;
+    pnl: number | null;
+    pnlPercent: number | null;
+    holdingHours?: number;
+    holdingDays?: number;
+    closeReason?: string | null;
+    wasWinner?: boolean;
+    entryPrice?: number;
+    stopLoss: number | null;
+    takeProfit: number | null;
+    isOpen: boolean;
+    positionId: number;
+  }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'activity' | 'reports' | 'analytics'>('activity');
@@ -245,7 +274,20 @@ export function AITraderPage() {
           dailyPnl: portfolioData.daily_pnl || 0,
           dailyPnlPct: portfolioData.daily_pnl_pct || 0,
           initialCapital: portfolioData.initial_capital || 100000,
+          // Trade stats from closed positions
+          tradesExecuted: portfolioData.trades_executed || 0,
+          winningTrades: portfolioData.winning_trades || 0,
+          losingTrades: portfolioData.losing_trades || 0,
+          winRate: portfolioData.win_rate,
+          realizedPnl: portfolioData.realized_pnl || 0,
         });
+      }
+      
+      // Fetch executed trades (closed positions)
+      const tradesRes = await fetch(`/api/ai-traders/${traderId}/trades?limit=50&_t=${Date.now()}`, { cache: 'no-store' });
+      if (tradesRes.ok) {
+        const tradesData = await tradesRes.json();
+        setExecutedTrades(Array.isArray(tradesData) ? tradesData : []);
       }
     } catch (err) {
       console.error('Error loading trader data:', err);
@@ -568,23 +610,23 @@ export function AITraderPage() {
             </div>
           </>
         )}
-        {/* Trade Stats */}
+        {/* Trade Stats - from portfolio (based on closed positions) */}
         <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-2 sm:p-3">
           <div className="text-xs text-gray-400">🎯 Trades</div>
-          <div className="text-base sm:text-lg font-bold">{trader.tradesExecuted ?? 0}</div>
+          <div className="text-base sm:text-lg font-bold">{portfolio?.tradesExecuted ?? 0}</div>
         </div>
         <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-2 sm:p-3">
           <div className="text-xs text-gray-400">🏆 Win Rate</div>
           <div className="text-base sm:text-lg font-bold">
-            {(trader.tradesExecuted ?? 0) > 0 
-              ? `${(((trader.winningTrades ?? 0) / (trader.tradesExecuted ?? 0)) * 100).toFixed(0)}%`
+            {portfolio?.winRate != null 
+              ? `${portfolio.winRate.toFixed(0)}%`
               : '-'}
           </div>
         </div>
         <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-2 sm:p-3">
           <div className="text-xs text-gray-400">💹 Total P&L</div>
-          <div className={`text-base sm:text-lg font-bold ${(trader.totalPnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-            {(trader.totalPnl ?? 0) >= 0 ? '+' : ''}{(trader.totalPnl ?? 0).toFixed(1)}%
+          <div className={`text-base sm:text-lg font-bold ${(portfolio?.pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {(portfolio?.pnl ?? 0) >= 0 ? '+' : ''}{(portfolio?.pnl ?? 0).toFixed(1)}%
           </div>
         </div>
       </div>
@@ -633,39 +675,71 @@ export function AITraderPage() {
               <SelfTrainingIndicator traderId={traderId} />
             )}
             
-            {/* Important Decisions Panel - FIRST - Always visible */}
+            {/* Executed Trades Panel - from closed positions */}
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-blue-500/50 border-l-4 border-l-blue-500">
               <div className="px-4 py-3 border-b border-slate-700/50 flex items-center justify-between">
                 <h3 className="font-bold text-blue-300">
-                  ⚡ Ausgeführte Trades ({importantDecisions.length})
-                  <span className="text-xs text-gray-500 ml-2 font-normal">buy / sell / short / close</span>
+                  ⚡ Ausgeführte Trades ({executedTrades.length})
+                  <span className="text-xs text-gray-500 ml-2 font-normal">geschlossene Positionen</span>
                 </h3>
-                {importantDecisions.length > 0 && (
-                  <span className="text-xs text-gray-500">Klick auf ✕ zum Löschen</span>
-                )}
               </div>
               <div className="p-2 space-y-2 max-h-[400px] overflow-y-auto">
-                {importantDecisions.length === 0 ? (
+                {executedTrades.length === 0 ? (
                   <div className="text-center text-gray-500 py-6">
                     <div className="text-2xl mb-1">📊</div>
                     <div className="text-sm font-medium">Keine ausgeführten Trades</div>
-                    <div className="text-xs mt-1">Trades erscheinen hier sobald der AI Trader Positionen eröffnet oder schließt</div>
+                    <div className="text-xs mt-1">Trades erscheinen hier sobald der AI Trader Positionen schließt</div>
                   </div>
                 ) : (
-                  [...importantDecisions]
-                    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-                    .map((decision) => (
-                      <TradeDetailCard 
-                        key={decision.id} 
-                        decision={decision}
-                        isNew={newDecisionIds.has(decision.id)}
-                        onDelete={() => {
-                          if (confirm(`Entscheidung "${decision.symbol} ${decision.decisionType}" wirklich löschen?`)) {
-                            handleDeleteDecision(decision.id);
-                          }
-                        }}
-                      />
-                    ))
+                  executedTrades.map((trade) => {
+                    const isBuy = trade.tradeType === 'open';
+                    const actionLabel = trade.action === 'short' ? 'Short' : trade.action === 'buy' ? 'Kauf' : 'Verkauf';
+                    const actionColor = isBuy
+                      ? (trade.action === 'short' ? 'bg-orange-500/20 text-orange-400' : 'bg-green-500/20 text-green-400')
+                      : 'bg-red-500/20 text-red-400';
+                    const borderColor = isBuy
+                      ? 'border-l-blue-500'
+                      : (trade.wasWinner ? 'border-l-green-500' : 'border-l-red-500');
+                    
+                    return (
+                    <div 
+                      key={trade.id}
+                      className={`bg-slate-900/50 rounded-lg p-3 border-l-2 ${borderColor}`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold">{trade.symbol}</span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${actionColor}`}>
+                            {isBuy ? '📥' : '📤'} {actionLabel}
+                          </span>
+                          {trade.isOpen && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400">offen</span>
+                          )}
+                        </div>
+                        {!isBuy && trade.pnlPercent != null ? (
+                          <div className={`font-bold ${(trade.pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {(trade.pnl ?? 0) >= 0 ? '+' : ''}{trade.pnlPercent.toFixed(2)}%
+                          </div>
+                        ) : (
+                          <div className="text-xs text-gray-500">${trade.cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-gray-400">
+                        <span>{trade.quantity}x @ ${trade.price.toFixed(2)}</span>
+                        <span>
+                          {new Date(trade.timestamp).toLocaleString('de-DE', { 
+                            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' 
+                          })}
+                        </span>
+                      </div>
+                      {!isBuy && trade.closeReason && (
+                        <div className="mt-1 text-xs text-gray-500 truncate" title={trade.closeReason}>
+                          {trade.closeReason}
+                        </div>
+                      )}
+                    </div>
+                    );
+                  })
                 )}
               </div>
             </div>

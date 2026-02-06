@@ -4277,7 +4277,7 @@ app.delete('/api/ai-traders/:id/decisions/:did', async (req, res) => {
     }
     
     // Delete the decision
-    await query('DELETE FROM ai_trader_decisions WHERE id = $1', [decisionId]);
+    await db.query('DELETE FROM ai_trader_decisions WHERE id = $1', [decisionId]);
     
     console.log(`[AI Trader] Deleted decision ${decisionId} for trader ${traderId}`);
     res.json({ success: true, message: 'Decision deleted' });
@@ -4297,7 +4297,7 @@ app.patch('/api/ai-traders/:id/decisions/mark-executed', async (req, res) => {
     const { symbol, decision_type, timestamp } = req.body;
     
     // Find the most recent decision matching the criteria
-    const result = await query(
+    const result = await db.query(
       `UPDATE ai_trader_decisions 
        SET executed = true, 
            updated_at = NOW()
@@ -4450,6 +4450,24 @@ app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
     const totalPnlPct = initialCapital > 0 ? (totalPnl / initialCapital) * 100 : 0;
     const dailyPnlPct = totalCurrentValue > 0 ? (dailyPnl / totalCurrentValue) * 100 : 0;
     
+    // Calculate trade stats from closed positions (more reliable than decisions)
+    const closedPositionsResult = await db.query(
+      `SELECT 
+         COUNT(*) as total_trades,
+         COUNT(*) FILTER (WHERE realized_pnl > 0) as winning_trades,
+         COUNT(*) FILTER (WHERE realized_pnl <= 0) as losing_trades,
+         COALESCE(SUM(realized_pnl), 0) as realized_pnl_total
+       FROM positions 
+       WHERE portfolio_id = $1 AND is_open = false`,
+      [portfolio.id]
+    );
+    const closedStats = closedPositionsResult.rows[0] || {};
+    const totalTrades = parseInt(closedStats.total_trades) || 0;
+    const winningTrades = parseInt(closedStats.winning_trades) || 0;
+    const losingTrades = parseInt(closedStats.losing_trades) || 0;
+    const realizedPnlTotal = parseFloat(closedStats.realized_pnl_total) || 0;
+    const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : null;
+    
     res.json({
       cash: cashBalance,
       total_value: totalValue,
@@ -4464,7 +4482,13 @@ app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
       daily_pnl: dailyPnl,
       daily_pnl_pct: dailyPnlPct,
       initial_capital: initialCapital,
-      max_value: totalValue
+      max_value: totalValue,
+      // Trade stats from closed positions
+      trades_executed: totalTrades,
+      winning_trades: winningTrades,
+      losing_trades: losingTrades,
+      win_rate: winRate,
+      realized_pnl: realizedPnlTotal
     });
   } catch (e) {
     console.error('Get portfolio error:', e);
@@ -4762,6 +4786,100 @@ app.get('/api/ai-traders/:id/positions', async (req, res) => {
   } catch (e) {
     console.error('Get positions error:', e);
     res.status(500).json({ error: 'Failed to fetch positions' });
+  }
+});
+
+/**
+ * Get AI trader executed trades (opens + closes)
+ * GET /api/ai-traders/:id/trades
+ */
+app.get('/api/ai-traders/:id/trades', async (req, res) => {
+  try {
+    const { limit = 50 } = req.query;
+    const portfolio = await aiTrader.getAITraderPortfolio(parseInt(req.params.id));
+    if (!portfolio) {
+      return res.json([]);
+    }
+    
+    // Get ALL positions: open (= buy trades) and closed (= buy + close trades)
+    const result = await db.query(
+      `SELECT 
+         id, symbol, side, quantity, entry_price, close_price,
+         opened_at, closed_at, realized_pnl, close_reason,
+         stop_loss, take_profit, is_open
+       FROM positions 
+       WHERE portfolio_id = $1
+       ORDER BY COALESCE(closed_at, opened_at) DESC
+       LIMIT $2`,
+      [portfolio.id, parseInt(limit)]
+    );
+    
+    // Build trade entries: each position generates 1 open trade + optionally 1 close trade
+    const trades = [];
+    
+    for (const row of result.rows) {
+      const qty = parseFloat(row.quantity);
+      const entryPrice = parseFloat(row.entry_price);
+      const entryValue = entryPrice * qty;
+      
+      // BUY/SHORT entry trade
+      trades.push({
+        id: row.id,
+        tradeType: 'open',
+        symbol: row.symbol,
+        side: row.side,
+        action: row.side === 'short' ? 'short' : 'buy',
+        quantity: qty,
+        price: entryPrice,
+        cost: entryValue,
+        timestamp: row.opened_at,
+        pnl: null,
+        pnlPercent: null,
+        stopLoss: row.stop_loss ? parseFloat(row.stop_loss) : null,
+        takeProfit: row.take_profit ? parseFloat(row.take_profit) : null,
+        isOpen: row.is_open,
+        positionId: row.id,
+      });
+      
+      // CLOSE/SELL trade (only for closed positions)
+      if (!row.is_open && row.closed_at) {
+        const closePrice = parseFloat(row.close_price);
+        const pnl = parseFloat(row.realized_pnl) || 0;
+        const pnlPercent = entryValue > 0 ? (pnl / entryValue) * 100 : 0;
+        const holdingMs = new Date(row.closed_at).getTime() - new Date(row.opened_at).getTime();
+        
+        trades.push({
+          id: row.id * 100000,  // unique ID for close trade
+          tradeType: 'close',
+          symbol: row.symbol,
+          side: row.side,
+          action: 'close',
+          quantity: qty,
+          price: closePrice,
+          cost: closePrice * qty,
+          timestamp: row.closed_at,
+          pnl: pnl,
+          pnlPercent: pnlPercent,
+          holdingHours: Math.round(holdingMs / (1000 * 60 * 60)),
+          holdingDays: Math.round(holdingMs / (1000 * 60 * 60 * 24)),
+          closeReason: row.close_reason,
+          wasWinner: pnl > 0,
+          entryPrice: entryPrice,
+          stopLoss: row.stop_loss ? parseFloat(row.stop_loss) : null,
+          takeProfit: row.take_profit ? parseFloat(row.take_profit) : null,
+          isOpen: false,
+          positionId: row.id,
+        });
+      }
+    }
+    
+    // Sort all trades by timestamp descending
+    trades.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    
+    res.json(trades.slice(0, parseInt(limit)));
+  } catch (e) {
+    console.error('Get trades error:', e);
+    res.status(500).json({ error: 'Failed to fetch trades' });
   }
 });
 

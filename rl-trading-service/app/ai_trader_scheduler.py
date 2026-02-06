@@ -37,6 +37,11 @@ class AITraderScheduler:
         
         # Self-training status tracking
         self.self_training_status: Dict[int, Dict[str, Any]] = {}
+        
+        # Cooldown tracking: {trader_id: {symbol: datetime_of_last_close}}
+        self.close_cooldowns: Dict[int, Dict[str, datetime]] = {}
+        # Cooldown period after closing a position (prevent immediate re-buy)
+        self.cooldown_minutes = 30
     
     async def start_trader(self, trader_id: int, config: AITraderConfig):
         """
@@ -121,11 +126,19 @@ class AITraderScheduler:
                 portfolio_state = await self._fetch_portfolio_state(trader_id)
                 
                 # Check SL/TP for existing positions first
-                await self._check_sl_tp_exits(trader_id, portfolio_state, config)
+                closed_symbols = await self._check_sl_tp_exits(trader_id, portfolio_state, config)
                 
                 # Analyze each symbol
                 for symbol in config.symbols:
                     try:
+                        # Skip symbols that were just closed (cooldown)
+                        if symbol in closed_symbols:
+                            print(f"⏳ Skipping {symbol} - just closed via SL/TP")
+                            continue
+                        
+                        # Check cooldown from previous closes
+                        if self._is_on_cooldown(trader_id, symbol):
+                            continue
                         # Fetch market data
                         market_data = await self._fetch_market_data(symbol)
                         
@@ -148,6 +161,9 @@ class AITraderScheduler:
                             executed = await self._execute_trade(trader_id, decision)
                             if executed:
                                 await self._mark_decision_executed(trader_id, decision)
+                                # Set cooldown after closing to prevent immediate re-buy
+                                if decision.decision_type in ['sell', 'close']:
+                                    self._set_cooldown(trader_id, symbol)
                         
                     except Exception as e:
                         import traceback
@@ -610,7 +626,7 @@ class AITraderScheduler:
         trader_id: int, 
         portfolio_state: Dict,
         config: AITraderConfig
-    ):
+    ) -> set:
         """
         Check if any positions have hit their stop-loss or take-profit levels.
         
@@ -620,8 +636,12 @@ class AITraderScheduler:
             trader_id: Trader ID
             portfolio_state: Current portfolio state with positions
             config: AITraderConfig instance
+            
+        Returns:
+            Set of symbols that were closed (for cooldown in current cycle)
         """
         positions = portfolio_state.get('positions', {})
+        closed_symbols = set()
         
         for symbol, pos in positions.items():
             try:
@@ -696,10 +716,35 @@ class AITraderScheduler:
                     executed = await self._execute_trade(trader_id, decision)
                     if executed:
                         await self._mark_decision_executed(trader_id, decision)
+                        closed_symbols.add(symbol)
+                        # Record cooldown to prevent immediate re-buy
+                        self._set_cooldown(trader_id, symbol)
                         
             except Exception as e:
                 print(f"Error checking SL/TP for {symbol}: {e}")
                 continue
+        
+        return closed_symbols
+    
+    def _is_on_cooldown(self, trader_id: int, symbol: str) -> bool:
+        """Check if a symbol is on cooldown after a recent close."""
+        cooldowns = self.close_cooldowns.get(trader_id, {})
+        last_close = cooldowns.get(symbol)
+        if last_close is None:
+            return False
+        elapsed = (datetime.now() - last_close).total_seconds() / 60
+        if elapsed < self.cooldown_minutes:
+            return True
+        # Cooldown expired, remove it
+        del cooldowns[symbol]
+        return False
+    
+    def _set_cooldown(self, trader_id: int, symbol: str):
+        """Set cooldown for a symbol after closing a position."""
+        if trader_id not in self.close_cooldowns:
+            self.close_cooldowns[trader_id] = {}
+        self.close_cooldowns[trader_id][symbol] = datetime.now()
+        print(f"⏳ Trader {trader_id}: {symbol} on {self.cooldown_minutes}min cooldown after close")
     
     async def _log_decision(self, trader_id: int, decision: TradingDecision):
         """
