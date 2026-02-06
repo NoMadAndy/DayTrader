@@ -141,10 +141,8 @@ export function AITraderActivityFeed({
               e.data?.executed === true)
       );
       
-      // Sound notification ONLY for executed trades
-      if (enableSound && hasExecutedTrade) {
-        playNotificationSound();
-      }
+      // Sound notification is now handled by TradeToastSystem - skip here to avoid double-play
+      // if (enableSound && hasExecutedTrade) { playNotificationSound(); }
       
       // Haptic feedback ONLY for executed trades
       if (enableVibration && hasExecutedTrade && 'vibrate' in navigator) {

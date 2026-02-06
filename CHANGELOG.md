@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.0] - 2026-02-06
+
+### Added
+- **Trade-Toast-Benachrichtigungen** - Neue stacking Toast-Notifications bei ausgeführten Trades (Kauf/Verkauf/Close/Short); erscheinen unten rechts, ältere rutschen nach oben, auto-dismiss nach 12s
+- **Deutliche Trade-Sounds** - Unterschiedliche Sounds pro Trade-Typ: Kauf = aufsteigende Ka-Ching-Melodie, Verkauf/Close = absteigende Töne, Short = tiefer Warnton
+- **Toast zeigt Trade-Details** - Symbol, Preis, Stückzahl, Wert, Konfidenz, P&L (bei Close), Kurztext-Begründung
+
+### Changed
+- **Sound nur bei Trades** - Töne werden nur noch bei tatsächlich ausgeführten Trades abgespielt (buy/sell/close/short), nicht mehr bei Hold/Skip/Analyse-Entscheidungen
+- **Kein doppelter Sound** - ActivityFeed und NotificationFeedback-Hook spielen keine Trade-Sounds mehr; zentral über TradeToastSystem
+
 ## [1.22.1] - 2026-02-06
 
 ### Fixed

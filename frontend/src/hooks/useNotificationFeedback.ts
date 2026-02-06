@@ -143,11 +143,13 @@ export function useNotificationFeedback({ settings, volume = 0.3 }: UseNotificat
     notify(isExecuted ? 'trade' : 'info');
   }, [notify]);
 
-  // Notify for new decision
+  // Notify for new decision (non-trade sounds only - trades use TradeToastSystem)
   const notifyDecision = useCallback((decisionType: string, isExecuted: boolean) => {
-    if (isExecuted) {
-      notify('trade');
-    } else if (decisionType === 'buy' || decisionType === 'sell') {
+    if (isExecuted && ['buy', 'sell', 'short', 'close'].includes(decisionType)) {
+      // Trade sounds are handled by TradeToastSystem - skip here
+      return;
+    }
+    if (decisionType === 'buy' || decisionType === 'sell') {
       notify('success');
     } else if (decisionType === 'skip') {
       // Silent for skips

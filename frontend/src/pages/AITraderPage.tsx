@@ -19,6 +19,7 @@ import AdaptiveWeightsPanel from '../components/AdaptiveWeightsPanel';
 import TradeAlertBar from '../components/TradeAlertBar';
 import TradeDetailCard from '../components/TradeDetailCard';
 import SelfTrainingIndicator from '../components/SelfTrainingIndicator';
+import { TradeToastSystem, useTradeToasts, playTradeSound } from '../components/TradeToastSystem';
 import { useAITraderStream } from '../hooks/useAITraderStream';
 import { useAITraderReports } from '../hooks/useAITraderReports';
 import { useNotificationFeedback } from '../hooks/useNotificationFeedback';
@@ -123,8 +124,11 @@ export function AITraderPage() {
   const prevDecisionIdsRef = useRef<Set<number>>(new Set());
   const [newDecisionIds, setNewDecisionIds] = useState<Set<number>>(new Set());
   
-  // Notification feedback hook
+  // Notification feedback hook (for non-trade notifications)
   const { notifyDecision } = useNotificationFeedback({ settings: notificationSettings });
+  
+  // Trade toast notifications
+  const { toasts: tradeToasts, addToast: addTradeToast, dismissToast: dismissTradeToast } = useTradeToasts();
   
   // Persist notification settings
   useEffect(() => {
@@ -142,8 +146,23 @@ export function AITraderPage() {
     decisions.forEach(d => {
       if (!prevDecisionIdsRef.current.has(d.id)) {
         newIds.add(d.id);
-        // Trigger notification for non-skip decisions
-        if (d.decisionType !== 'skip') {
+        // Trigger toast + sound ONLY for executed trades (buy/sell/short/close)
+        if (d.executed && ['buy', 'sell', 'short', 'close'].includes(d.decisionType)) {
+          const reasoning = typeof d.reasoning === 'object' ? d.reasoning : {};
+          const rObj = reasoning as { quantity?: number; price?: number };
+          addTradeToast({
+            action: d.decisionType as 'buy' | 'sell' | 'short' | 'close',
+            symbol: d.symbol,
+            quantity: rObj.quantity || 0,
+            price: rObj.price || 0,
+            confidence: d.confidence,
+            pnl: (reasoning as { pnl?: number }).pnl ?? null,
+            pnlPercent: (reasoning as { pnl_percent?: number }).pnl_percent ?? null,
+            reasoning: d.summaryShort || undefined,
+            timestamp: d.timestamp,
+          });
+        } else if (d.decisionType !== 'skip') {
+          // Non-trade notifications (hold etc.) - no sound, only visual
           notifyDecision(d.decisionType, d.executed);
         }
         
@@ -480,10 +499,18 @@ export function AITraderPage() {
   return (
     <>
       {/* Trade Alert Bar - sticky at top */}
+      {/* Trade Alert Bar - sticky at top */}
       <TradeAlertBar 
         trade={currentTradeAlert} 
         onDismiss={() => setCurrentTradeAlert(null)}
         autoDismissMs={30000}
+      />
+      
+      {/* Trade Toast Notifications - stacking bottom-right */}
+      <TradeToastSystem
+        toasts={tradeToasts}
+        onDismiss={dismissTradeToast}
+        soundEnabled={notificationSettings.sound}
       />
       
       <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 space-y-6">
