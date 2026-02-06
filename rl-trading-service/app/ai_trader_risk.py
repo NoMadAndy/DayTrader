@@ -162,8 +162,8 @@ class RiskManager:
         """Check if we've reached max number of positions"""
         current_positions = current_portfolio.get('positions_count') or 0
         
-        # Only block if trying to open a new position
-        if decision_type == 'buy':
+        # Only block if trying to open a new position (buy or short)
+        if decision_type in ('buy', 'short'):
             passed = current_positions < self._max_positions
         else:
             passed = True
@@ -214,8 +214,8 @@ class RiskManager:
         """Check total portfolio exposure"""
         total_invested = current_portfolio.get('total_invested') or 0
         
-        # Add new position if buying
-        if decision_type == 'buy':
+        # Add new position if opening (buy or short)
+        if decision_type in ('buy', 'short'):
             total_invested += new_position_size
         
         max_exposure = self._initial_budget * self._max_total_exposure

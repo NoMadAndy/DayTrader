@@ -257,8 +257,8 @@ class AITraderEngine:
             signal_agreement=aggregated.agreement,
             reasoning=reasoning,
             summary_short=summary,
-            quantity=quantity if decision_type in ['buy', 'sell'] else None,
-            price=current_price if decision_type in ['buy', 'sell'] else None,
+            quantity=quantity if decision_type in ['buy', 'sell', 'short'] else None,
+            price=current_price if decision_type in ['buy', 'sell', 'short'] else None,
             stop_loss=stop_loss,
             take_profit=take_profit,
             risk_checks_passed=risk_result.all_passed,
@@ -336,25 +336,25 @@ class AITraderEngine:
                 'sell_strong': -0.10,    # Sell on small bearish signal
                 'sell_weak': 0.05,       # Close on neutral/slightly positive
                 'buy_strong': 0.15,      # Buy on smaller bullish signal
-                'short_trigger': -0.15,  # Short on moderate bearish
+                'short_trigger': -0.12,  # Low bar for scalping shorts
             },
             'day': {
                 'sell_strong': -0.20,    # Default day trading
                 'sell_weak': 0.0,        # Close on neutral
                 'buy_strong': 0.25,
-                'short_trigger': -0.25,
+                'short_trigger': -0.20,  # Same as sell_strong
             },
             'swing': {
                 'sell_strong': -0.35,    # More tolerant
                 'sell_weak': -0.10,
                 'buy_strong': 0.30,
-                'short_trigger': -0.35,
+                'short_trigger': -0.28,  # Moderate threshold
             },
             'position': {
                 'sell_strong': -0.45,    # Very tolerant of volatility
                 'sell_weak': -0.20,
                 'buy_strong': 0.35,
-                'short_trigger': -0.40,
+                'short_trigger': -0.35,  # Strong conviction needed
             }
         }
         
@@ -483,17 +483,17 @@ class AITraderEngine:
         """
         positions = portfolio_state.get('positions', {})
         
-        # Count existing short positions
-        short_count = sum(1 for p in positions.values() if (p.get('quantity') or 0) < 0)
+        # Count existing short positions (use 'side' field, not quantity sign)
+        short_count = sum(1 for p in positions.values() if p.get('side') == 'short')
         if short_count >= (self.config.max_short_positions or 3):
             return False
         
-        # Check short exposure (use default if None)
+        # Check short exposure (use 'side' field)
         total_value = portfolio_state.get('total_value') or 100000
         short_exposure = sum(
             abs(p.get('market_value', 0) or 0) 
             for p in positions.values() 
-            if (p.get('quantity', 0) or 0) < 0
+            if p.get('side') == 'short'
         )
         
         max_short_exposure = self.config.max_short_exposure if self.config.max_short_exposure is not None else 0.30

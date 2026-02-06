@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.28.1] - 2026-02-06
+
+### Fixed
+- **Short-Selling komplett repariert** - 5 Bugs behoben, die Short-Positionen verhinderten:
+  - `quantity`/`price` waren `None` für Short-Entscheidungen (nur `buy`/`sell` war erlaubt, `short` fehlte)
+  - `_can_open_short()` prüfte `quantity < 0` statt `side == 'short'` (Quantity ist immer positiv)
+  - Risk-Check `_check_max_positions` ignorierte `short` Entscheidungen (nur `buy` geprüft)
+  - Risk-Check `_check_total_exposure` ignorierte `short` Entscheidungen (nur `buy` addiert)
+  - Short-Trigger-Schwellen um ~20% gesenkt (z.B. Day: -0.25 → -0.20) für realistischere Auslösung
+
 ## [1.28.0] - 2026-02-06
 
 ### Changed
