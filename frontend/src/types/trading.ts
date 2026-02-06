@@ -363,6 +363,7 @@ export interface EquityCurvePoint {
   unrealizedPnl: number;
   realizedPnl: number;
   marginUsed: number;
+  totalFeesPaid?: number;
 }
 
 export interface LeaderboardEntry {

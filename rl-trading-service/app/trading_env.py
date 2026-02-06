@@ -286,6 +286,7 @@ class TradingEnvironment(gym.Env):
         self.total_trades = 0
         self.winning_trades = 0
         self.total_profit = 0.0
+        self.total_fees_paid = 0.0  # Track cumulative fees for fee-impact metric
         self.max_drawdown = 0.0
         self.peak_value = self.initial_balance
         
@@ -354,6 +355,8 @@ class TradingEnvironment(gym.Env):
             "winning_trades": self.winning_trades,
             "win_rate": self.winning_trades / max(self.total_trades, 1),
             "total_profit": self.total_profit,
+            "total_fees_paid": self.total_fees_paid,
+            "fee_impact_pct": (self.total_fees_paid / self.initial_balance * 100) if self.initial_balance > 0 else 0,
             "max_drawdown": self.max_drawdown,
             "return_pct": (portfolio_value - self.initial_balance) / self.initial_balance * 100,
         }
@@ -365,7 +368,9 @@ class TradingEnvironment(gym.Env):
         commission = max(self.min_fee, min(self.max_fee, self.flat_fee + percentage_part))
         commission += self.exchange_fee
         spread_cost = trade_value * self.spread_pct
-        return commission + spread_cost
+        total_cost = commission + spread_cost
+        self.total_fees_paid += total_cost  # Track cumulative fees
+        return total_cost
     
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         """
@@ -576,6 +581,19 @@ class TradingEnvironment(gym.Env):
             
             # Reward based on total return
             reward += total_return * 50
+            
+            # Fee-impact penalty: penalize if fees are a large portion of gross profit
+            # This encourages the agent to make fewer but more profitable trades
+            gross_profit = self.total_profit + self.total_fees_paid  # Profit before fees
+            if gross_profit > 0:
+                fee_ratio = self.total_fees_paid / gross_profit  # 0-1 proportion
+                if fee_ratio > 0.5:
+                    reward -= (fee_ratio - 0.5) * 10  # Penalize if fees eat >50% of gross
+            elif self.total_trades > 0:
+                # Negative profit: penalize excessive trading (churning)
+                avg_fee_per_trade = self.total_fees_paid / self.total_trades if self.total_trades > 0 else 0
+                if avg_fee_per_trade > self.initial_balance * 0.001:  # >0.1% per trade
+                    reward -= 2.0
             
             # Sharpe-like risk adjustment
             if self.max_drawdown > 0:

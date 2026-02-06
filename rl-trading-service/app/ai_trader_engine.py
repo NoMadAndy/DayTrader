@@ -433,19 +433,41 @@ class AITraderEngine:
         
         # Make decision based on score, position, and horizon thresholds
         if has_long_position:
+            # Break-even awareness: adjust close thresholds based on fee impact
+            entry_price = position.get('entryPrice') or position.get('entry_price', 0)
+            current_price_val = portfolio_state.get('positions', {}).get(symbol, {}).get('currentPrice') or entry_price
+            total_fees = position.get('totalFeesPaid') or position.get('total_fees_paid', 0)
+            fee_per_share = total_fees / position_quantity if position_quantity > 0 else 0
+            break_even = entry_price + fee_per_share  # Long: need price above entry + fees
+            
+            # If we're below break-even, be more aggressive about closing (avoid deeper losses)
+            # If we're above break-even, be more patient (let winners run)
+            below_break_even = current_price_val < break_even if entry_price > 0 else False
+            be_adjustment = 0.05 if below_break_even else -0.05  # Shift sell threshold
+            
             # We have a LONG position
-            if score < ht['sell_strong']:  # Strong bearish signal (horizon-adjusted)
+            if score < ht['sell_strong'] + be_adjustment:  # Strong bearish signal (horizon-adjusted)
                 return 'sell'  # Sell the long position
-            elif score < ht['sell_weak']:  # Weak bearish/neutral (horizon-adjusted)
+            elif score < ht['sell_weak'] + be_adjustment:  # Weak bearish/neutral (horizon-adjusted)
                 return 'close'  # Just close position
             else:
                 return 'hold'  # Keep long position
                 
         elif has_short_position:
+            # Break-even awareness for short positions
+            entry_price = position.get('entryPrice') or position.get('entry_price', 0)
+            current_price_val = portfolio_state.get('positions', {}).get(symbol, {}).get('currentPrice') or entry_price
+            total_fees = position.get('totalFeesPaid') or position.get('total_fees_paid', 0)
+            fee_per_share = total_fees / position_quantity if position_quantity > 0 else 0
+            break_even = entry_price - fee_per_share  # Short: need price below entry - fees
+            
+            above_break_even = current_price_val > break_even if entry_price > 0 else False
+            be_adjustment = -0.05 if above_break_even else 0.05
+            
             # We have a SHORT position (inverse thresholds)
-            if score > -ht['sell_strong']:  # Strong bullish signal - bad for short
+            if score > -(ht['sell_strong'] + be_adjustment):  # Strong bullish signal - bad for short
                 return 'close'  # Close the short (buy to cover)
-            elif score > -ht['sell_weak']:  # Weak bullish signal
+            elif score > -(ht['sell_weak'] + be_adjustment):  # Weak bullish signal
                 return 'close'  # Close to limit losses
             else:
                 return 'hold'  # Keep short position

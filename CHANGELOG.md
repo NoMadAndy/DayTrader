@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.0] - 2026-02-06
+
+### Added
+- **Break-Even Preis in Positions-Tabelle** - Zeigt den Break-Even-Preis (inkl. Gebühren) pro offener Position
+- **Gebühren pro Position** - 🏦 Fee-Indikator in der Positions-Ansicht
+- **Equity Chart: Brutto/Netto-Linie** - Toggle-Button zeigt gestrichelte Brutto-Linie (Performance vor Gebühren) im Equity Chart
+- **Broker in Settings änderbar** - Broker-Profil kann nachträglich im AI Trader Settings Modal gewechselt werden
+- **Dynamischer Gebühren-Vergleich** - Broker-Selektor zeigt berechnete Beispielgebühren basierend auf dem gewählten Startkapital
+- **Break-Even Awareness in Decision Engine** - RL Decision Engine berücksichtigt Break-Even (Gebühren) bei Close-Entscheidungen
+- **Fee-Impact Metrik im RL-Training** - Agent wird für zu hohen Gebühren-Anteil bestraft (Anti-Churning), Fee-Metriken in Training-Info
+
+### Changed
+- **P&L Label auf "netto"** - Stats-Box zeigt jetzt "💹 P&L (netto)" mit Tooltip-Erklärung
+- **Spread in Trade-Execution** - `orderFee = fees.totalFees` statt `fees.commission` (Spread wird jetzt korrekt bei Ausführung berücksichtigt)
+- **Exakte Fee-Aufteilung pro Trade** - Neue `open_fee` DB-Spalte speichert exakte Eröffnungsgebühren statt /2 Approximation
+
+### Fixed
+- **Quantity ≤ 0 Guard** - API gibt 400 zurück statt negative Mengen zu verarbeiten
+- **Negative Proceeds Guard** - `Math.max(0, ...)` verhindert negative Erlöse bei Schließung nahe $0
+
 ## [1.29.2] - 2026-02-06
 
 ### Fixed

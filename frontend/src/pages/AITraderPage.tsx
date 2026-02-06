@@ -688,8 +688,8 @@ export function AITraderPage() {
             <div className="text-[10px] text-gray-500">🏆 Win</div>
             <div className="text-sm font-bold">{portfolio?.winRate != null ? `${portfolio.winRate.toFixed(0)}%` : '-'}</div>
           </div>
-          <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
-            <div className="text-[10px] text-gray-500">💹 P&L</div>
+          <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5" title="P&L nach Abzug aller Gebühren (netto)">
+            <div className="text-[10px] text-gray-500">💹 P&L (netto)</div>
             <div className={`text-sm font-bold ${(portfolio?.pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
               {(portfolio?.pnl ?? 0) >= 0 ? '+' : ''}{(portfolio?.pnl ?? 0).toFixed(1)}%
             </div>
@@ -1023,6 +1023,8 @@ export function AITraderPage() {
                       const distanceToSL = (position as any).distanceToStopLoss;
                       const distanceToTP = (position as any).distanceToTakeProfit;
                       const currentPrice = position.currentPrice || position.entryPrice;
+                      const totalFeesPaid = (position as any).totalFeesPaid || 0;
+                      const breakEvenPrice = (position as any).breakEvenPrice || null;
                       
                       return (
                         <div 
@@ -1043,10 +1045,15 @@ export function AITraderPage() {
                             </div>
                           </div>
                           
-                          {/* Qty & Prices */}
+                          {/* Qty & Prices & Break-Even */}
                           <div className="flex-1 text-xs text-gray-400">
                             <div>{position.quantity}x @ ${position.entryPrice?.toFixed(2)}</div>
                             <div>→ ${currentPrice?.toFixed(2)}</div>
+                            {breakEvenPrice && (
+                              <div className="text-yellow-400/70" title="Break-Even Preis (inkl. Gebühren)">
+                                BE: ${breakEvenPrice.toFixed(2)}
+                              </div>
+                            )}
                           </div>
                           
                           {/* P&L */}
@@ -1072,6 +1079,13 @@ export function AITraderPage() {
                               </div>
                             )}
                           </div>
+                          
+                          {/* Fees */}
+                          {totalFeesPaid > 0 && (
+                            <div className="text-xs text-orange-400/70 w-12 text-right" title="Gebühren für diese Position">
+                              🏦 ${totalFeesPaid.toFixed(0)}
+                            </div>
+                          )}
                           
                           {/* Time */}
                           <div className="text-xs text-gray-500 w-8 text-right">

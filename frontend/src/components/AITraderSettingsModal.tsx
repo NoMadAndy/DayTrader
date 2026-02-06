@@ -343,6 +343,11 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
   const [availableRLAgents, setAvailableRLAgents] = useState<RLAgentStatus[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(false);
   
+  // Broker Profile
+  const [brokerProfile, setBrokerProfile] = useState<'flatex' | 'ingdiba'>(
+    (trader.personality?.capital?.brokerProfile as 'flatex' | 'ingdiba') || 'flatex'
+  );
+  
   // Selected Strategy Preset
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
   const [showStrategyHint, setShowStrategyHint] = useState(true);
@@ -542,6 +547,7 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
         description: description.trim() || undefined,
         avatar,
         personality: updatedPersonality,
+        brokerProfile,
       });
       
       onUpdated(updated);
@@ -724,6 +730,33 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
                 rows={2}
                 className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none resize-none"
               />
+            </div>
+            
+            {/* Broker Profile */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                🏦 Broker
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { value: 'flatex' as const, label: 'flatex', desc: '~$8.50 flat/Order' },
+                  { value: 'ingdiba' as const, label: 'ING DiBa', desc: '$5.30 + 0.25%' },
+                ].map((b) => (
+                  <button
+                    key={b.value}
+                    type="button"
+                    onClick={() => setBrokerProfile(b.value)}
+                    className={`p-2 rounded-lg text-left transition-colors ${
+                      brokerProfile === b.value
+                        ? 'bg-orange-600/30 border-2 border-orange-500'
+                        : 'bg-slate-700 hover:bg-slate-600 border-2 border-transparent'
+                    }`}
+                  >
+                    <div className="font-medium text-white text-sm">{b.label}</div>
+                    <div className="text-xs text-gray-400">{b.desc}</div>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           

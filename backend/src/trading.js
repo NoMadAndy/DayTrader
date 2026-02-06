@@ -177,6 +177,7 @@ export async function initializeTradingSchema() {
         take_profit DECIMAL(15,4),
         
         total_fees_paid DECIMAL(10,4) DEFAULT 0,
+        open_fee DECIMAL(10,4) DEFAULT 0,
         total_overnight_fees DECIMAL(10,4) DEFAULT 0,
         days_held INTEGER DEFAULT 0,
         
@@ -412,6 +413,20 @@ export async function initializeTradingSchema() {
     `);
 
     await client.query('COMMIT');
+    
+    // Migrations for existing databases
+    try {
+      await db.query(`
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'positions' AND column_name = 'open_fee') THEN
+            ALTER TABLE positions ADD COLUMN open_fee DECIMAL(10,4) DEFAULT 0;
+          END IF;
+        END $$;
+      `);
+    } catch (migErr) {
+      console.warn('Migration warning (open_fee):', migErr.message);
+    }
+    
     console.log('Trading database schema initialized successfully');
   } catch (e) {
     await client.query('ROLLBACK');
@@ -1461,6 +1476,7 @@ function formatPosition(row) {
     stopLoss: row.stop_loss ? parseFloat(row.stop_loss) : null,
     takeProfit: row.take_profit ? parseFloat(row.take_profit) : null,
     totalFeesPaid: parseFloat(row.total_fees_paid || 0),
+    openFee: parseFloat(row.open_fee || 0),
     totalOvernightFees: parseFloat(row.total_overnight_fees || 0),
     daysHeld: row.days_held || 0,
     openedAt: row.opened_at,
@@ -1977,7 +1993,8 @@ export async function getEquityCurve(portfolioId, userId, days = 30) {
         AVG(positions_value) as positions_value,
         AVG(unrealized_pnl) as unrealized_pnl,
         AVG(realized_pnl) as realized_pnl,
-        AVG(margin_used) as margin_used
+        AVG(margin_used) as margin_used,
+        AVG(total_fees_paid) as total_fees_paid
        FROM portfolio_snapshots
        WHERE portfolio_id = $1 AND recorded_at >= NOW() - INTERVAL '${days} days'
        GROUP BY DATE(recorded_at)
@@ -1996,6 +2013,7 @@ export async function getEquityCurve(portfolioId, userId, days = 30) {
         unrealizedPnl: metrics.unrealizedPnl,
         realizedPnl: metrics.realizedPnl,
         marginUsed: metrics.marginUsed,
+        totalFeesPaid: metrics.totalFees || 0,
       }];
     }
     
@@ -2007,6 +2025,7 @@ export async function getEquityCurve(portfolioId, userId, days = 30) {
       unrealizedPnl: parseFloat(row.unrealized_pnl || 0),
       realizedPnl: parseFloat(row.realized_pnl || 0),
       marginUsed: parseFloat(row.margin_used || 0),
+      totalFeesPaid: parseFloat(row.total_fees_paid || 0),
     }));
   } catch (e) {
     console.error('Get equity curve error:', e);

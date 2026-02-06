@@ -529,22 +529,30 @@ export default function AITradersPage() {
                   </label>
                   <div className="grid grid-cols-2 gap-3">
                     {[
-                      { value: 'flatex' as const, label: 'flatex', desc: '~$8.50 flat/Order' },
-                      { value: 'ingdiba' as const, label: 'ING DiBa', desc: '$5.30 + 0.25% (min $10.70)' },
-                    ].map((broker) => (
-                      <button
-                        key={broker.value}
-                        onClick={() => setFormBrokerProfile(broker.value)}
-                        className={`p-3 rounded-lg text-left transition-colors ${
-                          formBrokerProfile === broker.value
-                            ? 'bg-orange-600/30 border-2 border-orange-500'
-                            : 'bg-slate-700 hover:bg-slate-600 border-2 border-transparent'
-                        }`}
-                      >
-                        <div className="font-medium text-white">{broker.label}</div>
-                        <div className="text-xs text-gray-400">{broker.desc}</div>
-                      </button>
-                    ))}
+                      { value: 'flatex' as const, label: 'flatex', desc: '~$8.50 flat/Order', calcFee: () => 8.50 },
+                      { value: 'ingdiba' as const, label: 'ING DiBa', desc: '$5.30 + 0.25%', calcFee: (amount: number) => Math.max(10.70, Math.min(75.50, 5.30 + amount * 0.0025)) + 2.05 },
+                    ].map((broker) => {
+                      // Calculate example fee for a typical order (25% of capital per maxPositionSize default)
+                      const exampleOrderSize = formInitialCapital * 0.25;
+                      const exampleFee = broker.calcFee(exampleOrderSize);
+                      return (
+                        <button
+                          key={broker.value}
+                          onClick={() => setFormBrokerProfile(broker.value)}
+                          className={`p-3 rounded-lg text-left transition-colors ${
+                            formBrokerProfile === broker.value
+                              ? 'bg-orange-600/30 border-2 border-orange-500'
+                              : 'bg-slate-700 hover:bg-slate-600 border-2 border-transparent'
+                          }`}
+                        >
+                          <div className="font-medium text-white">{broker.label}</div>
+                          <div className="text-xs text-gray-400">{broker.desc}</div>
+                          <div className="text-[10px] text-orange-400/80 mt-1">
+                            ~${exampleFee.toFixed(2)}/Trade bei ${(exampleOrderSize / 1000).toFixed(0)}k Order
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                   <p className="text-xs text-gray-500 mt-1">Broker-Gebühren werden bei jedem Trade abgezogen</p>
                 </div>

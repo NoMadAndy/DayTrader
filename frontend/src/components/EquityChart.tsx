@@ -19,6 +19,7 @@ export function EquityChart({ portfolioId, days = 30, height = 200 }: EquityChar
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hoveredPoint, setHoveredPoint] = useState<EquityCurvePoint | null>(null);
+  const [showGross, setShowGross] = useState(true);
   
   useEffect(() => {
     async function loadData() {
@@ -62,20 +63,36 @@ export function EquityChart({ portfolioId, days = 30, height = 200 }: EquityChar
   
   // Calculate scales
   const values = data.map(d => d.totalValue);
-  const minValue = Math.min(...values) * 0.995;
-  const maxValue = Math.max(...values) * 1.005;
+  const grossValues = data.map(d => d.totalValue + (d.totalFeesPaid || 0));
+  const hasFeesData = data.some(d => (d.totalFeesPaid || 0) > 0);
+  const allValues = hasFeesData && showGross ? [...values, ...grossValues] : values;
+  const minValue = Math.min(...allValues) * 0.995;
+  const maxValue = Math.max(...allValues) * 1.005;
   const valueRange = maxValue - minValue;
   
-  // Generate path
+  // Generate net path (actual portfolio value)
   const points = data.map((d, i) => {
     const x = padding.left + (i / (data.length - 1 || 1)) * innerWidth;
     const y = padding.top + innerHeight - ((d.totalValue - minValue) / valueRange) * innerHeight;
     return { x, y, data: d };
   });
   
+  // Generate gross path (portfolio value + fees paid back)
+  const grossPoints = hasFeesData ? data.map((d, i) => {
+    const grossValue = d.totalValue + (d.totalFeesPaid || 0);
+    const x = padding.left + (i / (data.length - 1 || 1)) * innerWidth;
+    const y = padding.top + innerHeight - ((grossValue - minValue) / valueRange) * innerHeight;
+    return { x, y };
+  }) : [];
+  
   const pathD = points
     .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
     .join(' ');
+  
+  // Gross line path
+  const grossPathD = grossPoints.length > 0 
+    ? grossPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+    : '';
   
   // Area fill path
   const areaD = `${pathD} L ${points[points.length - 1].x} ${padding.top + innerHeight} L ${padding.left} ${padding.top + innerHeight} Z`;
@@ -99,6 +116,22 @@ export function EquityChart({ portfolioId, days = 30, height = 200 }: EquityChar
   
   return (
     <div className="relative">
+      {/* Gross/Net toggle */}
+      {hasFeesData && (
+        <div className="absolute top-1 left-1 z-10">
+          <button
+            onClick={() => setShowGross(!showGross)}
+            className={`text-[10px] px-2 py-0.5 rounded transition-colors ${
+              showGross 
+                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' 
+                : 'bg-slate-700/50 text-gray-500 border border-slate-600/30'
+            }`}
+            title="Brutto-Linie anzeigen (Performance vor Gebühren)"
+          >
+            {showGross ? '📊 Brutto an' : '📊 Brutto aus'}
+          </button>
+        </div>
+      )}
       <svg
         viewBox={`0 0 ${chartWidth} ${chartHeight}`}
         className="w-full"
@@ -152,7 +185,21 @@ export function EquityChart({ portfolioId, days = 30, height = 200 }: EquityChar
         {/* Area fill */}
         <path d={areaD} fill={fillColor} />
         
-        {/* Line */}
+        {/* Gross line (before fees) */}
+        {hasFeesData && showGross && grossPathD && (
+          <path
+            d={grossPathD}
+            fill="none"
+            stroke="#f59e0b"
+            strokeWidth="1.5"
+            strokeDasharray="6 3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity={0.6}
+          />
+        )}
+        
+        {/* Net line (actual) */}
         <path
           d={pathD}
           fill="none"
@@ -196,6 +243,18 @@ export function EquityChart({ portfolioId, days = 30, height = 200 }: EquityChar
             <span className={hoveredPoint.realizedPnl >= 0 ? 'text-green-400' : 'text-red-400'}>
               {formatCurrency(hoveredPoint.realizedPnl)}
             </span>
+            {(hoveredPoint.totalFeesPaid ?? 0) > 0 && (
+              <>
+                <span className="text-orange-400">Gebühren:</span>
+                <span className="text-orange-400">
+                  {formatCurrency(hoveredPoint.totalFeesPaid!)}
+                </span>
+                <span className="text-gray-400">Brutto:</span>
+                <span className="text-amber-400">
+                  {formatCurrency(hoveredPoint.totalValue + hoveredPoint.totalFeesPaid!)}
+                </span>
+              </>
+            )}
           </div>
         </div>
       )}

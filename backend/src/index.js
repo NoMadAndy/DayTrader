@@ -3926,10 +3926,19 @@ app.post('/api/ai-traders', authMiddleware, async (req, res) => {
  */
 app.put('/api/ai-traders/:id', authMiddleware, async (req, res) => {
   try {
-    const trader = await aiTrader.updateAITrader(
-      parseInt(req.params.id),
-      req.body
-    );
+    const traderId = parseInt(req.params.id);
+    const trader = await aiTrader.updateAITrader(traderId, req.body);
+    
+    // If brokerProfile is being changed, also update the portfolio
+    if (req.body.brokerProfile) {
+      const portfolio = await aiTrader.getAITraderPortfolio(traderId);
+      if (portfolio) {
+        await trading.updatePortfolioSettings(portfolio.id, portfolio.userId, {
+          brokerProfile: req.body.brokerProfile
+        });
+      }
+    }
+    
     res.json(aiTrader.formatTraderForApi(trader));
   } catch (e) {
     console.error('Update AI trader error:', e);
@@ -4525,6 +4534,11 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
     const traderId = parseInt(req.params.id);
     const { symbol, action, quantity, price, stop_loss, take_profit, reasoning } = req.body;
     
+    // Validate quantity
+    if (!quantity || quantity <= 0) {
+      return res.status(400).json({ error: 'Invalid quantity', quantity });
+    }
+    
     // Get AI trader
     const trader = await aiTrader.getAITrader(traderId);
     const traderName = trader?.name || `Trader #${traderId}`;
@@ -4557,7 +4571,7 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
           price,
           brokerProfile,
         });
-        const orderFee = fees.commission;
+        const orderFee = fees.totalFees;  // commission + spread (matches RL training)
         
         // Check if we have enough cash (cost + fee)
         const cost = Math.abs(quantity) * price;
@@ -4583,17 +4597,17 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
           const newAvgPrice = ((parseFloat(existing.quantity) * parseFloat(existing.entry_price)) + (Math.abs(quantity) * price)) / newQuantity;
           
           const updateResult = await client.query(
-            `UPDATE positions SET quantity = $1, entry_price = $2, total_fees_paid = COALESCE(total_fees_paid, 0) + $3, updated_at = NOW()
-             WHERE id = $4 RETURNING *`,
-            [newQuantity, newAvgPrice, orderFee, existing.id]
+            `UPDATE positions SET quantity = $1, entry_price = $2, total_fees_paid = COALESCE(total_fees_paid, 0) + $3, open_fee = COALESCE(open_fee, 0) + $4, updated_at = NOW()
+             WHERE id = $5 RETURNING *`,
+            [newQuantity, newAvgPrice, orderFee, orderFee, existing.id]
           );
           position = updateResult.rows[0];
         } else {
           // Create new position
           const insertResult = await client.query(
             `INSERT INTO positions (portfolio_id, symbol, side, quantity, entry_price, current_price, 
-             stop_loss, take_profit, product_type, is_open, close_reason, total_fees_paid, opened_at)
-             VALUES ($1, $2, $3, $4, $5, $5, $6, $7, 'stock', true, $8, $9, NOW())
+             stop_loss, take_profit, product_type, is_open, close_reason, total_fees_paid, open_fee, opened_at)
+             VALUES ($1, $2, $3, $4, $5, $5, $6, $7, 'stock', true, $8, $9, $9, NOW())
              RETURNING *`,
             [portfolio.id, symbol, side, Math.abs(quantity), price, stop_loss, take_profit, reasoning, orderFee]
           );
@@ -4649,7 +4663,7 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
           price,
           brokerProfile,
         });
-        const closeFee = closeFees.commission;
+        const closeFee = closeFees.totalFees;  // commission + spread (matches RL training)
         const totalFeesPaid = parseFloat(position.total_fees_paid || 0) + closeFee;
         
         // Calculate P&L based on position side (AFTER fees)
@@ -4673,7 +4687,10 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
         );
         
         // Update portfolio cash (add back margin + gross P&L - close fee)
-        const proceeds = (entryPrice * positionQty) + grossPnl - closeFee;
+        const proceeds = Math.max(0, (entryPrice * positionQty) + grossPnl - closeFee);
+        if (proceeds === 0) {
+          console.warn(`[AI Trader ${traderId}] Proceeds capped at 0 for ${symbol} (gross: ${grossPnl.toFixed(2)}, closeFee: ${closeFee.toFixed(2)})`);
+        }
         await client.query(
           `UPDATE portfolios SET cash_balance = cash_balance + $1, updated_at = NOW() WHERE id = $2`,
           [proceeds, portfolio.id]
@@ -4811,6 +4828,15 @@ app.get('/api/ai-traders/:id/positions', async (req, res) => {
           : ((pos.takeProfit - currentPrice) / currentPrice) * 100)
         : null;
       
+      // Fee data and break-even price
+      const openFee = pos.openFee || 0;
+      const totalFeesPaid = pos.totalFeesPaid || 0;
+      // Break-even = entry price adjusted by total fees per share
+      const feePerShare = quantity > 0 ? totalFeesPaid / quantity : 0;
+      const breakEvenPrice = side === 'short'
+        ? entryPrice - feePerShare
+        : entryPrice + feePerShare;
+
       return {
         ...pos,
         currentPrice,
@@ -4826,7 +4852,10 @@ app.get('/api/ai-traders/:id/positions', async (req, res) => {
         priceChange: live?.change || null,
         priceChangePercent: live?.changePercent || null,
         notionalValue: currentPrice * quantity,
-        investedValue: entryPrice * quantity
+        investedValue: entryPrice * quantity,
+        openFee,
+        totalFeesPaid,
+        breakEvenPrice
       };
     });
     
@@ -4854,7 +4883,7 @@ app.get('/api/ai-traders/:id/trades', async (req, res) => {
       `SELECT 
          p.id, p.symbol, p.side, p.quantity, p.entry_price, p.close_price,
          p.opened_at, p.closed_at, p.realized_pnl, p.close_reason,
-         p.stop_loss, p.take_profit, p.is_open, p.total_fees_paid,
+         p.stop_loss, p.take_profit, p.is_open, p.total_fees_paid, p.open_fee,
          -- Buy/open decision reasoning (closest executed decision for this symbol around open time)
          open_d.summary_short AS open_summary,
          open_d.reasoning AS open_reasoning,
@@ -5010,10 +5039,11 @@ app.get('/api/ai-traders/:id/trades', async (req, res) => {
         technicalScore: row.open_technical_score ? parseFloat(row.open_technical_score) : null,
         signalAgreement: row.open_signal_agreement || null,
         explanation: buildExplanation(openReasoning, row.open_summary, row.side === 'short' ? 'short' : 'buy'),
-        fees: row.total_fees_paid != null ? (row.is_open 
-          ? parseFloat(row.total_fees_paid) 
-          : parseFloat(row.total_fees_paid) / 2  // Approximate open-fee as half of total (open+close)
-        ) : null,
+        fees: row.open_fee != null ? parseFloat(row.open_fee) : 
+              (row.total_fees_paid != null ? (row.is_open 
+                ? parseFloat(row.total_fees_paid) 
+                : parseFloat(row.total_fees_paid) / 2
+              ) : null),
       });
       
       // CLOSE/SELL trade (only for closed positions)
@@ -5049,7 +5079,9 @@ app.get('/api/ai-traders/:id/trades', async (req, res) => {
           summary: row.close_summary || null,
           confidence: row.close_confidence ? parseFloat(row.close_confidence) : null,
           explanation: buildExplanation(closeReasoning, row.close_summary, 'close'),
-          fees: row.total_fees_paid != null ? parseFloat(row.total_fees_paid) / 2 : null,  // Approximate close-fee as half of total
+          fees: (row.open_fee != null && row.total_fees_paid != null) 
+            ? parseFloat(row.total_fees_paid) - parseFloat(row.open_fee)
+            : (row.total_fees_paid != null ? parseFloat(row.total_fees_paid) / 2 : null),  // Fallback for legacy positions
         });
       }
     }
