@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.0] - 2026-02-06
+
+### Changed
+- **Kompaktes Dashboard-Layout** - Oberer Bereich (Header, Trader-Card, Stats) in eine kompakte Zeile zusammengeführt; deutlich weniger Vertikalplatz
+- **Desktop: Trades links + Positionen rechts** - Side-by-side Layout im Activity-Tab; Entscheidungen und Activity Feed in unterer Reihe
+- **Mobile: Mehr Inhalt sichtbar** - Kleinere Paddings, Font-Größen und Abstände; Trades/Positionen nutzen dynamische Höhe `calc(100vh-280px)`
+- **Stats-Zeile kompakter** - 6-Spalten-Grid mit kleineren Kacheln und 10px-Labels
+- **AITraderCard entfernt** - Trader-Infos, Status und Controls direkt in den Header integriert
+
 ## [1.23.0] - 2026-02-06
 
 ### Added
