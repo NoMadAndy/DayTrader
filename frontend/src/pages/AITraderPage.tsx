@@ -132,6 +132,7 @@ export function AITraderPage() {
   
   // Track previous decisions for detecting new ones
   const prevDecisionIdsRef = useRef<Set<number>>(new Set());
+  const prevExecutedIdsRef = useRef<Set<number>>(new Set());
   const [newDecisionIds, setNewDecisionIds] = useState<Set<number>>(new Set());
   
   // Notification feedback hook (for non-trade notifications)
@@ -139,6 +140,9 @@ export function AITraderPage() {
   
   // Trade toast notifications
   const { toasts: tradeToasts, addToast: addTradeToast, dismissToast: dismissTradeToast } = useTradeToasts();
+  
+  // Deduplicate toasts: track which symbol+action+timestamp combos we already toasted
+  const processedToastKeysRef = useRef<Set<string>>(new Set());
   
   // Navigate to stock dashboard for a symbol
   const navigateToSymbol = useCallback((symbol: string) => {
@@ -156,17 +160,39 @@ export function AITraderPage() {
     if (decisions.length === 0) return;
     
     const currentIds = new Set(decisions.map(d => d.id));
+    const currentExecutedIds = new Set(decisions.filter(d => d.executed).map(d => d.id));
     const newIds = new Set<number>();
+    
+    // Helper: try to create toast for an executed trade decision (with dedup)
+    const tryCreateToast = (d: typeof decisions[0]) => {
+      if (!d.executed || !['buy', 'sell', 'short', 'close'].includes(d.decisionType)) return;
+      const toastKey = `${d.symbol}-${d.decisionType}-${d.timestamp}`;
+      if (processedToastKeysRef.current.has(toastKey)) return; // Already toasted (maybe via SSE)
+      processedToastKeysRef.current.add(toastKey);
+      
+      const reasoning = typeof d.reasoning === 'object' ? d.reasoning : {};
+      const rObj = reasoning as { quantity?: number; price?: number };
+      addTradeToast({
+        action: d.decisionType as 'buy' | 'sell' | 'short' | 'close',
+        symbol: d.symbol,
+        quantity: rObj.quantity || 0,
+        price: rObj.price || 0,
+        confidence: d.confidence,
+        pnl: (reasoning as { pnl?: number }).pnl ?? null,
+        pnlPercent: (reasoning as { pnl_percent?: number }).pnl_percent ?? null,
+        reasoning: d.summaryShort || undefined,
+        timestamp: d.timestamp,
+      });
+    };
     
     // Find truly new decisions (not seen before)
     decisions.forEach(d => {
       if (!prevDecisionIdsRef.current.has(d.id)) {
+        // Brand new decision
         newIds.add(d.id);
-        // NOTE: Toasts are now triggered by SSE trade_executed events (see handleSSEEvent)
-        // to avoid race condition where decision is seen with executed=false first
+        tryCreateToast(d);
         
         if (d.decisionType !== 'skip' && !d.executed) {
-          // Non-trade notifications (hold etc.) - no sound, only visual
           notifyDecision(d.decisionType, d.executed);
         }
         
@@ -198,18 +224,22 @@ export function AITraderPage() {
               : undefined,
           });
         }
+      } else if (d.executed && !prevExecutedIdsRef.current.has(d.id)) {
+        // Known decision that just became executed (race condition fix: 
+        // first poll saw executed=false, now it's true)
+        tryCreateToast(d);
       }
     });
     
     // Update refs and state
     if (newIds.size > 0) {
       setNewDecisionIds(newIds);
-      // Clear flash after animation
       setTimeout(() => setNewDecisionIds(new Set()), 2000);
     }
     
     prevDecisionIdsRef.current = currentIds;
-  }, [decisions, notifyDecision]);
+    prevExecutedIdsRef.current = currentExecutedIds;
+  }, [decisions, notifyDecision, addTradeToast]);
   
   const traderId = id ? parseInt(id) : undefined;
   
@@ -367,7 +397,7 @@ export function AITraderPage() {
   
   // Handle SSE events - trigger refresh on important events AND create toasts
   const handleSSEEvent = useCallback((event: AITraderEvent) => {
-    // Create toast directly from SSE trade_executed event (avoids polling race condition)
+    // Create toast directly from SSE trade_executed event (with dedup)
     if (event.type === 'trade_executed' && event.data) {
       const d = event.data as {
         symbol?: string;
@@ -380,17 +410,22 @@ export function AITraderPage() {
       };
       const action = d.action as 'buy' | 'sell' | 'short' | 'close';
       if (['buy', 'sell', 'short', 'close'].includes(action)) {
-        addTradeToast({
-          action,
-          symbol: d.symbol || '???',
-          quantity: d.quantity || 0,
-          price: d.price || 0,
-          confidence: null,
-          pnl: d.pnl ? parseFloat(String(d.pnl)) : null,
-          pnlPercent: null,
-          reasoning: undefined,
-          timestamp: event.timestamp || new Date().toISOString(),
-        });
+        const ts = event.data?.timestamp || event.timestamp || new Date().toISOString();
+        const toastKey = `${d.symbol}-${action}-${ts}`;
+        if (!processedToastKeysRef.current.has(toastKey)) {
+          processedToastKeysRef.current.add(toastKey);
+          addTradeToast({
+            action,
+            symbol: d.symbol || '???',
+            quantity: d.quantity || 0,
+            price: d.price || 0,
+            confidence: null,
+            pnl: d.pnl ? parseFloat(String(d.pnl)) : null,
+            pnlPercent: null,
+            reasoning: undefined,
+            timestamp: ts,
+          });
+        }
       }
     }
     
