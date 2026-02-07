@@ -29,7 +29,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Read version from package.json for accurate version info
-let packageVersion = '1.9.0';
+let packageVersion = '1.33.1';
 try {
   const packageJson = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'));
   packageVersion = packageJson.version;

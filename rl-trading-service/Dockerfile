@@ -4,7 +4,7 @@
 FROM python:3.11-slim
 
 # Build arguments
-ARG BUILD_VERSION=1.0.0
+ARG BUILD_VERSION=1.33.1
 ARG BUILD_COMMIT=dev
 ARG BUILD_TIME=unknown
 
