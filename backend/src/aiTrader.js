@@ -1100,12 +1100,19 @@ export async function updateTraderStats(traderId) {
   const losingTrades = parseInt(ps.losing_trades) || 0;
   const lastTradeAt = ps.last_trade_at || null;
   
+  // Get initial capital from portfolio for correct P&L calculation
+  const portfolioResult = await query(
+    'SELECT initial_capital FROM portfolios WHERE id = $1',
+    [portfolioId]
+  );
+  const initialCapital = parseFloat(portfolioResult.rows[0]?.initial_capital) || 100000;
+  
   // Calculate P&L, best/worst trade from closed positions
-  let totalPnl = 0;
-  let bestTradePnl = null;
-  let worstTradePnl = null;
+  let totalPnl = 0;       // portfolio-level P&L in % (realized_pnl_currency / initial_capital)
+  let bestTradePnl = null; // best single-trade P&L in %
+  let worstTradePnl = null;// worst single-trade P&L in %
   let currentStreak = 0;
-  let maxDrawdown = 0;
+  let maxDrawdown = 0;     // portfolio-level max drawdown in %
   
   if (closedTrades > 0) {
     const pnlResult = await query(
@@ -1122,34 +1129,44 @@ export async function updateTraderStats(traderId) {
       [portfolioId]
     );
     
-    // Aggregate P&L stats
-    let cumPnl = 0;
-    let peakPnl = 0;
-    const pnlPcts = [];
+    // Portfolio-level P&L: sum realized_pnl in currency, then convert to % of initial capital
+    let totalRealizedPnlCurrency = 0;
+    let cumRealizedCurrency = 0;
+    let peakPortfolioValue = initialCapital;
+    const tradePnlPcts = []; // individual trade P&L% for streak calculation
     
     for (const row of pnlResult.rows) {
-      const pnlPct = parseFloat(row.pnl_pct) || 0;
-      pnlPcts.push(pnlPct);
-      totalPnl += pnlPct;
+      const realizedPnl = parseFloat(row.realized_pnl) || 0; // currency
+      const pnlPct = parseFloat(row.pnl_pct) || 0;           // single-trade %
+      tradePnlPcts.push(pnlPct);
+      totalRealizedPnlCurrency += realizedPnl;
       
-      // Best/worst
+      // Best/worst single-trade P&L (individual trade %, not portfolio %)
       if (bestTradePnl === null || pnlPct > bestTradePnl) bestTradePnl = pnlPct;
       if (worstTradePnl === null || pnlPct < worstTradePnl) worstTradePnl = pnlPct;
       
-      // Max drawdown from cumulative P&L
-      cumPnl += pnlPct;
-      if (cumPnl > peakPnl) peakPnl = cumPnl;
-      const dd = peakPnl - cumPnl;
+      // Max drawdown: track portfolio value after each closed trade
+      cumRealizedCurrency += realizedPnl;
+      const portfolioValueAfterTrade = initialCapital + cumRealizedCurrency;
+      if (portfolioValueAfterTrade > peakPortfolioValue) {
+        peakPortfolioValue = portfolioValueAfterTrade;
+      }
+      const dd = peakPortfolioValue > 0 
+        ? ((peakPortfolioValue - portfolioValueAfterTrade) / peakPortfolioValue) * 100 
+        : 0;
       if (dd > maxDrawdown) maxDrawdown = dd;
     }
     
+    // Portfolio-level total P&L as percentage of initial capital
+    totalPnl = initialCapital > 0 ? (totalRealizedPnlCurrency / initialCapital) * 100 : 0;
+    
     // Current streak (from most recent trades)
-    for (let i = pnlPcts.length - 1; i >= 0; i--) {
-      if (i === pnlPcts.length - 1) {
-        currentStreak = pnlPcts[i] > 0 ? 1 : -1;
+    for (let i = tradePnlPcts.length - 1; i >= 0; i--) {
+      if (i === tradePnlPcts.length - 1) {
+        currentStreak = tradePnlPcts[i] > 0 ? 1 : -1;
       } else {
         const isWinning = currentStreak > 0;
-        if ((isWinning && pnlPcts[i] > 0) || (!isWinning && pnlPcts[i] < 0)) {
+        if ((isWinning && tradePnlPcts[i] > 0) || (!isWinning && tradePnlPcts[i] < 0)) {
           currentStreak += isWinning ? 1 : -1;
         } else {
           break;

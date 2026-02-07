@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.32.1] - 2026-02-07
+
+### Fixed
+- **P&L-Berechnung auf Übersichtsseite** – `updateTraderStats()` summierte bisher die einzelnen Trade-P&L-Prozente (z.B. 5 × -34% = -170.3%). Jetzt wird korrekt `(Summe realized_pnl in €) / Anfangskapital × 100` berechnet (Portfolio-Level-Prozent).
+- **Max-Drawdown Portfolio-Level** – Drawdown wird jetzt aus der kumulierten Portfolio-Wertentwicklung nach jedem geschlossenen Trade berechnet, statt aus der Summe der Trade-Prozente.
+
 ## [1.32.0] - 2026-02-07
 
 ### Changed
