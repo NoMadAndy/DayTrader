@@ -7,7 +7,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AITraderActivityFeed } from '../components/AITraderActivityFeed';
-import { AITraderSettingsModal } from '../components/AITraderSettingsModal';
+import { AITraderConfigModal } from '../components/AITraderConfigModal';
 import { AITraderTrainingStatus } from '../components/AITraderTrainingStatus';
 import AITraderTrainingHistory from '../components/AITraderTrainingHistory';
 import { TradeReasoningCard } from '../components/TradeReasoningCard';
@@ -649,13 +649,13 @@ export function AITraderPage() {
         </div>
       </div>
       
-      {/* Settings Modal */}
+      {/* Settings Modal (unified config modal) */}
       {trader && (
-        <AITraderSettingsModal
+        <AITraderConfigModal
           trader={trader}
           isOpen={showSettings}
           onClose={() => setShowSettings(false)}
-          onUpdated={(updated) => setTrader(updated)}
+          onSaved={(updated) => setTrader(updated)}
         />
       )}
       
@@ -1007,14 +1007,14 @@ export function AITraderPage() {
               <div className="px-3 py-2 border-b border-slate-700/50">
                 <h3 className="font-bold text-sm">📍 Positionen ({positions.length})</h3>
               </div>
-              <div className="p-2 max-h-[200px] lg:max-h-[500px] overflow-y-auto">
+              <div className="p-1.5 max-h-[200px] lg:max-h-[500px] overflow-y-auto">
                 {positions.length === 0 ? (
                   <div className="text-center text-gray-500 py-4">
                     <div className="text-lg mb-1">📭</div>
                     <div className="text-xs">Keine Positionen</div>
                   </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-0.5">
                     {positions.map((position) => {
                       const pnlPercent = position.unrealizedPnlPercent || 0;
                       const pnl = position.unrealizedPnl || 0;
@@ -1025,71 +1025,59 @@ export function AITraderPage() {
                       const currentPrice = position.currentPrice || position.entryPrice;
                       const totalFeesPaid = (position as any).totalFeesPaid || 0;
                       const breakEvenPrice = (position as any).breakEvenPrice || null;
+                      const holdLabel = daysHeld > 0 ? `${daysHeld}d` : `${hoursHeld}h`;
                       
                       return (
                         <div 
                           key={position.id}
-                          className="bg-slate-900/50 rounded-lg p-2 flex items-center gap-3"
+                          className="bg-slate-900/50 rounded px-2 py-1 flex items-center gap-2 text-xs"
                         >
                           {/* Symbol & Side */}
-                          <div className="w-20 flex-shrink-0">
-                            <button
-                              onClick={() => navigateToSymbol(position.symbol)}
-                              className="font-bold text-sm text-blue-400 hover:text-blue-300 hover:underline transition-colors"
-                              title={`${position.symbol} im Dashboard anzeigen`}
-                            >
-                              {position.symbol}
-                            </button>
-                            <div className="text-xs text-gray-500">
-                              {position.side === 'short' ? '🔴 Short' : '🟢 Long'}
-                            </div>
-                          </div>
+                          <button
+                            onClick={() => navigateToSymbol(position.symbol)}
+                            className="font-bold text-xs text-blue-400 hover:text-blue-300 hover:underline transition-colors w-14 text-left flex-shrink-0 truncate"
+                            title={`${position.symbol} im Dashboard anzeigen`}
+                          >
+                            {position.side === 'short' ? '🔴' : '🟢'} {position.symbol}
+                          </button>
                           
-                          {/* Qty & Prices & Break-Even */}
-                          <div className="flex-1 text-xs text-gray-400">
-                            <div>{position.quantity}x @ ${position.entryPrice?.toFixed(2)}</div>
-                            <div>→ ${currentPrice?.toFixed(2)}</div>
+                          {/* Qty & Prices */}
+                          <div className="flex-1 text-gray-400 truncate min-w-0">
+                            <span>{position.quantity}x </span>
+                            <span>${position.entryPrice?.toFixed(2)}</span>
+                            <span className="text-gray-600"> → </span>
+                            <span className="text-gray-300">${currentPrice?.toFixed(2)}</span>
                             {breakEvenPrice && (
-                              <div className="text-yellow-400/70" title="Break-Even Preis (inkl. Gebühren)">
-                                BE: ${breakEvenPrice.toFixed(2)}
-                              </div>
+                              <span className="text-yellow-400/60 ml-1" title="Break-Even (inkl. Gebühren)">
+                                BE:{breakEvenPrice.toFixed(2)}
+                              </span>
                             )}
                           </div>
                           
-                          {/* P&L */}
-                          <div className="text-right flex-shrink-0 w-20">
-                            <div className={`font-bold ${pnlPercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                              {pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%
-                            </div>
-                            <div className={`text-xs ${pnl >= 0 ? 'text-green-400/60' : 'text-red-400/60'}`}>
-                              ${Math.abs(pnl).toFixed(0)}
-                            </div>
-                          </div>
-                          
-                          {/* Risk Indicators */}
-                          <div className="flex-shrink-0 flex flex-col items-end gap-0.5 w-16">
-                            {distanceToSL != null && (
-                              <div className={`text-xs px-1 rounded ${distanceToSL < 3 ? 'bg-red-500/30 text-red-300' : 'text-gray-500'}`}>
-                                SL {distanceToSL.toFixed(1)}%
-                              </div>
-                            )}
-                            {distanceToTP != null && (
-                              <div className={`text-xs px-1 rounded ${distanceToTP < 3 ? 'bg-green-500/30 text-green-300' : 'text-gray-500'}`}>
-                                TP {distanceToTP.toFixed(1)}%
-                              </div>
-                            )}
-                          </div>
-                          
-                          {/* Fees */}
-                          {totalFeesPaid > 0 && (
-                            <div className="text-xs text-orange-400/70 w-12 text-right" title="Gebühren für diese Position">
-                              🏦 ${totalFeesPaid.toFixed(0)}
+                          {/* SL/TP compact */}
+                          {(distanceToSL != null || distanceToTP != null) && (
+                            <div className="flex-shrink-0 flex items-center gap-1 text-[10px]">
+                              {distanceToSL != null && (
+                                <span className={distanceToSL < 3 ? 'text-red-300' : 'text-gray-500'}>
+                                  SL{distanceToSL.toFixed(0)}%
+                                </span>
+                              )}
+                              {distanceToTP != null && (
+                                <span className={distanceToTP < 3 ? 'text-green-300' : 'text-gray-500'}>
+                                  TP{distanceToTP.toFixed(0)}%
+                                </span>
+                              )}
                             </div>
                           )}
                           
-                          {/* Time */}
-                          <div className="text-xs text-gray-500 w-8 text-right">
-                            {daysHeld > 0 ? `${daysHeld}d` : `${hoursHeld}h`}
+                          {/* P&L */}
+                          <div className={`font-bold flex-shrink-0 w-14 text-right ${pnlPercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%
+                          </div>
+                          
+                          {/* Fee + Time */}
+                          <div className="text-[10px] text-gray-500 flex-shrink-0 w-8 text-right" title={totalFeesPaid > 0 ? `Gebühren: $${totalFeesPaid.toFixed(2)}` : undefined}>
+                            {holdLabel}
                           </div>
                         </div>
                       );

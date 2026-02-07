@@ -25,6 +25,7 @@ export { TrainingConsole } from './TrainingConsole';
 export { AITraderCard } from './AITraderCard';
 export { AITraderActivityFeed } from './AITraderActivityFeed';
 export { AITraderSettingsModal } from './AITraderSettingsModal';
+export { AITraderConfigModal } from './AITraderConfigModal';
 export { AITraderDecisionModal } from './AITraderDecisionModal';
 export { AITraderWeightHistoryChart } from './AITraderWeightHistoryChart';
 export { RLAgentDetailModal } from './RLAgentDetailModal';

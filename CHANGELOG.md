@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.31.0] - 2026-02-07
+
+### Changed
+- **AI Trader: Erstellen + Einstellungen Modal zusammengelegt** – Neues einheitliches `AITraderConfigModal` ersetzt das alte inline Create-Formular und das separate `AITraderSettingsModal`. Gleicher Modal-Flow für Erstellen und Bearbeiten.
+- **Profil-basierte Konfiguration** – Trading-Persönlichkeiten (8 Presets) stehen jetzt beim Erstellen UND Bearbeiten an erster Stelle. Das gewählte Profil bleibt visuell ausgewählt und füllt alle Einstellungen automatisch vor.
+- **SL/TP nicht mehr manuell editierbar** – Stop-Loss und Take-Profit werden vom Risikoprofil dynamisch gesteuert und nur noch als Info-Zusammenfassung angezeigt, nicht mehr als Input-Felder.
+- **Erweiterte Einstellungen als Accordion** – Signal-Gewichtungen, Trading, Risiko, Zeitplan und Lernen sind als aufklappbare Sektionen organisiert, die standardmäßig eingeklappt sind (Profil deckt das meiste ab).
+- **AITradersPage.tsx stark vereinfacht** – ~450 Zeilen Inline-Formular-Code entfernt, ersetzt durch Einbindung des neuen Config-Modals.
+
+### Fixed
+- **Watchlist-State nicht zurückgesetzt im Create-Modus** – `watchlistSymbols` und `useFullWatchlist` blieben vom vorherigen Edit erhalten, wenn man danach einen neuen Trader erstellt hat. Jetzt korrekt auf Defaults zurückgesetzt.
+- **Data-Loading Race Condition** – Default-Watchlist-Logik aus dem Data-Loading-Effekt entfernt und in separaten Effekt mit korrekten Dependencies ausgelagert. Verhindert stale Closure-Werte bei wiederholtem Öffnen.
+- **`as any` Type-Cast entfernt** – `brokerProfile` wurde redundant als Top-Level-Feld UND innerhalb `personality.capital` gesendet. Nur noch innerhalb der Personality, Type-Cast entfällt.
+- **Escape-Taste zum Schließen** – Modal kann jetzt per Escape geschlossen werden (nicht während des Speicherns).
+- **Startkapital ab 1.000 €** – Slider-Minimum von 10.000 auf 1.000 gesenkt, Schrittweite 1.000 statt 10.000.
+- **Positionen kompakter dargestellt** – Einzeilig statt mehrzeilig, weniger Padding, alle Infos (Symbol, Side, Preise, SL/TP, P&L, Haltedauer) in einer Zeile.
+
 ## [1.30.2] - 2026-02-06
 
 ### Fixed
