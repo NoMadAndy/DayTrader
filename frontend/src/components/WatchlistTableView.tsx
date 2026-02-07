@@ -9,6 +9,8 @@ import { useNavigate } from 'react-router-dom';
 import type { TradingSignalSummary } from '../utils/tradingSignals';
 import type { CompanyInfo } from '../services/companyInfoService';
 import { detectExchange } from '../utils/exchanges';
+import { OptionChainPanel } from './OptionChainPanel';
+import type { OrderSide } from '../types/trading';
 
 // Helper function to format market cap
 function formatMarketCap(value: number): string {
@@ -35,6 +37,17 @@ interface WatchlistItem {
   };
 }
 
+export interface WarrantTradeParams {
+  symbol: string;
+  optionType: 'call' | 'put';
+  strike: number;
+  days: number;
+  price: number;
+  delta: number;
+  quantity: number;
+  side: OrderSide;
+}
+
 interface WatchlistTableViewProps {
   items: WatchlistItem[];
   currentSymbol?: string;
@@ -48,6 +61,7 @@ interface WatchlistTableViewProps {
   SignalBadge: any;
   SignalSourceBadges: any;
   isAuthenticated: boolean;
+  onExecuteWarrantTrade?: (params: WarrantTradeParams) => Promise<{ success: boolean; message: string }>;
 }
 
 export function WatchlistTableView({
@@ -62,10 +76,25 @@ export function WatchlistTableView({
   SignalBadge,
   SignalSourceBadges,
   isAuthenticated,
+  onExecuteWarrantTrade,
 }: WatchlistTableViewProps) {
   const navigate = useNavigate();
   const [expandedSymbol, setExpandedSymbol] = useState<string | null>(null);
   const [deleteConfirmSymbol, setDeleteConfirmSymbol] = useState<string | null>(null);
+  
+  // Option Chain state
+  const [optionChainSymbol, setOptionChainSymbol] = useState<string | null>(null);
+  const [selectedWarrant, setSelectedWarrant] = useState<{
+    optionType: 'call' | 'put';
+    strike: number;
+    days: number;
+    price: number;
+    delta: number;
+  } | null>(null);
+  const [warrantQuantity, setWarrantQuantity] = useState('10');
+  const [warrantSide, setWarrantSide] = useState<OrderSide>('buy');
+  const [warrantTradeLoading, setWarrantTradeLoading] = useState(false);
+  const [warrantTradeResult, setWarrantTradeResult] = useState<{ success: boolean; message: string } | null>(null);
   
   const periodLabels: Record<string, string> = {
     hourly: '1h',
@@ -244,7 +273,7 @@ export function WatchlistTableView({
             <div className="bg-slate-800/50 border border-t-0 border-slate-600 rounded-b-lg px-4 py-3 mb-1">
               <div className="flex items-center justify-between gap-4">
                 {/* Additional Details */}
-                <div className="flex items-center gap-4 text-sm text-gray-400">
+                <div className="flex items-center gap-4 text-sm text-gray-400 flex-wrap">
                   {item.companyInfo?.sector && (
                     <span>
                       <span className="text-gray-500">Sektor:</span>{' '}
@@ -272,7 +301,7 @@ export function WatchlistTableView({
                 </div>
                 
                 {/* Action Buttons */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-shrink-0">
                   {isAuthenticated && (
                     <>
                       <button
@@ -284,6 +313,28 @@ export function WatchlistTableView({
                       >
                         <span>💹</span>
                         <span>Handeln</span>
+                      </button>
+                      
+                      {/* Option Chain Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const isOpen = optionChainSymbol === item.symbol;
+                          setOptionChainSymbol(isOpen ? null : item.symbol);
+                          if (isOpen) {
+                            setSelectedWarrant(null);
+                            setWarrantTradeResult(null);
+                          }
+                        }}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                          optionChainSymbol === item.symbol
+                            ? 'bg-amber-600 hover:bg-amber-700 text-white ring-1 ring-amber-400/50'
+                            : 'bg-amber-600/20 hover:bg-amber-600/40 text-amber-400 border border-amber-500/30'
+                        }`}
+                        title="Optionskette anzeigen — Warrants mit verschiedenen Strikes und Laufzeiten"
+                      >
+                        <span>⚡</span>
+                        <span>Optionskette</span>
                       </button>
                       
                       {deleteConfirmSymbol === item.symbol ? (
@@ -326,6 +377,158 @@ export function WatchlistTableView({
                   )}
                 </div>
               </div>
+              
+              {/* Option Chain Panel (inline, below details) */}
+              {optionChainSymbol === item.symbol && item.currentPrice && (
+                <div className="mt-3 border-t border-slate-600/50 pt-3" onClick={(e) => e.stopPropagation()}>
+                  {/* Selected Warrant Trade Form */}
+                  {selectedWarrant && (
+                    <div className="mb-3 p-3 bg-slate-700/50 rounded-lg border border-amber-500/20">
+                      <div className="flex items-center justify-between flex-wrap gap-3">
+                        <div className="flex items-center gap-4 text-sm">
+                          <span className={`px-2 py-1 rounded font-bold ${
+                            selectedWarrant.optionType === 'call'
+                              ? 'bg-green-500/20 text-green-400'
+                              : 'bg-red-500/20 text-red-400'
+                          }`}>
+                            {selectedWarrant.optionType === 'call' ? '📈 CALL' : '📉 PUT'}
+                          </span>
+                          <span className="text-gray-400">
+                            Strike: <span className="text-white font-medium">${selectedWarrant.strike.toFixed(2)}</span>
+                          </span>
+                          <span className="text-gray-400">
+                            Laufzeit: <span className="text-white font-medium">{selectedWarrant.days}T</span>
+                          </span>
+                          <span className="text-gray-400">
+                            Preis: <span className="text-amber-400 font-medium">${selectedWarrant.price.toFixed(4)}</span>
+                          </span>
+                          <span className="text-gray-400">
+                            Delta: <span className="text-white font-medium">{selectedWarrant.delta.toFixed(3)}</span>
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {/* Side */}
+                          <div className="flex rounded-lg overflow-hidden border border-slate-600">
+                            <button
+                              onClick={() => setWarrantSide('buy')}
+                              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                                warrantSide === 'buy'
+                                  ? 'bg-green-600 text-white'
+                                  : 'bg-slate-700 text-gray-400 hover:text-white'
+                              }`}
+                            >
+                              Kauf
+                            </button>
+                            <button
+                              onClick={() => setWarrantSide('short')}
+                              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                                warrantSide === 'short'
+                                  ? 'bg-red-600 text-white'
+                                  : 'bg-slate-700 text-gray-400 hover:text-white'
+                              }`}
+                            >
+                              Short
+                            </button>
+                          </div>
+                          
+                          {/* Quantity */}
+                          <input
+                            type="number"
+                            value={warrantQuantity}
+                            onChange={(e) => setWarrantQuantity(e.target.value)}
+                            min="1"
+                            className="w-20 px-2 py-1.5 bg-slate-900 border border-slate-600 rounded-lg text-sm text-white text-center focus:ring-1 focus:ring-amber-500 outline-none"
+                            placeholder="Menge"
+                          />
+                          
+                          {/* Execute */}
+                          <button
+                            onClick={async () => {
+                              if (!onExecuteWarrantTrade) return;
+                              const qty = parseFloat(warrantQuantity);
+                              if (isNaN(qty) || qty <= 0) {
+                                setWarrantTradeResult({ success: false, message: 'Ungültige Menge' });
+                                return;
+                              }
+                              setWarrantTradeLoading(true);
+                              setWarrantTradeResult(null);
+                              try {
+                                const result = await onExecuteWarrantTrade({
+                                  symbol: item.symbol,
+                                  ...selectedWarrant,
+                                  quantity: qty,
+                                  side: warrantSide,
+                                });
+                                setWarrantTradeResult(result);
+                                if (result.success) {
+                                  setTimeout(() => {
+                                    setSelectedWarrant(null);
+                                    setWarrantTradeResult(null);
+                                  }, 3000);
+                                }
+                              } catch {
+                                setWarrantTradeResult({ success: false, message: 'Fehler bei der Ausführung' });
+                              } finally {
+                                setWarrantTradeLoading(false);
+                              }
+                            }}
+                            disabled={warrantTradeLoading || !onExecuteWarrantTrade}
+                            className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-600 disabled:cursor-not-allowed rounded-lg text-sm text-white font-medium transition-colors flex items-center gap-1"
+                          >
+                            {warrantTradeLoading ? (
+                              <span className="animate-spin">⏳</span>
+                            ) : (
+                              <>
+                                <span>⚡</span>
+                                <span>Warrant handeln</span>
+                              </>
+                            )}
+                          </button>
+                          
+                          {/* Cancel selection */}
+                          <button
+                            onClick={() => {
+                              setSelectedWarrant(null);
+                              setWarrantTradeResult(null);
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-white hover:bg-slate-600 rounded transition-colors"
+                            title="Auswahl aufheben"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* Trade Result */}
+                      {warrantTradeResult && (
+                        <div className={`mt-2 text-sm px-3 py-1.5 rounded ${
+                          warrantTradeResult.success
+                            ? 'bg-green-500/20 text-green-400'
+                            : 'bg-red-500/20 text-red-400'
+                        }`}>
+                          {warrantTradeResult.success ? '✅' : '❌'} {warrantTradeResult.message}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Option Chain Grid */}
+                  <OptionChainPanel
+                    symbol={item.symbol}
+                    underlyingPrice={item.currentPrice}
+                    onSelect={(params) => {
+                      setSelectedWarrant(params);
+                      setWarrantTradeResult(null);
+                    }}
+                    onClose={() => {
+                      setOptionChainSymbol(null);
+                      setSelectedWarrant(null);
+                      setWarrantTradeResult(null);
+                    }}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>

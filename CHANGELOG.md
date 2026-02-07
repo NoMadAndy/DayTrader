@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.35.1] - 2026-02-07
+
+### Added
+- **Optionskette direkt im Desktop-View**: Neuer "⚡ Optionskette" Button in der erweiterten Zeile der Desktop-Tabellenansicht (WatchlistTableView)
+  - Option Chain Panel öffnet sich inline unterhalb der Aktiendetails
+  - Nach Auswahl eines Warrants erscheint ein kompaktes Inline-Trade-Formular mit Call/Put, Strike, Laufzeit, Preis und Delta
+  - Kauf/Short Toggle und Mengenfeld direkt im Desktop-View — kein Umweg über die Trading-Seite oder mobile Dropdown nötig
+  - Trade-Ausführung inkl. Black-Scholes Preisberechnung direkt aus der Tabellenansicht
+
+### Fixed
+- Optionskette war vorher nur über die mobile Quick-Trade Ansicht (3 Klicks tief) erreichbar — Desktop "Handeln" Button hatte kein Dropdown
+
 ## [1.35.0] - 2026-02-07
 
 ### Added

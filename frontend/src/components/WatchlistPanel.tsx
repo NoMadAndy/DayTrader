@@ -13,7 +13,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DEFAULT_STOCKS } from '../utils/defaultStocks';
 import { useDataService, useSimpleAutoRefresh } from '../hooks';
-import { WatchlistTableView } from './WatchlistTableView';
+import { WatchlistTableView, type WarrantTradeParams } from './WatchlistTableView';
 import { 
   calculateCombinedTradingSignals, 
   getSignalDisplay,
@@ -913,6 +913,63 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
     return items;
   }, [watchlistItems, sortBy, getFilteredScore]);
 
+  // Desktop warrant trade handler — called from WatchlistTableView OptionChain
+  const handleDesktopWarrantTrade = async (params: WarrantTradeParams): Promise<{ success: boolean; message: string }> => {
+    if (!portfolio) return { success: false, message: 'Kein Portfolio vorhanden' };
+    
+    // Find the item to get the underlying price
+    const item = displayItems.find(i => i.symbol === params.symbol);
+    if (!item?.currentPrice) return { success: false, message: 'Kein aktueller Kurs verfügbar' };
+    
+    try {
+      const ratio = 0.1;
+      const vol = 0.30;
+      const wpResult = await getWarrantPrice({
+        underlyingPrice: item.currentPrice,
+        strikePrice: params.strike,
+        daysToExpiry: params.days,
+        volatility: vol,
+        riskFreeRate: 0.03,
+        optionType: params.optionType,
+        ratio,
+      });
+      
+      if (!wpResult.success || wpResult.warrant_price <= 0) {
+        return { success: false, message: 'Warrant-Preis konnte nicht berechnet werden (OTM/wertlos?)' };
+      }
+      
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + params.days);
+      
+      const result = await executeMarketOrder({
+        portfolioId: portfolio.id,
+        symbol: params.symbol,
+        side: params.side,
+        quantity: params.quantity,
+        currentPrice: wpResult.warrant_price,
+        productType: 'warrant',
+        strikePrice: params.strike,
+        optionType: params.optionType,
+        underlyingSymbol: params.symbol,
+        warrantRatio: ratio,
+        expiryDate: expiryDate.toISOString().split('T')[0],
+        impliedVolatility: vol,
+        greeks: wpResult.greeks,
+        underlyingPrice: item.currentPrice,
+      });
+      
+      if (result.success) {
+        const m = await getPortfolioMetrics(portfolio.id);
+        setMetrics(m);
+        const actionKey = params.side === 'buy' ? 'dashboard.purchaseSuccess' : 'dashboard.shortSuccess';
+        return { success: true, message: `${t(actionKey)} ${formatCurrency(result.newBalance || 0)}` };
+      }
+      return { success: false, message: result.error || t('dashboard.tradeFailed') };
+    } catch (err) {
+      return { success: false, message: err instanceof Error ? err.message : 'Unbekannter Fehler' };
+    }
+  };
+
   // Signal badge component - shows cumulative signal with filtered score
   const SignalBadge = ({ signal, small = false }: { signal?: TradingSignalSummary; period?: string; small?: boolean }) => {
     if (!signal) return <span className="text-gray-500 text-xs">—</span>;
@@ -1179,6 +1236,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
               SignalBadge={SignalBadge}
               SignalSourceBadges={SignalSourceBadges}
               isAuthenticated={authState.isAuthenticated}
+              onExecuteWarrantTrade={handleDesktopWarrantTrade}
             />
             
             {/* Mobile: Card View */}
