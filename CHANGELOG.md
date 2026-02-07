@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.33.0] - 2026-02-07
+
+### Added
+- **Dynamische SL/TP (ATR-basiert)** – Stop-Loss und Take-Profit werden jetzt standardmäßig dynamisch berechnet: SL = ATR × Multiplikator, TP = SL-Abstand × Risk:Reward-Ratio. Passt sich automatisch an die Volatilität jeder Aktie an. R:R variiert pro Trade statt immer gleich zu sein.
+- **Konfigurierbar**: Neuer Toggle im Settings-Modal (Dynamisch/Fix). Dynamisch-Modus mit einstellbarem ATR-Multiplikator (Standard 1.5) und Mindest-R:R (Standard 2.0). Fallback auf fixe % wenn nicht genug Kursdaten für ATR vorhanden.
+- **Strategie-Presets aktualisiert** – Alle 8 Presets haben individuell angepasste ATR-Multiplikatoren und R:R-Ratios passend zum Trading-Stil.
+
+### Changed
+- SL/TP-Modus ist jetzt bei allen neuen Tradern standardmäßig auf „Dynamisch“ (ATR-basiert).
+
 ## [1.32.1] - 2026-02-07
 
 ### Fixed

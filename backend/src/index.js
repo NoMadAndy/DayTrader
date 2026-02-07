@@ -4032,6 +4032,10 @@ app.post('/api/ai-traders/:id/start', authMiddleware, async (req, res) => {
       max_drawdown: (p.risk?.maxDrawdown || 15) / 100,
       stop_loss_percent: (p.risk?.stopLossPercent || 5) / 100,
       take_profit_percent: (p.risk?.takeProfitPercent || 10) / 100,
+      sl_tp_mode: p.risk?.slTpMode || 'dynamic',
+      atr_period: p.risk?.atrPeriod || 14,
+      atr_sl_multiplier: p.risk?.atrSlMultiplier || 1.5,
+      min_risk_reward: p.risk?.minRiskReward || 2.0,
       // Signal weights
       ml_weight: p.signals?.weights?.ml || 0.25,
       rl_weight: p.signals?.weights?.rl || 0.25,

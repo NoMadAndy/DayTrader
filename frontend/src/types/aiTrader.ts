@@ -20,6 +20,14 @@ export interface AITraderRiskConfig {
   maxDrawdown: number;
   stopLossPercent: number;
   takeProfitPercent: number;
+  /** SL/TP mode: 'dynamic' (ATR-based) or 'fixed' (static %) */
+  slTpMode?: 'dynamic' | 'fixed';
+  /** ATR lookback period (default 14) */
+  atrPeriod?: number;
+  /** SL = ATR × multiplier (default 1.5) */
+  atrSlMultiplier?: number;
+  /** TP = SL-distance × R:R (default 2.0) */
+  minRiskReward?: number;
   /** Allow short selling (betting on price decrease) */
   allowShortSelling?: boolean;
   maxShortPositions?: number;

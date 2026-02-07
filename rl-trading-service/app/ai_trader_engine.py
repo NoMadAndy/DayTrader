@@ -54,9 +54,13 @@ class AITraderConfig:
     
     # Stop Loss & Take Profit
     use_stop_loss: bool = True
-    stop_loss_percent: float = 0.05  # 5% stop loss
+    stop_loss_percent: float = 0.05  # 5% stop loss (used in 'fixed' mode)
     use_take_profit: bool = True
-    take_profit_percent: float = 0.10  # 10% take profit
+    take_profit_percent: float = 0.10  # 10% take profit (used in 'fixed' mode)
+    sl_tp_mode: str = 'dynamic'  # 'dynamic' (ATR-based) or 'fixed' (static %)
+    atr_period: int = 14  # ATR lookback period
+    atr_sl_multiplier: float = 1.5  # SL = ATR × multiplier
+    min_risk_reward: float = 2.0  # TP = SL-distance × R:R
     max_holding_days: Optional[int] = 30
     
     # Trading Horizon (affects decision sensitivity)
@@ -215,10 +219,11 @@ class AITraderEngine:
             portfolio_state
         )
         
-        # 5. Calculate stop-loss and take-profit
+        # 5. Calculate stop-loss and take-profit (dynamic ATR or fixed %)
         stop_loss, take_profit = self._calculate_sl_tp(
             decision_type,
-            current_price
+            current_price,
+            market_data
         )
         
         # 6. Run risk checks
@@ -610,17 +615,61 @@ class AITraderEngine:
         
         return (actual_position_size, quantity)
     
+    @staticmethod
+    def _calculate_atr(prices: list, period: int = 14) -> Optional[float]:
+        """
+        Calculate Average True Range from OHLCV price data.
+        
+        Args:
+            prices: List of dicts with 'high', 'low', 'close' keys
+            period: ATR lookback period
+            
+        Returns:
+            ATR value or None if insufficient data
+        """
+        if not prices or len(prices) < period + 1:
+            return None
+        
+        true_ranges = []
+        for i in range(1, len(prices)):
+            high = prices[i].get('high', 0)
+            low = prices[i].get('low', 0)
+            prev_close = prices[i - 1].get('close', 0)
+            
+            if not all([high, low, prev_close]):
+                continue
+            
+            tr = max(
+                high - low,
+                abs(high - prev_close),
+                abs(low - prev_close)
+            )
+            true_ranges.append(tr)
+        
+        if len(true_ranges) < period:
+            return None
+        
+        # Simple moving average of last `period` true ranges
+        return sum(true_ranges[-period:]) / period
+    
     def _calculate_sl_tp(
         self,
         decision_type: str,
-        current_price: float
+        current_price: float,
+        market_data: Optional[Dict] = None
     ) -> tuple:
         """
         Calculate stop-loss and take-profit levels.
         
+        Supports two modes:
+        - 'dynamic': ATR-based (adapts to volatility). SL = ATR × multiplier,
+          TP = SL-distance × risk:reward ratio.
+        - 'fixed': Static percentage (legacy behavior).
+        
         Args:
-            decision_type: Type of decision
+            decision_type: 'buy' or 'short'
             current_price: Current stock price
+            market_data: Market data dict with 'prices' list (for ATR calculation)
             
         Returns:
             Tuple of (stop_loss, take_profit)
@@ -628,7 +677,45 @@ class AITraderEngine:
         if decision_type not in ['buy', 'short']:
             return (None, None)
         
-        # Use defaults if config values are None
+        mode = self.config.sl_tp_mode
+        
+        # === DYNAMIC MODE: ATR-based SL/TP ===
+        if mode == 'dynamic' and market_data:
+            prices = market_data.get('prices', [])
+            atr = self._calculate_atr(prices, self.config.atr_period)
+            
+            if atr and atr > 0:
+                sl_distance = atr * self.config.atr_sl_multiplier
+                tp_distance = sl_distance * self.config.min_risk_reward
+                
+                # Clamp: SL min 0.5%, max 15% of price; TP min 1%, max 30%
+                sl_distance = max(current_price * 0.005, min(sl_distance, current_price * 0.15))
+                tp_distance = max(current_price * 0.01, min(tp_distance, current_price * 0.30))
+                
+                stop_loss = None
+                take_profit = None
+                
+                if decision_type == 'buy':
+                    if self.config.use_stop_loss:
+                        stop_loss = current_price - sl_distance
+                    if self.config.use_take_profit:
+                        take_profit = current_price + tp_distance
+                elif decision_type == 'short':
+                    if self.config.use_stop_loss:
+                        stop_loss = current_price + sl_distance
+                    if self.config.use_take_profit:
+                        take_profit = current_price - tp_distance
+                
+                sl_pct = (sl_distance / current_price) * 100
+                tp_pct = (tp_distance / current_price) * 100
+                rr = tp_distance / sl_distance if sl_distance > 0 else 0
+                print(f"   📐 Dynamic SL/TP: ATR=${atr:.2f} → SL={sl_pct:.1f}% TP={tp_pct:.1f}% R:R={rr:.1f}")
+                
+                return (stop_loss, take_profit)
+            else:
+                print(f"   ⚠️ ATR not available (need {self.config.atr_period + 1} candles), falling back to fixed SL/TP")
+        
+        # === FIXED MODE: Static percentage SL/TP ===
         stop_loss_percent = self.config.stop_loss_percent if self.config.stop_loss_percent is not None else 0.05
         take_profit_percent = self.config.take_profit_percent if self.config.take_profit_percent is not None else 0.10
         
@@ -636,17 +723,15 @@ class AITraderEngine:
         take_profit = None
         
         if decision_type == 'buy':
-            # Long position: stop-loss below, take-profit above
             if self.config.use_stop_loss:
                 stop_loss = current_price * (1 - stop_loss_percent)
             if self.config.use_take_profit:
                 take_profit = current_price * (1 + take_profit_percent)
         elif decision_type == 'short':
-            # Short position: stop-loss above, take-profit below (inverted)
             if self.config.use_stop_loss:
-                stop_loss = current_price * (1 + stop_loss_percent)  # Stop above
+                stop_loss = current_price * (1 + stop_loss_percent)
             if self.config.use_take_profit:
-                take_profit = current_price * (1 - take_profit_percent)  # Target below
+                take_profit = current_price * (1 - take_profit_percent)
         
         return (stop_loss, take_profit)
     

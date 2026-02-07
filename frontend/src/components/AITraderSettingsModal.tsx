@@ -37,6 +37,9 @@ interface StrategyPreset {
   maxDrawdown: number;
   stopLoss: number;
   takeProfit: number;
+  slTpMode: 'dynamic' | 'fixed';
+  atrSlMultiplier: number;
+  minRiskReward: number;
   allowShortSelling: boolean;
   maxShortPositions: number;
   maxShortExposure: number;
@@ -70,6 +73,9 @@ const STRATEGY_PRESETS: StrategyPreset[] = [
     maxDrawdown: 10,
     stopLoss: 8,
     takeProfit: 15,
+    slTpMode: 'dynamic',
+    atrSlMultiplier: 1.0,
+    minRiskReward: 2.5,
     allowShortSelling: false,
     maxShortPositions: 0,
     maxShortExposure: 0,
@@ -96,6 +102,9 @@ const STRATEGY_PRESETS: StrategyPreset[] = [
     maxDrawdown: 15,
     stopLoss: 4,
     takeProfit: 8,
+    slTpMode: 'dynamic',
+    atrSlMultiplier: 1.5,
+    minRiskReward: 2.0,
     allowShortSelling: false,
     maxShortPositions: 0,
     maxShortExposure: 0,
@@ -122,6 +131,9 @@ const STRATEGY_PRESETS: StrategyPreset[] = [
     maxDrawdown: 20,
     stopLoss: 6,
     takeProfit: 18,
+    slTpMode: 'dynamic',
+    atrSlMultiplier: 2.0,
+    minRiskReward: 2.5,
     allowShortSelling: true,
     maxShortPositions: 2,
     maxShortExposure: 20,
@@ -148,6 +160,9 @@ const STRATEGY_PRESETS: StrategyPreset[] = [
     maxDrawdown: 18,
     stopLoss: 3,
     takeProfit: 6,
+    slTpMode: 'dynamic',
+    atrSlMultiplier: 1.2,
+    minRiskReward: 2.0,
     allowShortSelling: true,
     maxShortPositions: 3,
     maxShortExposure: 25,
@@ -174,6 +189,9 @@ const STRATEGY_PRESETS: StrategyPreset[] = [
     maxDrawdown: 20,
     stopLoss: 5,
     takeProfit: 10,
+    slTpMode: 'dynamic',
+    atrSlMultiplier: 1.5,
+    minRiskReward: 2.0,
     allowShortSelling: true,
     maxShortPositions: 2,
     maxShortExposure: 20,
@@ -200,6 +218,9 @@ const STRATEGY_PRESETS: StrategyPreset[] = [
     maxDrawdown: 12,
     stopLoss: 1.5,
     takeProfit: 2.5,
+    slTpMode: 'dynamic',
+    atrSlMultiplier: 0.8,
+    minRiskReward: 1.5,
     allowShortSelling: true,
     maxShortPositions: 5,
     maxShortExposure: 40,
@@ -226,6 +247,9 @@ const STRATEGY_PRESETS: StrategyPreset[] = [
     maxDrawdown: 15,
     stopLoss: 5,
     takeProfit: 12,
+    slTpMode: 'dynamic',
+    atrSlMultiplier: 1.5,
+    minRiskReward: 2.5,
     allowShortSelling: true,
     maxShortPositions: 3,
     maxShortExposure: 25,
@@ -252,6 +276,9 @@ const STRATEGY_PRESETS: StrategyPreset[] = [
     maxDrawdown: 35,
     stopLoss: 10,
     takeProfit: 25,
+    slTpMode: 'dynamic',
+    atrSlMultiplier: 2.0,
+    minRiskReward: 2.0,
     allowShortSelling: true,
     maxShortPositions: 5,
     maxShortExposure: 40,
@@ -285,6 +312,9 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
   const [maxDrawdown, setMaxDrawdown] = useState(trader.personality?.risk?.maxDrawdown || 20);
   const [stopLoss, setStopLoss] = useState(trader.personality?.risk?.stopLossPercent || 5);
   const [takeProfit, setTakeProfit] = useState(trader.personality?.risk?.takeProfitPercent || 10);
+  const [slTpMode, setSlTpMode] = useState<'dynamic' | 'fixed'>(trader.personality?.risk?.slTpMode || 'dynamic');
+  const [atrSlMultiplier, setAtrSlMultiplier] = useState(trader.personality?.risk?.atrSlMultiplier || 1.5);
+  const [minRiskReward, setMinRiskReward] = useState(trader.personality?.risk?.minRiskReward || 2.0);
   const [maxPositions, setMaxPositions] = useState(trader.personality?.trading?.maxOpenPositions || 5);
   const [minConfidence, setMinConfidence] = useState(trader.personality?.signals?.minAgreement || 0.6);
   const [watchlistSymbols, setWatchlistSymbols] = useState(
@@ -366,6 +396,9 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
     setMaxDrawdown(preset.maxDrawdown);
     setStopLoss(preset.stopLoss);
     setTakeProfit(preset.takeProfit);
+    setSlTpMode(preset.slTpMode);
+    setAtrSlMultiplier(preset.atrSlMultiplier);
+    setMinRiskReward(preset.minRiskReward);
     setAllowShortSelling(preset.allowShortSelling);
     setMaxShortPositions(preset.maxShortPositions);
     setMaxShortExposure(preset.maxShortExposure);
@@ -427,6 +460,9 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
       setMaxDrawdown(trader.personality?.risk?.maxDrawdown || 20);
       setStopLoss(trader.personality?.risk?.stopLossPercent || 5);
       setTakeProfit(trader.personality?.risk?.takeProfitPercent || 10);
+      setSlTpMode(trader.personality?.risk?.slTpMode || 'dynamic');
+      setAtrSlMultiplier(trader.personality?.risk?.atrSlMultiplier || 1.5);
+      setMinRiskReward(trader.personality?.risk?.minRiskReward || 2.0);
       setMaxPositions(trader.personality?.trading?.maxOpenPositions || 5);
       setTradingHorizon(trader.personality?.trading?.horizon || 'day');
       setMinConfidence(trader.personality?.signals?.minAgreement || 0.6);
@@ -483,6 +519,9 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
           maxDrawdown,
           stopLossPercent: stopLoss,
           takeProfitPercent: takeProfit,
+          slTpMode,
+          atrSlMultiplier,
+          minRiskReward,
           allowShortSelling,
           maxShortPositions,
           maxShortExposure: maxShortExposure / 100,
@@ -803,32 +842,112 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
                   className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Stop-Loss (%)
-                </label>
-                <input
-                  type="number"
-                  value={stopLoss}
-                  onChange={(e) => setStopLoss(Number(e.target.value))}
-                  min={1}
-                  max={20}
-                  className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
-                />
+            </div>
+            
+            {/* SL/TP Mode Toggle */}
+            <div className="p-4 bg-slate-700/30 rounded-lg border border-slate-600">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h4 className="font-medium text-white flex items-center gap-2">
+                    📐 Stop-Loss / Take-Profit Modus
+                  </h4>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {slTpMode === 'dynamic' 
+                      ? 'ATR-basiert: SL/TP passen sich automatisch an die Volatilität jeder Aktie an'
+                      : 'Fixe Prozentsätze für alle Trades gleich'}
+                  </p>
+                </div>
+                <div className="flex bg-slate-800 rounded-lg overflow-hidden border border-slate-600">
+                  <button
+                    type="button"
+                    onClick={() => setSlTpMode('dynamic')}
+                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                      slTpMode === 'dynamic' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    🎯 Dynamisch
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSlTpMode('fixed')}
+                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                      slTpMode === 'fixed' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    📌 Fix
+                  </button>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Take-Profit (%)
-                </label>
-                <input
-                  type="number"
-                  value={takeProfit}
-                  onChange={(e) => setTakeProfit(Number(e.target.value))}
-                  min={1}
-                  max={50}
-                  className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
-                />
-              </div>
+              
+              {slTpMode === 'dynamic' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1">
+                      ATR-Multiplikator (SL)
+                    </label>
+                    <p className="text-[10px] text-gray-500 mb-2">SL-Abstand = ATR × Multiplikator</p>
+                    <input
+                      type="number"
+                      value={atrSlMultiplier}
+                      onChange={(e) => setAtrSlMultiplier(Number(e.target.value))}
+                      min={0.5}
+                      max={5}
+                      step={0.1}
+                      className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1">
+                      Min. Risk:Reward
+                    </label>
+                    <p className="text-[10px] text-gray-500 mb-2">TP = SL-Abstand × R:R</p>
+                    <input
+                      type="number"
+                      value={minRiskReward}
+                      onChange={(e) => setMinRiskReward(Number(e.target.value))}
+                      min={1}
+                      max={5}
+                      step={0.1}
+                      className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div className="md:col-span-2 text-xs text-gray-500 bg-slate-800/50 rounded-lg p-2">
+                    💡 Fallback SL={stopLoss}% / TP={takeProfit}% wird verwendet, wenn nicht genug Kursdaten für ATR vorhanden sind.
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Stop-Loss (%)
+                    </label>
+                    <input
+                      type="number"
+                      value={stopLoss}
+                      onChange={(e) => setStopLoss(Number(e.target.value))}
+                      min={0.5}
+                      max={20}
+                      step={0.5}
+                      className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Take-Profit (%)
+                    </label>
+                    <input
+                      type="number"
+                      value={takeProfit}
+                      onChange={(e) => setTakeProfit(Number(e.target.value))}
+                      min={1}
+                      max={50}
+                      step={0.5}
+                      className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
             </div>
             
             {/* Short Selling */}
