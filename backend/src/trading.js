@@ -1036,7 +1036,7 @@ export async function executeMarketOrder(params) {
       
       // For warrants, also store the underlying price at entry
       // underlyingPrice comes from the frontend (the actual stock price), distinct from currentPrice (the warrant price)
-      const underlyingPriceAtEntry = (productType === 'warrant' && underlyingSymbol) ? (underlyingPrice || currentPrice) : null;
+      const underlyingPriceAtEntry = (productType === 'warrant') ? (underlyingPrice || currentPrice) : null;
       
       const positionResult = await client.query(
         `INSERT INTO positions (
