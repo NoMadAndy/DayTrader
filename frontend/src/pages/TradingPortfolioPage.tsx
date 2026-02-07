@@ -36,6 +36,7 @@ import {
   updatePortfolioSettings,
   setInitialCapital,
   getBrokerProfiles,
+  getWarrantPrice,
 } from '../services/tradingService';
 import type {
   Portfolio,
@@ -257,9 +258,14 @@ export function TradingPortfolioPage() {
         }
       }
       
-      setOpenPositions(prev => prev.map(pos => 
-        calculatePositionPnL(pos, prices[pos.symbol] || pos.currentPrice || pos.entryPrice)
-      ));
+      setOpenPositions(prev => prev.map(pos => {
+        // For warrants: use the stored warrant price (updated by backend's updateWarrantPrices)
+        // NOT the stock quote price, since entry/currentPrice are WARRANT prices
+        const priceForPnl = pos.productType === 'warrant'
+          ? (pos.currentPrice || pos.entryPrice)
+          : (prices[pos.symbol] || pos.currentPrice || pos.entryPrice);
+        return calculatePositionPnL(pos, priceForPnl);
+      }));
       
       if (Object.keys(prices).length > 0) {
         try {
@@ -451,7 +457,45 @@ export function TradingPortfolioPage() {
         throw new Error(t('trading.quoteError'));
       }
       
-      const result = await closePosition(position.id, quote.price);
+      // For warrants: calculate current warrant price from underlying stock price
+      let closePrice = quote.price;
+      if (position.productType === 'warrant' && position.strikePrice && position.expiryDate) {
+        const daysToExpiry = Math.max(0, Math.ceil(
+          (new Date(position.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+        ));
+        if (daysToExpiry > 0) {
+          try {
+            const wpResult = await getWarrantPrice({
+              underlyingPrice: quote.price,
+              strikePrice: position.strikePrice,
+              daysToExpiry,
+              volatility: position.impliedVolatility || 0.30,
+              riskFreeRate: 0.03,
+              optionType: position.optionType || 'call',
+              ratio: position.warrantRatio || 0.1,
+            });
+            if (wpResult.success && wpResult.warrant_price > 0) {
+              closePrice = wpResult.warrant_price;
+            } else {
+              // Fallback: use stored current warrant price
+              closePrice = position.currentPrice || 0.001;
+            }
+          } catch {
+            // Fallback: use stored current warrant price
+            closePrice = position.currentPrice || 0.001;
+          }
+        } else {
+          // Expired: use intrinsic value
+          const ratio = position.warrantRatio || 0.1;
+          if (position.optionType === 'put') {
+            closePrice = Math.max(0.001, (position.strikePrice - quote.price) * ratio);
+          } else {
+            closePrice = Math.max(0.001, (quote.price - position.strikePrice) * ratio);
+          }
+        }
+      }
+      
+      const result = await closePosition(position.id, closePrice);
       
       if (result.success) {
         setSuccessMessage(

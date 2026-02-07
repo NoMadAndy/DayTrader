@@ -460,6 +460,9 @@ export async function initializeTradingSchema() {
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'positions' AND column_name = 'greeks') THEN
             ALTER TABLE positions ADD COLUMN greeks JSONB; -- {delta, gamma, theta, vega}
           END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'positions' AND column_name = 'underlying_price') THEN
+            ALTER TABLE positions ADD COLUMN underlying_price DECIMAL(15,4); -- Current underlying price (for warrant P&L tracking)
+          END IF;
 
           -- Warrant-specific fields on orders
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'strike_price') THEN
@@ -947,7 +950,7 @@ export async function executeMarketOrder(params) {
     productType = 'stock', leverage = 1, stopLoss, takeProfit, knockoutLevel,
     // Warrant-specific params
     strikePrice, optionType, underlyingSymbol, warrantRatio = 1, expiryDate,
-    impliedVolatility, greeks
+    impliedVolatility, greeks, underlyingPrice
   } = params;
   
   const client = await getClient();
@@ -1031,14 +1034,18 @@ export async function executeMarketOrder(params) {
         margin_used: fees.marginRequired,
       });
       
+      // For warrants, also store the underlying price at entry
+      // underlyingPrice comes from the frontend (the actual stock price), distinct from currentPrice (the warrant price)
+      const underlyingPriceAtEntry = (productType === 'warrant' && underlyingSymbol) ? (underlyingPrice || currentPrice) : null;
+      
       const positionResult = await client.query(
         `INSERT INTO positions (
           portfolio_id, user_id, symbol, product_type, side,
           quantity, entry_price, current_price, leverage, margin_used,
           knockout_level, stop_loss, take_profit, total_fees_paid,
           strike_price, option_type, underlying_symbol, warrant_ratio,
-          expiry_date, implied_volatility, greeks
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+          expiry_date, implied_volatility, greeks, underlying_price
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
         RETURNING *`,
         [
           portfolioId, userId, symbol, productType, positionSide,
@@ -1046,7 +1053,7 @@ export async function executeMarketOrder(params) {
           knockoutLevel, stopLoss, takeProfit, fees.totalFees,
           strikePrice || null, optionType || null, underlyingSymbol || null,
           warrantRatio || 1, expiryDate || null, impliedVolatility || null,
-          greeks ? JSON.stringify(greeks) : null
+          greeks ? JSON.stringify(greeks) : null, underlyingPriceAtEntry
         ]
       );
       
@@ -1338,9 +1345,71 @@ export async function processOvernightFees() {
 }
 
 /**
+ * Update warrant position prices based on underlying price changes.
+ * Uses delta approximation: Δwarrant ≈ delta × Δunderlying
+ * Called whenever underlying stock prices are updated.
+ * @param {Object} priceUpdates - { symbol: currentPrice, ... }
+ */
+export async function updateWarrantPrices(priceUpdates) {
+  const client = await getClient();
+  let updated = 0;
+  try {
+    // Get all open warrant positions
+    const positions = await client.query(
+      `SELECT * FROM positions
+       WHERE is_open = true AND product_type = 'warrant'`
+    );
+
+    for (const pos of positions.rows) {
+      const underlyingSymbol = pos.underlying_symbol || pos.symbol;
+      const newUnderlyingPrice = priceUpdates[underlyingSymbol];
+      if (!newUnderlyingPrice) continue;
+
+      const oldUnderlyingPrice = parseFloat(pos.underlying_price || 0);
+      const currentWarrantPrice = parseFloat(pos.current_price || pos.entry_price);
+      const greeks = pos.greeks || {};
+      const delta = parseFloat(greeks.delta || 0);
+      const ratio = parseFloat(pos.warrant_ratio || 1);
+
+      if (oldUnderlyingPrice <= 0 || !delta) {
+        // No previous underlying price or no delta — just update underlying_price
+        await client.query(
+          `UPDATE positions SET underlying_price = $2 WHERE id = $1`,
+          [pos.id, newUnderlyingPrice]
+        );
+        continue;
+      }
+
+      // Delta approximation: Δwarrant_price ≈ delta × Δunderlying_price
+      // Note: delta in greeks is already ratio-adjusted (delta * ratio), so:
+      // Δwarrant = stored_delta × Δunderlying
+      const underlyingChange = newUnderlyingPrice - oldUnderlyingPrice;
+      const warrantPriceChange = delta * underlyingChange;
+      const newWarrantPrice = Math.max(0.001, currentWarrantPrice + warrantPriceChange);
+
+      await client.query(
+        `UPDATE positions SET current_price = $2, underlying_price = $3 WHERE id = $1`,
+        [pos.id, newWarrantPrice, newUnderlyingPrice]
+      );
+      updated++;
+    }
+
+    return { updated, total: positions.rows.length };
+  } catch (e) {
+    console.error('Update warrant prices error:', e);
+    return { updated: 0, error: e.message };
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * Process daily theta (time) decay for open warrant positions.
  * Reduces the current_price of warrants to simulate time-value erosion.
  * Should be called once daily (e.g. after market close).
+ * 
+ * The warrant's current_price is the WARRANT price (not underlying).
+ * Intrinsic value is calculated from the stored underlying_price.
  */
 export async function processWarrantTimeDecay() {
   const client = await getClient();
@@ -1357,21 +1426,24 @@ export async function processWarrantTimeDecay() {
     );
 
     for (const pos of positions.rows) {
-      const currentPrice = parseFloat(pos.current_price || pos.entry_price);
+      const currentWarrantPrice = parseFloat(pos.current_price || pos.entry_price);
       const strikePrice = parseFloat(pos.strike_price || 0);
       const ratio = parseFloat(pos.warrant_ratio || 1);
       const optionType = pos.option_type || 'call';
+      const underlyingPrice = parseFloat(pos.underlying_price || 0);
 
-      // Calculate intrinsic value
+      if (underlyingPrice <= 0 || strikePrice <= 0) continue;
+
+      // Intrinsic value = max(0, S - K) × ratio for calls, max(0, K - S) × ratio for puts
       let intrinsicValue;
       if (optionType === 'call') {
-        intrinsicValue = Math.max(0, currentPrice / ratio - strikePrice) * ratio;
+        intrinsicValue = Math.max(0, underlyingPrice - strikePrice) * ratio;
       } else {
-        intrinsicValue = Math.max(0, strikePrice - currentPrice / ratio) * ratio;
+        intrinsicValue = Math.max(0, strikePrice - underlyingPrice) * ratio;
       }
 
       // Time value = current warrant price - intrinsic value
-      const timeValue = Math.max(0, currentPrice - intrinsicValue);
+      const timeValue = Math.max(0, currentWarrantPrice - intrinsicValue);
 
       // Calculate days to expiry
       let daysToExpiry = 30; // Default if no expiry set
@@ -1387,12 +1459,12 @@ export async function processWarrantTimeDecay() {
       const dailyDecay = timeValue * decayRate * 0.05; // ~5% of time value × decay rate
 
       if (dailyDecay > 0.001) {
-        const newPrice = Math.max(0.01, currentPrice - dailyDecay);
+        const newPrice = Math.max(intrinsicValue, currentWarrantPrice - dailyDecay);
 
         await client.query(
           `UPDATE positions SET current_price = $2, days_held = days_held + 1
            WHERE id = $1`,
-          [pos.id, newPrice]
+          [pos.id, Math.max(0.001, newPrice)]
         );
 
         // Log the theta decay as a fee
@@ -1437,16 +1509,21 @@ export async function settleExpiredWarrants() {
 
     const settled = [];
     for (const pos of positions.rows) {
-      const currentPrice = parseFloat(pos.current_price || 0);
+      const underlyingPrice = parseFloat(pos.underlying_price || 0);
       const strike = parseFloat(pos.strike_price || 0);
       const ratio = parseFloat(pos.warrant_ratio || 1);
 
-      // Intrinsic value at expiry
+      // Intrinsic value at expiry (based on underlying price, not warrant price)
       let settlementPrice;
-      if (pos.option_type === 'call') {
-        settlementPrice = Math.max(0, currentPrice - strike) * ratio;
+      if (underlyingPrice > 0 && strike > 0) {
+        if (pos.option_type === 'call') {
+          settlementPrice = Math.max(0, underlyingPrice - strike) * ratio;
+        } else {
+          settlementPrice = Math.max(0, strike - underlyingPrice) * ratio;
+        }
       } else {
-        settlementPrice = Math.max(0, strike - currentPrice) * ratio;
+        // No underlying price tracked — fallback: warrant is worthless
+        settlementPrice = 0;
       }
 
       // Close at settlement price (minimum 0.001 for DB)
@@ -1721,6 +1798,7 @@ function formatPosition(row) {
     warrantRatio: row.warrant_ratio ? parseFloat(row.warrant_ratio) : 1,
     impliedVolatility: row.implied_volatility ? parseFloat(row.implied_volatility) : null,
     greeks: row.greeks || null, // { delta, gamma, theta, vega }
+    underlyingPrice: row.underlying_price ? parseFloat(row.underlying_price) : null,
   };
   return pos;
 }
@@ -2112,10 +2190,16 @@ export async function checkPositionTriggers(priceUpdates) {
       const currentPrice = priceUpdates[pos.symbol];
       if (!currentPrice) continue;
       
+      // For warrants: priceUpdates contains the UNDERLYING stock price.
+      // The warrant's own price is tracked in pos.current_price (updated by updateWarrantPrices).
+      // SL/TP should be checked against the WARRANT price, not the underlying.
+      const isWarrant = pos.product_type === 'warrant';
+      const priceForTriggers = isWarrant ? parseFloat(pos.current_price || 0) : currentPrice;
+      
       let triggerReason = null;
       
-      // Check Knock-Out (highest priority)
-      if (pos.knockout_level) {
+      // Check Knock-Out (highest priority) — not applicable for warrants
+      if (!isWarrant && pos.knockout_level) {
         const knockoutLevel = parseFloat(pos.knockout_level);
         if (pos.side === 'long' && currentPrice <= knockoutLevel) {
           triggerReason = 'knockout';
@@ -2124,22 +2208,22 @@ export async function checkPositionTriggers(priceUpdates) {
         }
       }
       
-      // Check Stop-Loss
+      // Check Stop-Loss (uses warrant price for warrants, stock price for others)
       if (!triggerReason && pos.stop_loss) {
         const stopLoss = parseFloat(pos.stop_loss);
-        if (pos.side === 'long' && currentPrice <= stopLoss) {
+        if (pos.side === 'long' && priceForTriggers <= stopLoss) {
           triggerReason = 'stop_loss';
-        } else if (pos.side === 'short' && currentPrice >= stopLoss) {
+        } else if (pos.side === 'short' && priceForTriggers >= stopLoss) {
           triggerReason = 'stop_loss';
         }
       }
       
-      // Check Take-Profit
+      // Check Take-Profit (uses warrant price for warrants, stock price for others)
       if (!triggerReason && pos.take_profit) {
         const takeProfit = parseFloat(pos.take_profit);
-        if (pos.side === 'long' && currentPrice >= takeProfit) {
+        if (pos.side === 'long' && priceForTriggers >= takeProfit) {
           triggerReason = 'take_profit';
-        } else if (pos.side === 'short' && currentPrice <= takeProfit) {
+        } else if (pos.side === 'short' && priceForTriggers <= takeProfit) {
           triggerReason = 'take_profit';
         }
       }
@@ -2169,22 +2253,27 @@ export async function checkPositionTriggers(priceUpdates) {
       
       if (triggerReason) {
         // Determine close price
-        let closePrice = currentPrice;
+        let closePrice;
+        if (isWarrant) {
+          // For warrants, close at the current warrant price (not underlying price)
+          closePrice = priceForTriggers;
+        } else {
+          closePrice = currentPrice;
+        }
+
         if (triggerReason === 'knockout') {
           closePrice = parseFloat(pos.knockout_level);
-        } else if (triggerReason === 'expiry' && pos.product_type === 'warrant') {
-          // Warrant expires: intrinsic value settlement
+        } else if (triggerReason === 'expiry' && isWarrant) {
+          // Warrant expires: settle at intrinsic value (using underlying price from priceUpdates)
           const strike = parseFloat(pos.strike_price || 0);
           const ratio = parseFloat(pos.warrant_ratio || 1);
           if (pos.option_type === 'call') {
-            // Call: max(0, underlying - strike) × ratio
             closePrice = Math.max(0, currentPrice - strike) * ratio;
           } else if (pos.option_type === 'put') {
-            // Put: max(0, strike - underlying) × ratio
             closePrice = Math.max(0, strike - currentPrice) * ratio;
           }
           // If out-of-the-money, warrant is worthless
-          if (closePrice <= 0) closePrice = 0.001; // Minimal value for settlement
+          if (closePrice <= 0) closePrice = 0.001;
         }
         
         const result = await closePosition(pos.id, pos.user_id, closePrice, triggerReason);
@@ -3160,6 +3249,7 @@ export default {
   processOvernightFees,
   processWarrantTimeDecay,
   settleExpiredWarrants,
+  updateWarrantPrices,
   getTransactionHistory,
   getFeeSummary,
   getPortfolioMetrics,

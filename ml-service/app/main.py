@@ -542,24 +542,24 @@ async def analyze_sentiment_batch(request: SentimentBatchRequest):
 
 class WarrantPriceRequest(BaseModel):
     """Request for warrant/option pricing via Black-Scholes"""
-    underlying_price: float = Field(..., description="Current price of the underlying stock")
-    strike_price: float = Field(..., description="Strike price (Basispreis)")
-    days_to_expiry: float = Field(..., description="Days until expiry (Restlaufzeit)")
-    volatility: float = Field(0.30, description="Annualized volatility (e.g. 0.30 = 30%)")
-    risk_free_rate: float = Field(0.03, description="Risk-free interest rate (e.g. 0.03 = 3%)")
+    underlying_price: float = Field(..., gt=0, description="Current price of the underlying stock (must be > 0)")
+    strike_price: float = Field(..., gt=0, description="Strike price (Basispreis, must be > 0)")
+    days_to_expiry: float = Field(..., ge=0, description="Days until expiry (Restlaufzeit, >= 0)")
+    volatility: float = Field(0.30, gt=0, le=10.0, description="Annualized volatility (0.01-10.0)")
+    risk_free_rate: float = Field(0.03, ge=-0.1, le=1.0, description="Risk-free interest rate")
     option_type: str = Field('call', description="'call' or 'put'")
-    ratio: float = Field(0.1, description="Bezugsverhältnis (e.g. 0.1 = 10 warrants per share)")
+    ratio: float = Field(0.1, gt=0, le=10.0, description="Bezugsverhältnis (e.g. 0.1 = 10 warrants per share)")
 
 
 class ImpliedVolRequest(BaseModel):
     """Request for implied volatility calculation"""
-    market_price: float = Field(..., description="Current market price of the warrant")
-    underlying_price: float = Field(..., description="Current price of the underlying stock")
-    strike_price: float = Field(..., description="Strike price")
-    days_to_expiry: float = Field(..., description="Days until expiry")
-    risk_free_rate: float = Field(0.03, description="Risk-free rate")
+    market_price: float = Field(..., gt=0, description="Current market price of the warrant (must be > 0)")
+    underlying_price: float = Field(..., gt=0, description="Current price of the underlying stock (must be > 0)")
+    strike_price: float = Field(..., gt=0, description="Strike price (must be > 0)")
+    days_to_expiry: float = Field(..., gt=0, description="Days until expiry (must be > 0)")
+    risk_free_rate: float = Field(0.03, ge=-0.1, le=1.0, description="Risk-free rate")
     option_type: str = Field('call', description="'call' or 'put'")
-    ratio: float = Field(0.1, description="Bezugsverhältnis")
+    ratio: float = Field(0.1, gt=0, le=10.0, description="Bezugsverhältnis")
 
 
 @app.post("/warrant/price", tags=["Warrant Pricing"])

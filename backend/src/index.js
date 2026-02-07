@@ -3312,6 +3312,11 @@ app.post('/api/trading/check-triggers', authMiddleware, express.json(), async (r
       trading.checkPositionTriggers(prices),
     ]);
     
+    // Update warrant positions based on underlying price changes (delta approximation)
+    await trading.updateWarrantPrices(prices).catch(e => {
+      console.warn('Warrant price update error (non-critical):', e.message);
+    });
+    
     res.json({
       executedOrders,
       triggeredPositions,
@@ -3392,8 +3397,16 @@ app.post('/api/trading/warrant/price', authMiddleware, express.json(), async (re
   try {
     const { underlyingPrice, strikePrice, daysToExpiry, volatility = 0.30, riskFreeRate = 0.03, optionType = 'call', ratio = 0.1 } = req.body;
 
-    if (!underlyingPrice || !strikePrice || !daysToExpiry) {
+    if (!underlyingPrice || !strikePrice || daysToExpiry == null) {
       return res.status(400).json({ error: 'Missing required fields: underlyingPrice, strikePrice, daysToExpiry' });
+    }
+
+    // Input validation
+    if (underlyingPrice <= 0 || strikePrice <= 0) {
+      return res.status(400).json({ error: 'underlyingPrice and strikePrice must be positive numbers' });
+    }
+    if (daysToExpiry < 0) {
+      return res.status(400).json({ error: 'daysToExpiry must be >= 0' });
     }
 
     const mlUrl = process.env.ML_SERVICE_URL || 'http://ml-service:8000';

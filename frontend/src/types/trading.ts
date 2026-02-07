@@ -153,6 +153,7 @@ export interface Position {
   warrantRatio: number;
   impliedVolatility: number | null;
   greeks: Greeks | null;
+  underlyingPrice: number | null;
 }
 
 // Extended position with calculated fields
@@ -309,6 +310,7 @@ export interface ExecuteOrderRequest {
   expiryDate?: string;
   impliedVolatility?: number;
   greeks?: Greeks;
+  underlyingPrice?: number; // The stock/underlying price at time of warrant trade
 }
 
 export interface ExecuteOrderResponse {

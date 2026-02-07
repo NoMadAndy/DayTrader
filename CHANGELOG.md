@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.34.1] - 2026-02-07
+
+### Fixed
+- **Kritische Warrant-Preis-Trennung**: Entry/Current-Price speichert jetzt den Warrant-Preis (z.B. $1.03) statt den Aktienkurs ($150) – neue `underlying_price` DB-Spalte trackt den Basiswert separat
+- **Delta-Approximation für Preis-Updates**: `updateWarrantPrices()` berechnet Warrant-Preisänderungen via `Δwarrant ≈ delta × Δunderlying` bei jedem Trigger-Check
+- **Theta-Decay Formel korrigiert**: Intrinsischer Wert wird nun aus `underlying_price` (nicht `current_price`) berechnet: `max(0, S-K) × ratio`
+- **SL/TP für Warrants**: Stop-Loss und Take-Profit werden gegen den Warrant-Preis geprüft, nicht den Aktienkurs
+- **Verfall-Settlement korrigiert**: `settleExpiredWarrants()` nutzt `underlying_price` für den inneren Wert
+- **Manuelles Schließen**: `handleClosePosition` berechnet den aktuellen Warrant-Preis via Black-Scholes API statt den Aktienkurs zu verwenden
+- **P&L Refresh im Frontend**: Periodische Preis-Updates nutzen für Warrants den gespeicherten `currentPrice` (Warrant) statt den Aktienkurs
+- **`underlyingPrice` Datenfluss**: Frontend sendet Aktienkurs als separaten Parameter `underlyingPrice` bei Warrant-Orders
+- **Input-Validierung**: ML-Service lehnt negative Preise, Zero-Strike, negative Volatilität mit klaren Fehlermeldungen ab (Pydantic gt/ge/le Constraints)
+- **Backend-Validierung**: `/api/trading/warrant/price` prüft `underlyingPrice > 0`, `strikePrice > 0`, `daysToExpiry >= 0`
+
 ## [1.34.0] - 2026-02-07
 
 ### Added

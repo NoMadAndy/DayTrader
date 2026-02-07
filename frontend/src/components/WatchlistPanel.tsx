@@ -45,7 +45,7 @@ import {
   type CachedWatchlistSignals 
 } from '../services/watchlistCacheService';
 import type { NewsItem } from '../services/types';
-import { getOrCreatePortfolio, executeMarketOrder, getPortfolioMetrics } from '../services/tradingService';
+import { getOrCreatePortfolio, executeMarketOrder, getPortfolioMetrics, getWarrantPrice } from '../services/tradingService';
 import { useSettings } from '../contexts/SettingsContext';
 import type { Portfolio, PortfolioMetrics, OrderSide, ProductType } from '../types/trading';
 import { 
@@ -179,12 +179,57 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
         setIsExecuting(false);
         return;
       }
+
+      // For warrants: calculate warrant price from underlying price via Black-Scholes
+      let effectivePrice = price; // For stocks/CFDs: use stock price directly
+      let warrantGreeks: Record<string, number> | undefined;
+      if (productType === 'warrant') {
+        const strike = parseFloat(warrantStrike);
+        const ratio = parseFloat(warrantRatio) || 0.1;
+        const vol = (parseFloat(warrantVolatility) || 30) / 100;
+        const expiry = warrantExpiry;
+        if (!strike || !expiry) {
+          setTradeResult({ success: false, message: 'Strike-Preis und Verfallsdatum sind für Warrants erforderlich' });
+          setIsExecuting(false);
+          return;
+        }
+        const daysToExpiry = Math.max(0, Math.ceil((new Date(expiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+        if (daysToExpiry <= 0) {
+          setTradeResult({ success: false, message: 'Verfallsdatum muss in der Zukunft liegen' });
+          setIsExecuting(false);
+          return;
+        }
+        try {
+          const wpResult = await getWarrantPrice({
+            underlyingPrice: price,
+            strikePrice: strike,
+            daysToExpiry,
+            volatility: vol,
+            riskFreeRate: 0.03,
+            optionType: warrantOptionType,
+            ratio,
+          });
+          if (wpResult.success && wpResult.warrant_price > 0) {
+            effectivePrice = wpResult.warrant_price;
+            warrantGreeks = wpResult.greeks;
+          } else {
+            setTradeResult({ success: false, message: 'Warrant-Preis konnte nicht berechnet werden (OTM/wertlos?)' });
+            setIsExecuting(false);
+            return;
+          }
+        } catch {
+          setTradeResult({ success: false, message: 'Fehler bei der Warrant-Preisberechnung' });
+          setIsExecuting(false);
+          return;
+        }
+      }
+
       const result = await executeMarketOrder({
         portfolioId: portfolio.id,
         symbol: symbol,
         side: tradeSide,
         quantity: qty,
-        currentPrice: price,
+        currentPrice: effectivePrice,
         productType: productType,
         ...(productType === 'warrant' ? {
           strikePrice: parseFloat(warrantStrike) || undefined,
@@ -193,6 +238,8 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
           warrantRatio: parseFloat(warrantRatio) || 0.1,
           expiryDate: warrantExpiry || undefined,
           impliedVolatility: (parseFloat(warrantVolatility) || 30) / 100,
+          greeks: warrantGreeks,
+          underlyingPrice: price, // Pass the actual stock price (not the warrant price)
         } : {}),
       });
       if (result.success) {
