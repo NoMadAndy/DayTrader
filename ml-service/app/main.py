@@ -562,6 +562,16 @@ class ImpliedVolRequest(BaseModel):
     ratio: float = Field(0.1, gt=0, le=10.0, description="Bezugsverhältnis")
 
 
+class OptionChainRequest(BaseModel):
+    """Request for a full option chain (multiple strikes × expiries)"""
+    underlying_price: float = Field(..., gt=0, description="Current price of the underlying stock")
+    volatility: float = Field(0.30, gt=0, le=10.0, description="Annualized volatility")
+    risk_free_rate: float = Field(0.03, ge=-0.1, le=1.0, description="Risk-free rate")
+    ratio: float = Field(0.1, gt=0, le=10.0, description="Bezugsverhältnis")
+    strikes: Optional[list[float]] = Field(default=None, description="Custom strikes. If omitted, auto-generates around ATM.")
+    expiry_days: Optional[list[int]] = Field(default=None, description="Custom expiry days. If omitted, uses standard periods.")
+
+
 @app.post("/warrant/price", tags=["Warrant Pricing"])
 async def price_warrant_endpoint(request: WarrantPriceRequest):
     """
@@ -581,6 +591,108 @@ async def price_warrant_endpoint(request: WarrantPriceRequest):
             ratio=request.ratio,
         )
         return {"success": True, **to_dict(result)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/warrant/chain", tags=["Warrant Pricing"])
+async def option_chain_endpoint(request: OptionChainRequest):
+    """
+    Generate a full option chain (Optionskette) with prices and Greeks
+    for multiple strike × expiry combinations. Returns calls and puts.
+    """
+    from .warrant_pricing import price_warrant, to_dict
+    import math
+
+    try:
+        S = request.underlying_price
+        sigma = request.volatility
+        r = request.risk_free_rate
+        ratio = request.ratio
+
+        # Auto-generate strikes if not provided: ±30% around ATM in smart steps
+        if request.strikes:
+            strikes = sorted([k for k in request.strikes if k > 0])
+        else:
+            # Determine step size based on price magnitude
+            if S >= 500:
+                step = 25
+            elif S >= 100:
+                step = 10
+            elif S >= 50:
+                step = 5
+            elif S >= 10:
+                step = 2
+            else:
+                step = 0.5
+
+            center = round(S / step) * step
+            strikes = []
+            for i in range(-8, 9):
+                k = round(center + i * step, 2)
+                if k > 0:
+                    strikes.append(k)
+
+        # Auto-generate expiry days if not provided
+        if request.expiry_days:
+            expiry_days = sorted([d for d in request.expiry_days if d > 0])
+        else:
+            expiry_days = [14, 30, 60, 90, 180, 365]
+
+        # Build chain
+        calls = []
+        puts = []
+
+        for days in expiry_days:
+            for K in strikes:
+                try:
+                    call_result = price_warrant(S, K, days, sigma, r, 'call', ratio)
+                    put_result = price_warrant(S, K, days, sigma, r, 'put', ratio)
+
+                    call_entry = {
+                        "strike": K,
+                        "days": days,
+                        "price": call_result.warrant_price,
+                        "intrinsic": call_result.intrinsic_value,
+                        "timeValue": call_result.time_value,
+                        "delta": call_result.greeks.delta,
+                        "gamma": call_result.greeks.gamma,
+                        "theta": call_result.greeks.theta,
+                        "vega": call_result.greeks.vega,
+                        "moneyness": call_result.moneyness,
+                        "leverage": call_result.leverage_ratio,
+                        "breakEven": call_result.break_even,
+                    }
+                    put_entry = {
+                        "strike": K,
+                        "days": days,
+                        "price": put_result.warrant_price,
+                        "intrinsic": put_result.intrinsic_value,
+                        "timeValue": put_result.time_value,
+                        "delta": put_result.greeks.delta,
+                        "gamma": put_result.greeks.gamma,
+                        "theta": put_result.greeks.theta,
+                        "vega": put_result.greeks.vega,
+                        "moneyness": put_result.moneyness,
+                        "leverage": put_result.leverage_ratio,
+                        "breakEven": put_result.break_even,
+                    }
+                    calls.append(call_entry)
+                    puts.append(put_entry)
+                except Exception:
+                    # Skip invalid combinations
+                    pass
+
+        return {
+            "success": True,
+            "underlying_price": S,
+            "volatility": sigma,
+            "ratio": ratio,
+            "strikes": strikes,
+            "expiry_days": expiry_days,
+            "calls": calls,
+            "puts": puts,
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

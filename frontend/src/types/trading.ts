@@ -121,6 +121,32 @@ export interface WarrantPriceResult {
   implied_annual_cost: number;
 }
 
+export interface OptionChainEntry {
+  strike: number;
+  days: number;
+  price: number;
+  intrinsic: number;
+  timeValue: number;
+  delta: number;
+  gamma: number;
+  theta: number;
+  vega: number;
+  moneyness: 'ITM' | 'ATM' | 'OTM';
+  leverage: number;
+  breakEven: number;
+}
+
+export interface OptionChainResult {
+  success: boolean;
+  underlying_price: number;
+  volatility: number;
+  ratio: number;
+  strikes: number[];
+  expiry_days: number[];
+  calls: OptionChainEntry[];
+  puts: OptionChainEntry[];
+}
+
 export interface Position {
   id: number;
   portfolioId: number;

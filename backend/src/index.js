@@ -3478,6 +3478,48 @@ app.post('/api/trading/warrant/implied-volatility', authMiddleware, express.json
   }
 });
 
+/**
+ * Get full option chain (Optionskette)
+ * POST /api/trading/warrant/chain
+ * Body: { underlyingPrice, volatility?, riskFreeRate?, ratio?, strikes?, expiryDays? }
+ */
+app.post('/api/trading/warrant/chain', authMiddleware, express.json(), async (req, res) => {
+  try {
+    const { underlyingPrice, volatility = 0.30, riskFreeRate = 0.03, ratio = 0.1, strikes, expiryDays } = req.body;
+
+    if (!underlyingPrice || underlyingPrice <= 0) {
+      return res.status(400).json({ error: 'underlyingPrice is required and must be > 0' });
+    }
+
+    const mlUrl = process.env.ML_SERVICE_URL || 'http://ml-service:8000';
+    const payload = {
+      underlying_price: underlyingPrice,
+      volatility,
+      risk_free_rate: riskFreeRate,
+      ratio,
+    };
+    if (strikes && Array.isArray(strikes)) payload.strikes = strikes;
+    if (expiryDays && Array.isArray(expiryDays)) payload.expiry_days = expiryDays;
+
+    const response = await fetch(`${mlUrl}/warrant/chain`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      return res.status(response.status).json({ error: err.detail || 'ML service error' });
+    }
+
+    const data = await response.json();
+    res.json(data);
+  } catch (e) {
+    console.error('Option chain error:', e);
+    res.status(500).json({ error: 'Failed to generate option chain' });
+  }
+});
+
 // Note: historicalPricesService is already imported above for Yahoo Chart caching
 const historicalPrices = historicalPricesService;
 

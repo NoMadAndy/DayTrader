@@ -48,6 +48,7 @@ import type { NewsItem } from '../services/types';
 import { getOrCreatePortfolio, executeMarketOrder, getPortfolioMetrics, getWarrantPrice } from '../services/tradingService';
 import { useSettings } from '../contexts/SettingsContext';
 import type { Portfolio, PortfolioMetrics, OrderSide, ProductType } from '../types/trading';
+import { OptionChainPanel } from './OptionChainPanel';
 import { 
   EXCHANGES, 
   EXCHANGE_REGIONS, 
@@ -139,6 +140,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
   const [warrantRatio, setWarrantRatio] = useState('0.1');
   const [warrantExpiry, setWarrantExpiry] = useState('');
   const [warrantVolatility, setWarrantVolatility] = useState('30');
+  const [showOptionChain, setShowOptionChain] = useState(false);
 
   // Subscribe to auth state changes
   useEffect(() => {
@@ -1423,6 +1425,37 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                                       className="w-full px-1 py-1 bg-slate-900 border border-slate-600 rounded text-[10px] focus:border-amber-500 focus:outline-none"
                                     />
                                   </div>
+                                  {/* Option Chain Button */}
+                                  <button
+                                    onClick={() => setShowOptionChain(!showOptionChain)}
+                                    className={`w-full mt-1 px-2 py-1.5 rounded text-[10px] font-medium transition-colors ${
+                                      showOptionChain
+                                        ? 'bg-amber-600/40 text-amber-200 ring-1 ring-amber-500/50'
+                                        : 'bg-slate-700 text-amber-400 hover:bg-slate-600'
+                                    }`}
+                                  >
+                                    {showOptionChain ? '✕ Optionskette schließen' : '⚡ Optionskette anzeigen'}
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* Option Chain Panel (inline, below warrant params) */}
+                              {productType === 'warrant' && showOptionChain && item.currentPrice && (
+                                <div className="col-span-full -mx-2">
+                                  <OptionChainPanel
+                                    symbol={item.symbol}
+                                    underlyingPrice={item.currentPrice}
+                                    onSelect={(params) => {
+                                      setWarrantOptionType(params.optionType);
+                                      setWarrantStrike(params.strike.toString());
+                                      // Set expiry date from days
+                                      const d = new Date();
+                                      d.setDate(d.getDate() + params.days);
+                                      setWarrantExpiry(d.toISOString().split('T')[0]);
+                                      setShowOptionChain(false);
+                                    }}
+                                    onClose={() => setShowOptionChain(false)}
+                                  />
                                 </div>
                               )}
 

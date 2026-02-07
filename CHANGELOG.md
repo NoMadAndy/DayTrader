@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.35.0] - 2026-02-07
+
+### Added
+- **Optionskette (Option Chain)**: Interaktives Panel zur Darstellung aller verfügbarer Warrants eines Basiswerts
+  - Automatische Strike-Generierung: 17 Strikes (±30% um ATM) mit intelligenten Schrittweiten je nach Preisniveau
+  - 6 Standard-Laufzeiten: 14, 30, 60, 90, 180, 365 Tage
+  - Call/Put/Beide Tabs mit farbkodierter Moneyness (ITM grün, ATM gelb, OTM grau)
+  - Greek-Ansichten umschaltbar: Preis, Delta, Theta, Hebel
+  - ATM-Strike visuell hervorgehoben
+  - Klick-to-Trade: Ein Klick auf eine Zelle übernimmt Optionstyp, Strike und Laufzeit automatisch in das Handelsformular
+  - Volatilität- und Bezugsverhältnis-Regler direkt im Panel
+- **ML-Service Endpoint**: `POST /warrant/chain` – berechnet Black-Scholes Preise + Greeks für die gesamte Matrix (102 Calls + 102 Puts)
+- **Backend-Proxy**: `POST /api/trading/warrant/chain` mit camelCase→snake_case Konvertierung
+
+### Fixed
+- Pydantic v2 Kompatibilität: `OptionChainRequest` nutzt `Optional[list[...]]` statt `list[...] = None` für optionale Felder
+- Backend-Proxy sendet optionale Felder nur wenn vorhanden (kein explizites `null`)
+
 ## [1.34.1] - 2026-02-07
 
 ### Fixed

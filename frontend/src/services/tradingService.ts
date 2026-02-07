@@ -970,6 +970,25 @@ export async function getImpliedVolatility(params: {
   return handleResponse(response);
 }
 
+/**
+ * Get full option chain (Optionskette) for a given underlying price
+ */
+export async function getOptionChain(params: {
+  underlyingPrice: number;
+  volatility?: number;
+  riskFreeRate?: number;
+  ratio?: number;
+  strikes?: number[];
+  expiryDays?: number[];
+}): Promise<import('../types/trading').OptionChainResult> {
+  const response = await fetch(`${API_BASE}/trading/warrant/chain`, {
+    method: 'POST',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  return handleResponse(response);
+}
+
 export default {
   getBrokerProfiles,
   getProductTypes,
@@ -1023,4 +1042,5 @@ export default {
   // Warrant Pricing
   getWarrantPrice,
   getImpliedVolatility,
+  getOptionChain,
 };
