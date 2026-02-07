@@ -1542,6 +1542,5 @@ export function AITraderSettingsModal({ trader, isOpen, onClose, onUpdated }: AI
           </button>
         </div>
       </div>
-    </div>
   );
 }
