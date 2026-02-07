@@ -9,17 +9,17 @@ export { AlphaVantageProvider } from './alphaVantageProvider';
 export { TwelveDataProvider } from './twelveDataProvider';
 export { YahooFinanceProvider } from './yahooFinanceProvider';
 export { NewsApiProvider } from './newsApiProvider';
-// New news providers
-export { MarketauxProvider, createMarketauxProvider } from './marketauxProvider';
-export { FMPProvider, createFMPProvider } from './fmpProvider';
-export { TiingoProvider, createTiingoProvider } from './tiingoProvider';
-export { MediastackProvider, createMediastackProvider } from './mediastackProvider';
-export { NewsdataProvider, createNewsdataProvider } from './newsdataProvider';
+// News providers
+export { MarketauxProvider } from './marketauxProvider';
+export { FMPProvider } from './fmpProvider';
+export { TiingoProvider } from './tiingoProvider';
+export { MediastackProvider } from './mediastackProvider';
+export { NewsdataProvider } from './newsdataProvider';
 export { RSSProvider, getRSSProvider } from './rssProvider';
 export type { RSSFeedConfig, RSSNewsItem } from './rssProvider';
 export type { MarketauxNewsItem } from './marketauxProvider';
 
-export { DataService, getDataService, configureDataService } from './dataService';
+export { DataService, getDataService } from './dataService';
 export { mlService } from './mlService';
 export type { MLPrediction, MLPredictResponse, MLTrainStatus, MLModelInfo, MLServiceHealth } from './mlService';
 export { getRateLimiter, PROVIDER_RATE_LIMITS, type RateLimitConfig, type RateLimiter } from './rateLimiter';
@@ -60,7 +60,6 @@ export {
   getCustomSymbols,
   addCustomSymbolToServer,
   removeCustomSymbolFromServer,
-  syncLocalSymbolsToServer,
   getWatchlistSettings,
   saveWatchlistSettings,
   DEFAULT_WATCHLIST_SETTINGS,
@@ -86,9 +85,6 @@ export {
 // ML Sentiment Service
 export {
   checkMLSentimentAvailable,
-  getMLSentimentStatus,
-  analyzeMLSentiment,
-  analyzeMLSentimentBatch,
   analyzeSentimentWithFallback,
   analyzeBatchWithFallback,
   resetMLServiceCache,

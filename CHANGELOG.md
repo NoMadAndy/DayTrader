@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.33.1] - 2026-02-07
+
+### Removed
+- **18 ungenutzte Frontend-Dateien entfernt** – Dead-Code-Audit und Cleanup:
+  - 11 Components: AITraderSettingsModal, AITraderCard, AITraderDecisionModal, AITraderWeightHistoryChart, TradeDetailCard, ApiConfigPanel, ApiQuotaDisplay, DataFreshnessIndicator, HamburgerMenu, NewsApiQuotaDisplay, RLAgentDetailModal
+  - 6 Pages: BacktestPage, ChangelogPage, SystemStatusPage, MLModelsPage, RLAgentsPage, HistoricalDataPage (alle ersetzt durch AIModelsHubPage bzw. DashboardPage)
+  - 1 Hook: useRealTimeQuotes (komplett ungenutzt)
+  - Barrel-Exports (index.ts) in components, pages, hooks und services aufgeräumt
+  - Ungenutzte Service-Factory-Exports entfernt (createMarketauxProvider, createFMPProvider, etc.)
+
 ## [1.33.0] - 2026-02-07
 
 ### Added
