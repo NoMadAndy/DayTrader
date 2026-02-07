@@ -73,6 +73,12 @@ class AITraderConfig:
     max_short_positions: int = 3  # Maximum number of short positions
     max_short_exposure: float = 0.30  # Max 30% of portfolio in short positions
     
+    # Warrant Trading (Optionsscheine)
+    allow_warrants: bool = False  # Enable warrant trading (future feature)
+    warrant_max_position_pct: float = 0.05  # Max 5% of portfolio per warrant position
+    warrant_min_days_to_expiry: int = 30  # Minimum days to expiry for new positions
+    warrant_preferred_type: str = 'call'  # 'call', 'put', or 'both'
+    
     # Broker Profile (fees during execution are calculated backend-side)
     broker_profile: str = 'flatex'  # 'flatex', 'ingdiba', 'discount', 'standard', 'premium'
     

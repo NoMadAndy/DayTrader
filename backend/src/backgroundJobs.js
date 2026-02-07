@@ -505,6 +505,36 @@ let dailyReportTimer = null;
 let outcomeTrackingTimer = null;
 let adaptiveWeightsTimer = null;
 let adaptiveLearningCheckTimer = null;
+let warrantJobTimer = null;
+
+/**
+ * Run daily warrant maintenance jobs:
+ * 1. Settle expired warrants (at intrinsic value or worthless)
+ * 2. Apply theta (time value) decay to open warrant positions
+ */
+async function runWarrantDailyJobs() {
+  try {
+    console.log('[BackgroundJobs] ====== WARRANT DAILY JOBS START ======');
+    
+    const { processWarrantTimeDecay, settleExpiredWarrants } = await import('./trading.js');
+    
+    // 1. Settle expired warrants first
+    const settled = await settleExpiredWarrants();
+    if (settled.length > 0) {
+      console.log(`[BackgroundJobs] Settled ${settled.length} expired warrants`);
+    }
+    
+    // 2. Apply theta decay to remaining open warrants
+    const decayResult = await processWarrantTimeDecay();
+    console.log(`[BackgroundJobs] Theta decay: ${decayResult.processed} warrants updated`);
+    
+    console.log('[BackgroundJobs] ====== WARRANT DAILY JOBS COMPLETE ======');
+    return { settled, decay: decayResult };
+  } catch (error) {
+    console.error('[BackgroundJobs] Warrant daily jobs error:', error);
+    return { error: error.message };
+  }
+}
 
 /**
  * Schedule AI Trader background jobs
@@ -577,6 +607,23 @@ function scheduleAITraderJobs() {
       console.log('[BackgroundJobs] Startup: Within trading hours, adaptive learning will run after market close');
     }
   }, 10000); // 10 seconds after startup
+
+  // =========================================
+  // WARRANT JOBS - Daily theta decay & expiry settlement
+  // =========================================
+  const nextWarrantRun = new Date(now);
+  nextWarrantRun.setHours(17, 40, 0, 0); // 17:40 after market close
+  if (nextWarrantRun <= now) {
+    nextWarrantRun.setDate(nextWarrantRun.getDate() + 1);
+  }
+  const msUntilWarrantJob = nextWarrantRun.getTime() - now.getTime();
+  
+  warrantJobTimer = setTimeout(() => {
+    runWarrantDailyJobs();
+    warrantJobTimer = setInterval(runWarrantDailyJobs, 24 * 60 * 60 * 1000);
+  }, msUntilWarrantJob);
+
+  console.log(`[BackgroundJobs] Warrant jobs (theta decay + expiry) scheduled for ${nextWarrantRun.toISOString()}`);
 }
 
 /**
@@ -603,6 +650,12 @@ function stopAITraderJobs() {
   if (adaptiveLearningCheckTimer) {
     clearInterval(adaptiveLearningCheckTimer);
     adaptiveLearningCheckTimer = null;
+  }
+  
+  if (warrantJobTimer) {
+    clearInterval(warrantJobTimer);
+    clearTimeout(warrantJobTimer);
+    warrantJobTimer = null;
   }
   
   console.log('[BackgroundJobs] AI Trader jobs stopped');

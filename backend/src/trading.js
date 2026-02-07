@@ -108,6 +108,16 @@ export const PRODUCT_TYPES = {
     canShort: true,
     dailyReset: true,
   },
+  warrant: {
+    name: 'Warrant (Optionsschein)',
+    defaultLeverage: 1,
+    maxLeverage: 1, // Leverage is intrinsic (via delta/ratio)
+    marginRequired: 100, // Full purchase price, no margin
+    overnightFee: false, // No overnight — theta decay is built-in
+    canShort: false, // Buy calls or puts, no shorting the warrant itself
+    hasExpiry: true, // Warrants expire
+    hasTimeDecay: true, // Theta eats into value daily
+  },
 };
 
 /**
@@ -426,6 +436,49 @@ export async function initializeTradingSchema() {
     } catch (migErr) {
       console.warn('Migration warning (open_fee):', migErr.message);
     }
+
+    // Warrant/Options schema migration
+    try {
+      await query(`
+        DO $$ BEGIN
+          -- Warrant-specific fields on positions
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'positions' AND column_name = 'strike_price') THEN
+            ALTER TABLE positions ADD COLUMN strike_price DECIMAL(15,4);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'positions' AND column_name = 'option_type') THEN
+            ALTER TABLE positions ADD COLUMN option_type VARCHAR(10); -- 'call' or 'put'
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'positions' AND column_name = 'underlying_symbol') THEN
+            ALTER TABLE positions ADD COLUMN underlying_symbol VARCHAR(20);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'positions' AND column_name = 'warrant_ratio') THEN
+            ALTER TABLE positions ADD COLUMN warrant_ratio DECIMAL(10,4) DEFAULT 1; -- e.g. 0.1 = 10 warrants per share
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'positions' AND column_name = 'implied_volatility') THEN
+            ALTER TABLE positions ADD COLUMN implied_volatility DECIMAL(8,4);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'positions' AND column_name = 'greeks') THEN
+            ALTER TABLE positions ADD COLUMN greeks JSONB; -- {delta, gamma, theta, vega}
+          END IF;
+
+          -- Warrant-specific fields on orders
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'strike_price') THEN
+            ALTER TABLE orders ADD COLUMN strike_price DECIMAL(15,4);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'option_type') THEN
+            ALTER TABLE orders ADD COLUMN option_type VARCHAR(10);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'underlying_symbol') THEN
+            ALTER TABLE orders ADD COLUMN underlying_symbol VARCHAR(20);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'warrant_ratio') THEN
+            ALTER TABLE orders ADD COLUMN warrant_ratio DECIMAL(10,4) DEFAULT 1;
+          END IF;
+        END $$;
+      `);
+    } catch (migErr) {
+      console.warn('Migration warning (warrant fields):', migErr.message);
+    }
     
     console.log('Trading database schema initialized successfully');
   } catch (e) {
@@ -469,16 +522,21 @@ export function calculateFees(params) {
     commission += broker.exchangeFee;
   }
   
-  // Spread cost
-  const spreadCost = notionalValue * (broker.spreadPercent / 100);
+  // Spread cost — warrants have 2-5× wider spreads than stocks
+  let spreadMultiplier = 1;
+  if (productType === 'warrant') {
+    spreadMultiplier = 3; // Warrants typically have 3× wider spreads
+  }
+  const spreadCost = notionalValue * (broker.spreadPercent * spreadMultiplier / 100);
   
   // Total fees
   const totalFees = commission + spreadCost;
   
   // Effective price (including spread)
+  const effectiveSpreadPercent = broker.spreadPercent * spreadMultiplier;
   const effectivePrice = side === 'buy' 
-    ? price * (1 + broker.spreadPercent / 200) 
-    : price * (1 - broker.spreadPercent / 200);
+    ? price * (1 + effectiveSpreadPercent / 200) 
+    : price * (1 - effectiveSpreadPercent / 200);
   
   // Break-even move required
   const breakEvenMove = ((totalFees * 2) / notionalValue) * 100; // *2 for round trip
@@ -886,7 +944,10 @@ export async function updatePositionPrice(positionId, userId, currentPrice) {
 export async function executeMarketOrder(params) {
   const { 
     userId, portfolioId, symbol, side, quantity, currentPrice,
-    productType = 'stock', leverage = 1, stopLoss, takeProfit, knockoutLevel
+    productType = 'stock', leverage = 1, stopLoss, takeProfit, knockoutLevel,
+    // Warrant-specific params
+    strikePrice, optionType, underlyingSymbol, warrantRatio = 1, expiryDate,
+    impliedVolatility, greeks
   } = params;
   
   const client = await getClient();
@@ -974,13 +1035,18 @@ export async function executeMarketOrder(params) {
         `INSERT INTO positions (
           portfolio_id, user_id, symbol, product_type, side,
           quantity, entry_price, current_price, leverage, margin_used,
-          knockout_level, stop_loss, take_profit, total_fees_paid
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13)
+          knockout_level, stop_loss, take_profit, total_fees_paid,
+          strike_price, option_type, underlying_symbol, warrant_ratio,
+          expiry_date, implied_volatility, greeks
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
         RETURNING *`,
         [
           portfolioId, userId, symbol, productType, positionSide,
           quantity, fees.effectivePrice, leverage, fees.marginRequired,
-          knockoutLevel, stopLoss, takeProfit, fees.totalFees
+          knockoutLevel, stopLoss, takeProfit, fees.totalFees,
+          strikePrice || null, optionType || null, underlyingSymbol || null,
+          warrantRatio || 1, expiryDate || null, impliedVolatility || null,
+          greeks ? JSON.stringify(greeks) : null
         ]
       );
       
@@ -1271,6 +1337,146 @@ export async function processOvernightFees() {
   }
 }
 
+/**
+ * Process daily theta (time) decay for open warrant positions.
+ * Reduces the current_price of warrants to simulate time-value erosion.
+ * Should be called once daily (e.g. after market close).
+ */
+export async function processWarrantTimeDecay() {
+  const client = await getClient();
+  let processed = 0;
+  try {
+    await client.query('BEGIN');
+
+    // Get all open warrant positions
+    const positions = await client.query(
+      `SELECT p.*, pf.broker_profile
+       FROM positions p
+       JOIN portfolios pf ON p.portfolio_id = pf.id
+       WHERE p.is_open = true AND p.product_type = 'warrant'`
+    );
+
+    for (const pos of positions.rows) {
+      const currentPrice = parseFloat(pos.current_price || pos.entry_price);
+      const strikePrice = parseFloat(pos.strike_price || 0);
+      const ratio = parseFloat(pos.warrant_ratio || 1);
+      const optionType = pos.option_type || 'call';
+
+      // Calculate intrinsic value
+      let intrinsicValue;
+      if (optionType === 'call') {
+        intrinsicValue = Math.max(0, currentPrice / ratio - strikePrice) * ratio;
+      } else {
+        intrinsicValue = Math.max(0, strikePrice - currentPrice / ratio) * ratio;
+      }
+
+      // Time value = current warrant price - intrinsic value
+      const timeValue = Math.max(0, currentPrice - intrinsicValue);
+
+      // Calculate days to expiry
+      let daysToExpiry = 30; // Default if no expiry set
+      if (pos.expiry_date) {
+        const now = new Date();
+        const expiry = new Date(pos.expiry_date);
+        daysToExpiry = Math.max(1, Math.ceil((expiry - now) / (1000 * 60 * 60 * 24)));
+      }
+
+      // Theta decay: accelerates as expiry approaches
+      // Approximation: decay ∝ 1/√(daysToExpiry), roughly √(1/T) scaling
+      const decayRate = 1 / Math.sqrt(daysToExpiry);
+      const dailyDecay = timeValue * decayRate * 0.05; // ~5% of time value × decay rate
+
+      if (dailyDecay > 0.001) {
+        const newPrice = Math.max(0.01, currentPrice - dailyDecay);
+
+        await client.query(
+          `UPDATE positions SET current_price = $2, days_held = days_held + 1
+           WHERE id = $1`,
+          [pos.id, newPrice]
+        );
+
+        // Log the theta decay as a fee
+        await client.query(
+          `INSERT INTO fee_log (portfolio_id, position_id, fee_type, amount, description)
+           VALUES ($1, $2, 'theta_decay', $3, $4)`,
+          [pos.portfolio_id, pos.id, dailyDecay,
+           `Theta decay for ${pos.symbol} warrant (${daysToExpiry}d to expiry)`]
+        );
+
+        processed++;
+      }
+    }
+
+    await client.query('COMMIT');
+    console.log(`Processed theta decay for ${processed} warrant positions`);
+    return { processed, total: positions.rows.length };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('Process warrant time decay error:', e);
+    return { processed: 0, error: e.message };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Check and settle expired warrant positions.
+ * Warrants at or past expiry are settled at intrinsic value (or worthless).
+ */
+export async function settleExpiredWarrants() {
+  try {
+    const positions = await query(
+      `SELECT p.*, pf.broker_profile
+       FROM positions p
+       JOIN portfolios pf ON p.portfolio_id = pf.id
+       WHERE p.is_open = true 
+         AND p.product_type = 'warrant'
+         AND p.expiry_date IS NOT NULL
+         AND p.expiry_date <= CURRENT_DATE`
+    );
+
+    const settled = [];
+    for (const pos of positions.rows) {
+      const currentPrice = parseFloat(pos.current_price || 0);
+      const strike = parseFloat(pos.strike_price || 0);
+      const ratio = parseFloat(pos.warrant_ratio || 1);
+
+      // Intrinsic value at expiry
+      let settlementPrice;
+      if (pos.option_type === 'call') {
+        settlementPrice = Math.max(0, currentPrice - strike) * ratio;
+      } else {
+        settlementPrice = Math.max(0, strike - currentPrice) * ratio;
+      }
+
+      // Close at settlement price (minimum 0.001 for DB)
+      const closePrice = settlementPrice > 0 ? settlementPrice : 0.001;
+      const result = await closePosition(pos.id, pos.user_id, closePrice, 'expiry');
+
+      if (result.success) {
+        settled.push({
+          positionId: pos.id,
+          symbol: pos.symbol,
+          optionType: pos.option_type,
+          settlementPrice,
+          realizedPnl: result.realizedPnl,
+          wasWorthless: settlementPrice <= 0,
+        });
+      }
+    }
+
+    if (settled.length > 0) {
+      console.log(`Settled ${settled.length} expired warrants:`, 
+        settled.map(s => `${s.symbol} (${s.optionType}) → ${s.wasWorthless ? 'wertlos' : s.settlementPrice.toFixed(2)}`));
+    }
+
+    return settled;
+  } catch (e) {
+    console.error('Settle expired warrants error:', e);
+    return [];
+  }
+}
+
 // ============================================================================
 // Transaction History Functions
 // ============================================================================
@@ -1482,7 +1688,7 @@ function formatPortfolio(row) {
 }
 
 function formatPosition(row) {
-  return {
+  const pos = {
     id: row.id,
     portfolioId: row.portfolio_id,
     userId: row.user_id,
@@ -1508,7 +1714,15 @@ function formatPosition(row) {
     closePrice: row.close_price ? parseFloat(row.close_price) : null,
     realizedPnl: row.realized_pnl ? parseFloat(row.realized_pnl) : null,
     isOpen: row.is_open,
+    // Warrant-specific fields
+    strikePrice: row.strike_price ? parseFloat(row.strike_price) : null,
+    optionType: row.option_type || null, // 'call' or 'put'
+    underlyingSymbol: row.underlying_symbol || null,
+    warrantRatio: row.warrant_ratio ? parseFloat(row.warrant_ratio) : 1,
+    impliedVolatility: row.implied_volatility ? parseFloat(row.implied_volatility) : null,
+    greeks: row.greeks || null, // { delta, gamma, theta, vega }
   };
+  return pos;
 }
 
 function formatOrder(row) {
@@ -1941,10 +2155,38 @@ export async function checkPositionTriggers(priceUpdates) {
           }
         }
       }
+
+      // Check Warrant Expiry
+      if (!triggerReason && pos.expiry_date && pos.product_type === 'warrant') {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const expiry = new Date(pos.expiry_date);
+        expiry.setHours(0, 0, 0, 0);
+        if (expiry <= today) {
+          triggerReason = 'expiry';
+        }
+      }
       
       if (triggerReason) {
-        // Close the position
-        const closePrice = triggerReason === 'knockout' ? parseFloat(pos.knockout_level) : currentPrice;
+        // Determine close price
+        let closePrice = currentPrice;
+        if (triggerReason === 'knockout') {
+          closePrice = parseFloat(pos.knockout_level);
+        } else if (triggerReason === 'expiry' && pos.product_type === 'warrant') {
+          // Warrant expires: intrinsic value settlement
+          const strike = parseFloat(pos.strike_price || 0);
+          const ratio = parseFloat(pos.warrant_ratio || 1);
+          if (pos.option_type === 'call') {
+            // Call: max(0, underlying - strike) × ratio
+            closePrice = Math.max(0, currentPrice - strike) * ratio;
+          } else if (pos.option_type === 'put') {
+            // Put: max(0, strike - underlying) × ratio
+            closePrice = Math.max(0, strike - currentPrice) * ratio;
+          }
+          // If out-of-the-money, warrant is worthless
+          if (closePrice <= 0) closePrice = 0.001; // Minimal value for settlement
+        }
+        
         const result = await closePosition(pos.id, pos.user_id, closePrice, triggerReason);
         
         if (result.success) {
@@ -2916,6 +3158,8 @@ export default {
   executeMarketOrder,
   closePosition,
   processOvernightFees,
+  processWarrantTimeDecay,
+  settleExpiredWarrants,
   getTransactionHistory,
   getFeeSummary,
   getPortfolioMetrics,

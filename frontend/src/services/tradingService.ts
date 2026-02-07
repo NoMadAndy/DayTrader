@@ -347,6 +347,7 @@ export function getProductTypeName(productType: ProductType): string {
     cfd: 'CFD',
     knockout: 'Knock-Out',
     factor: 'Faktor-Zertifikat',
+    warrant: 'Optionsschein',
   };
   return names[productType] || productType;
 }
@@ -923,6 +924,52 @@ export function getOrderTypeName(orderType: string): string {
   return names[orderType] || orderType;
 }
 
+// ============================================================================
+// Warrant Pricing Functions
+// ============================================================================
+
+export interface WarrantPriceRequest {
+  underlyingPrice: number;
+  strikePrice: number;
+  daysToExpiry: number;
+  volatility?: number;
+  riskFreeRate?: number;
+  optionType?: 'call' | 'put';
+  ratio?: number;
+}
+
+/**
+ * Get Black-Scholes warrant price and Greeks from ML service
+ */
+export async function getWarrantPrice(params: WarrantPriceRequest): Promise<import('../types/trading').WarrantPriceResult> {
+  const response = await fetch(`${API_BASE}/trading/warrant/price`, {
+    method: 'POST',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  return handleResponse(response);
+}
+
+/**
+ * Get implied volatility from warrant market price
+ */
+export async function getImpliedVolatility(params: {
+  marketPrice: number;
+  underlyingPrice: number;
+  strikePrice: number;
+  daysToExpiry: number;
+  riskFreeRate?: number;
+  optionType?: 'call' | 'put';
+  ratio?: number;
+}): Promise<{ success: boolean; implied_volatility: number; implied_volatility_pct: number }> {
+  const response = await fetch(`${API_BASE}/trading/warrant/implied-volatility`, {
+    method: 'POST',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  return handleResponse(response);
+}
+
 export default {
   getBrokerProfiles,
   getProductTypes,
@@ -973,4 +1020,7 @@ export default {
   checkHistoricalDataAvailability,
   getAvailableHistoricalSymbols,
   refreshHistoricalData,
+  // Warrant Pricing
+  getWarrantPrice,
+  getImpliedVolatility,
 };

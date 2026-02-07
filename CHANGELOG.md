@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.34.0] - 2026-02-07
+
+### Added
+- **Optionsschein-Handel (Warrants)** – Vollständige Unterstützung für den Handel mit Optionsscheinen:
+  - **Black-Scholes Pricing Engine**: Faire Preisberechnung und Greeks (Δ Delta, Γ Gamma, Θ Theta, V Vega, ρ Rho) via ML-Service
+  - **Implied Volatility**: Newton-Raphson Solver für implizite Volatilität aus Marktpreisen
+  - **DB-Schema**: Neue Felder für Positions- und Ordertabellen (strike_price, option_type, underlying_symbol, warrant_ratio, implied_volatility, greeks JSONB)
+  - **Warrant-spezifische Gebühren**: 3× Spread-Multiplikator für realistische Bid-Ask-Spreads
+  - **Verfall-Management**: Automatische Settlement bei Ablauf zum inneren Wert (ITM) oder Totalverlust (OTM)
+  - **Theta-Zeitwertverlust**: Tägliche Theta-Decay-Simulation mit √(1/T)-Beschleunigung
+  - **Background Jobs**: Tägliche Warrant-Jobs um 17:40 (Settlement + Theta-Decay)
+  - **Frontend Warrant-UI**: Call/Put-Auswahl, Strike-Preis, Bezugsverhältnis, Volatilität, Verfallsdatum im Amber-Design
+  - **Position-Anzeige**: Warrant-spezifische Info in TradingPortfolio und AITrader (Call/Put Badge, Strike, Greeks, Verfall-Countdown)
+  - **API Endpoints**: `/api/trading/warrant/price` und `/api/trading/warrant/implied-volatility`
+  - **AI Trader vorbereitet**: Konfigurationsfelder für zukünftige Warrant-Signale (allow_warrants, warrant_max_position_pct, etc.)
+  - Neuer Produkttyp `warrant` mit Properties: kein Margin, kein Short, kein Overnight-Fee, hat Verfall + Zeitwertverlust
+
 ## [1.33.1] - 2026-02-07
 
 ### Removed

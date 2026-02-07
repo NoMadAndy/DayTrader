@@ -132,6 +132,13 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
   const [productType, setProductType] = useState<ProductType>('stock');
   const [isExecuting, setIsExecuting] = useState(false);
   const [tradeResult, setTradeResult] = useState<{ success: boolean; message: string } | null>(null);
+  
+  // Warrant-specific trade state
+  const [warrantStrike, setWarrantStrike] = useState('');
+  const [warrantOptionType, setWarrantOptionType] = useState<'call' | 'put'>('call');
+  const [warrantRatio, setWarrantRatio] = useState('0.1');
+  const [warrantExpiry, setWarrantExpiry] = useState('');
+  const [warrantVolatility, setWarrantVolatility] = useState('30');
 
   // Subscribe to auth state changes
   useEffect(() => {
@@ -179,6 +186,14 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
         quantity: qty,
         currentPrice: price,
         productType: productType,
+        ...(productType === 'warrant' ? {
+          strikePrice: parseFloat(warrantStrike) || undefined,
+          optionType: warrantOptionType,
+          underlyingSymbol: symbol,
+          warrantRatio: parseFloat(warrantRatio) || 0.1,
+          expiryDate: warrantExpiry || undefined,
+          impliedVolatility: (parseFloat(warrantVolatility) || 30) / 100,
+        } : {}),
       });
       if (result.success) {
         const actionKey = tradeSide === 'buy' ? 'dashboard.purchaseSuccess' : 'dashboard.shortSuccess';
@@ -1295,8 +1310,74 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
                                 >
                                   <option value="stock">{t('trading.stock')}</option>
                                   <option value="cfd">CFD</option>
+                                  <option value="warrant">Optionsschein</option>
                                 </select>
                               </div>
+
+                              {/* Warrant-specific fields */}
+                              {productType === 'warrant' && (
+                                <div className="space-y-1.5 bg-slate-800/50 rounded p-2 border border-amber-500/30">
+                                  <div className="text-[10px] font-medium text-amber-400 mb-1">⚡ Optionsschein-Parameter</div>
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    <div>
+                                      <label className="text-[9px] text-gray-500">Typ</label>
+                                      <select
+                                        value={warrantOptionType}
+                                        onChange={(e) => setWarrantOptionType(e.target.value as 'call' | 'put')}
+                                        className="w-full px-1 py-1 bg-slate-900 border border-slate-600 rounded text-[10px] focus:border-amber-500 focus:outline-none"
+                                      >
+                                        <option value="call">Call (Long)</option>
+                                        <option value="put">Put (Short)</option>
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="text-[9px] text-gray-500">Strike (€)</label>
+                                      <input
+                                        type="number"
+                                        value={warrantStrike}
+                                        onChange={(e) => setWarrantStrike(e.target.value)}
+                                        placeholder={item.currentPrice?.toFixed(0) || '100'}
+                                        step="1"
+                                        className="w-full px-1 py-1 bg-slate-900 border border-slate-600 rounded text-[10px] focus:border-amber-500 focus:outline-none text-center"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[9px] text-gray-500">Ratio</label>
+                                      <select
+                                        value={warrantRatio}
+                                        onChange={(e) => setWarrantRatio(e.target.value)}
+                                        className="w-full px-1 py-1 bg-slate-900 border border-slate-600 rounded text-[10px] focus:border-amber-500 focus:outline-none"
+                                      >
+                                        <option value="1">1:1</option>
+                                        <option value="0.1">0,1 (10:1)</option>
+                                        <option value="0.01">0,01 (100:1)</option>
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="text-[9px] text-gray-500">Vola (%)</label>
+                                      <input
+                                        type="number"
+                                        value={warrantVolatility}
+                                        onChange={(e) => setWarrantVolatility(e.target.value)}
+                                        min="5"
+                                        max="200"
+                                        step="5"
+                                        className="w-full px-1 py-1 bg-slate-900 border border-slate-600 rounded text-[10px] focus:border-amber-500 focus:outline-none text-center"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] text-gray-500">Verfall</label>
+                                    <input
+                                      type="date"
+                                      value={warrantExpiry}
+                                      onChange={(e) => setWarrantExpiry(e.target.value)}
+                                      min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                                      className="w-full px-1 py-1 bg-slate-900 border border-slate-600 rounded text-[10px] focus:border-amber-500 focus:outline-none"
+                                    />
+                                  </div>
+                                </div>
+                              )}
 
                               {/* Quantity */}
                               <div>

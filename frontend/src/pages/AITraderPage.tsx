@@ -1150,6 +1150,13 @@ export function AITraderPage() {
                             >
                               {position.side === 'short' ? '🔴' : '🟢'} {position.symbol}
                             </button>
+                            {(position as any).productType === 'warrant' && (
+                              <span className={`px-1 py-0.5 rounded text-[9px] font-bold ${
+                                (position as any).optionType === 'call' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                              }`}>
+                                {(position as any).optionType === 'call' ? 'C' : 'P'}
+                              </span>
+                            )}
                             <span className="text-gray-500">{position.quantity}x</span>
                             <span className="text-gray-300">${currentPrice?.toFixed(2)}</span>
                             {priceChangePercent != null && (
@@ -1306,6 +1313,51 @@ export function AITraderPage() {
                                   {marketState === 'REGULAR' ? '🟢 Markt offen' : marketState === 'PRE' ? '🟡 Vormarkt' : marketState === 'POST' ? '🟡 Nachmarkt' : '⚫ Geschlossen'}
                                 </span>
                               </div>
+                              
+                              {/* Warrant Info */}
+                              {(position as any).productType === 'warrant' && (
+                                <div className="bg-amber-500/10 border border-amber-500/30 rounded p-1.5 mt-1">
+                                  <div className="flex items-center gap-1.5 mb-1">
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                      (position as any).optionType === 'call' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                                    }`}>
+                                      {(position as any).optionType === 'call' ? 'CALL' : 'PUT'}
+                                    </span>
+                                    <span className="text-[10px] text-amber-400">
+                                      Strike ${(position as any).strikePrice?.toFixed(2) || '—'}
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-x-3 text-[10px]">
+                                    {(position as any).greeks && (
+                                      <>
+                                        <div>
+                                          <span className="text-gray-500">Δ</span>
+                                          <span className="text-amber-300 ml-1">{(position as any).greeks.delta?.toFixed(3)}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Θ</span>
+                                          <span className="text-amber-300 ml-1">{(position as any).greeks.theta?.toFixed(3)}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">V</span>
+                                          <span className="text-amber-300 ml-1">{(position as any).greeks.vega?.toFixed(3)}</span>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                  {(position as any).expiryDate && (
+                                    <div className="text-[10px] mt-0.5">
+                                      <span className="text-gray-500">Verfall </span>
+                                      <span className={`${
+                                        new Date((position as any).expiryDate).getTime() - Date.now() < 7 * 86400000
+                                          ? 'text-red-400' : 'text-amber-300'
+                                      }`}>
+                                        {new Date((position as any).expiryDate).toLocaleDateString('de-DE')}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>

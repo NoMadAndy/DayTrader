@@ -45,7 +45,7 @@ export interface BrokerProfiles {
 // Product Types
 // ============================================================================
 
-export type ProductType = 'stock' | 'cfd' | 'knockout' | 'factor';
+export type ProductType = 'stock' | 'cfd' | 'knockout' | 'factor' | 'warrant';
 
 export interface ProductTypeConfig {
   name: string;
@@ -56,6 +56,8 @@ export interface ProductTypeConfig {
   canShort: boolean;
   hasKnockout?: boolean;
   dailyReset?: boolean;
+  hasExpiry?: boolean;
+  hasTimeDecay?: boolean;
 }
 
 export interface ProductTypes {
@@ -95,6 +97,30 @@ export interface Portfolio {
 export type PositionSide = 'long' | 'short';
 export type CloseReason = 'user' | 'stop_loss' | 'take_profit' | 'knockout' | 'margin_call' | 'expiry' | 'reset';
 
+// Warrant/Option specific types
+export type OptionType = 'call' | 'put';
+
+export interface Greeks {
+  delta: number;
+  gamma: number;
+  theta: number;
+  vega: number;
+  rho?: number;
+}
+
+export interface WarrantPriceResult {
+  success: boolean;
+  warrant_price: number;
+  intrinsic_value: number;
+  time_value: number;
+  greeks: Greeks;
+  moneyness: 'ITM' | 'ATM' | 'OTM';
+  leverage_ratio: number;
+  break_even: number;
+  days_to_expiry: number;
+  implied_annual_cost: number;
+}
+
 export interface Position {
   id: number;
   portfolioId: number;
@@ -120,6 +146,13 @@ export interface Position {
   closePrice: number | null;
   realizedPnl: number | null;
   isOpen: boolean;
+  // Warrant-specific fields
+  strikePrice: number | null;
+  optionType: OptionType | null;
+  underlyingSymbol: string | null;
+  warrantRatio: number;
+  impliedVolatility: number | null;
+  greeks: Greeks | null;
 }
 
 // Extended position with calculated fields
@@ -268,6 +301,14 @@ export interface ExecuteOrderRequest {
   stopLoss?: number;
   takeProfit?: number;
   knockoutLevel?: number;
+  // Warrant-specific
+  strikePrice?: number;
+  optionType?: OptionType;
+  underlyingSymbol?: string;
+  warrantRatio?: number;
+  expiryDate?: string;
+  impliedVolatility?: number;
+  greeks?: Greeks;
 }
 
 export interface ExecuteOrderResponse {

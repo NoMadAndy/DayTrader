@@ -19,6 +19,7 @@ A modern, AI-powered stock technical analysis platform for day trading education
 - 📋 **Watchlist**: Personal watchlist with trading signals for all positions
 - 🧭 **Multi-Page Navigation**: Dedicated pages for Dashboard, Watchlist, Settings, Info, and Changelog
 - 🎮 **Paper Trading**: Stock market simulation with virtual money (see below)
+- 📜 **Warrant Trading**: Optionsschein-Handel mit Black-Scholes Pricing, Greeks, Time Decay & Expiry-Management
 - 🤖 **RL Trading Agents**: Deep Reinforcement Learning virtual traders (see below)
 - 🏆 **Trading Leaderboard**: Compete with other traders and AI agents (see below)
 - 🤖 **AI Live Trader** (Phase 4): Complete AI trading platform with reporting, analytics & adaptive learning (see below)

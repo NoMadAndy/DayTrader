@@ -538,6 +538,88 @@ async def analyze_sentiment_batch(request: SentimentBatchRequest):
     }
 
 
+# ============== Warrant Pricing ==============
+
+class WarrantPriceRequest(BaseModel):
+    """Request for warrant/option pricing via Black-Scholes"""
+    underlying_price: float = Field(..., description="Current price of the underlying stock")
+    strike_price: float = Field(..., description="Strike price (Basispreis)")
+    days_to_expiry: float = Field(..., description="Days until expiry (Restlaufzeit)")
+    volatility: float = Field(0.30, description="Annualized volatility (e.g. 0.30 = 30%)")
+    risk_free_rate: float = Field(0.03, description="Risk-free interest rate (e.g. 0.03 = 3%)")
+    option_type: str = Field('call', description="'call' or 'put'")
+    ratio: float = Field(0.1, description="Bezugsverhältnis (e.g. 0.1 = 10 warrants per share)")
+
+
+class ImpliedVolRequest(BaseModel):
+    """Request for implied volatility calculation"""
+    market_price: float = Field(..., description="Current market price of the warrant")
+    underlying_price: float = Field(..., description="Current price of the underlying stock")
+    strike_price: float = Field(..., description="Strike price")
+    days_to_expiry: float = Field(..., description="Days until expiry")
+    risk_free_rate: float = Field(0.03, description="Risk-free rate")
+    option_type: str = Field('call', description="'call' or 'put'")
+    ratio: float = Field(0.1, description="Bezugsverhältnis")
+
+
+@app.post("/warrant/price", tags=["Warrant Pricing"])
+async def price_warrant_endpoint(request: WarrantPriceRequest):
+    """
+    Calculate the fair price and Greeks for a warrant (Optionsschein)
+    using the Black-Scholes model.
+    """
+    from .warrant_pricing import price_warrant, to_dict
+
+    try:
+        result = price_warrant(
+            S=request.underlying_price,
+            K=request.strike_price,
+            T_days=request.days_to_expiry,
+            sigma=request.volatility,
+            r=request.risk_free_rate,
+            option_type=request.option_type,
+            ratio=request.ratio,
+        )
+        return {"success": True, **to_dict(result)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/warrant/implied-volatility", tags=["Warrant Pricing"])
+async def implied_vol_endpoint(request: ImpliedVolRequest):
+    """
+    Calculate the implied volatility from a warrant's market price.
+    """
+    from .warrant_pricing import implied_volatility
+
+    try:
+        # Adjust market price for ratio to get underlying option price
+        option_price = request.market_price / request.ratio
+        T = request.days_to_expiry / 365.0
+
+        iv = implied_volatility(
+            market_price=option_price,
+            S=request.underlying_price,
+            K=request.strike_price,
+            T=T,
+            r=request.risk_free_rate,
+            option_type=request.option_type,
+        )
+
+        if iv is None:
+            raise HTTPException(status_code=400, detail="Could not converge on implied volatility")
+
+        return {
+            "success": True,
+            "implied_volatility": iv,
+            "implied_volatility_pct": round(iv * 100, 2),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 # ============== Main ==============
 
 if __name__ == "__main__":

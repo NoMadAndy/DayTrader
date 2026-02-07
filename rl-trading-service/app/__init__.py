@@ -13,4 +13,4 @@ The agents learn from historical market data and technical indicators,
 rewarded for profitable backtesting performance.
 """
 
-__version__ = "1.33.1"
+__version__ = "1.34.0"

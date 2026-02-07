@@ -29,7 +29,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Read version from package.json for accurate version info
-let packageVersion = '1.33.1';
+let packageVersion = '1.34.0';
 try {
   const packageJson = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'));
   packageVersion = packageJson.version;
@@ -3378,6 +3378,92 @@ app.get('/api/trading/leaderboard/rank', authMiddleware, async (req, res) => {
 // ============================================================================
 // Historical Prices Endpoints (for Backtesting)
 // ============================================================================
+
+// ============================================================================
+// Warrant Pricing Proxy (via ML Service Black-Scholes Engine)
+// ============================================================================
+
+/**
+ * Get warrant price and Greeks
+ * POST /api/trading/warrant/price
+ * Body: { underlyingPrice, strikePrice, daysToExpiry, volatility?, riskFreeRate?, optionType?, ratio? }
+ */
+app.post('/api/trading/warrant/price', authMiddleware, express.json(), async (req, res) => {
+  try {
+    const { underlyingPrice, strikePrice, daysToExpiry, volatility = 0.30, riskFreeRate = 0.03, optionType = 'call', ratio = 0.1 } = req.body;
+
+    if (!underlyingPrice || !strikePrice || !daysToExpiry) {
+      return res.status(400).json({ error: 'Missing required fields: underlyingPrice, strikePrice, daysToExpiry' });
+    }
+
+    const mlUrl = process.env.ML_SERVICE_URL || 'http://ml-service:8000';
+    const response = await fetch(`${mlUrl}/warrant/price`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        underlying_price: underlyingPrice,
+        strike_price: strikePrice,
+        days_to_expiry: daysToExpiry,
+        volatility,
+        risk_free_rate: riskFreeRate,
+        option_type: optionType,
+        ratio,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      return res.status(response.status).json({ error: err.detail || 'ML service error' });
+    }
+
+    const data = await response.json();
+    res.json(data);
+  } catch (e) {
+    console.error('Warrant pricing error:', e);
+    res.status(500).json({ error: 'Failed to calculate warrant price' });
+  }
+});
+
+/**
+ * Get implied volatility from market price
+ * POST /api/trading/warrant/implied-volatility
+ * Body: { marketPrice, underlyingPrice, strikePrice, daysToExpiry, riskFreeRate?, optionType?, ratio? }
+ */
+app.post('/api/trading/warrant/implied-volatility', authMiddleware, express.json(), async (req, res) => {
+  try {
+    const { marketPrice, underlyingPrice, strikePrice, daysToExpiry, riskFreeRate = 0.03, optionType = 'call', ratio = 0.1 } = req.body;
+
+    if (!marketPrice || !underlyingPrice || !strikePrice || !daysToExpiry) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const mlUrl = process.env.ML_SERVICE_URL || 'http://ml-service:8000';
+    const response = await fetch(`${mlUrl}/warrant/implied-volatility`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        market_price: marketPrice,
+        underlying_price: underlyingPrice,
+        strike_price: strikePrice,
+        days_to_expiry: daysToExpiry,
+        risk_free_rate: riskFreeRate,
+        option_type: optionType,
+        ratio,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      return res.status(response.status).json({ error: err.detail || 'ML service error' });
+    }
+
+    const data = await response.json();
+    res.json(data);
+  } catch (e) {
+    console.error('Implied vol error:', e);
+    res.status(500).json({ error: 'Failed to calculate implied volatility' });
+  }
+});
 
 // Note: historicalPricesService is already imported above for Yahoo Chart caching
 const historicalPrices = historicalPricesService;

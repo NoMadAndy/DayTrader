@@ -1068,6 +1068,57 @@ export function TradingPortfolioPage() {
                         </div>
                       )}
                       
+                      {/* Warrant Info */}
+                      {position.productType === 'warrant' && (
+                        <div className="bg-amber-500/10 border border-amber-500/30 rounded p-1.5 sm:p-2 mb-2 sm:mb-3">
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] sm:text-xs font-bold ${
+                              position.optionType === 'call' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                            }`}>
+                              {position.optionType === 'call' ? '📈 CALL' : '📉 PUT'}
+                            </span>
+                            <span className="text-[10px] sm:text-xs text-amber-400">
+                              Strike {position.strikePrice ? `$${position.strikePrice.toFixed(2)}` : '—'}
+                            </span>
+                            {position.warrantRatio && position.warrantRatio !== 1 && (
+                              <span className="text-[10px] sm:text-xs text-gray-400">
+                                Ratio {position.warrantRatio}
+                              </span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-3 gap-1 text-[10px] sm:text-xs">
+                            {position.greeks && (
+                              <>
+                                <div>
+                                  <span className="text-gray-500">Δ Delta</span>
+                                  <div className="text-amber-300 font-medium">{position.greeks.delta?.toFixed(4) || '—'}</div>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Θ Theta</span>
+                                  <div className="text-amber-300 font-medium">{position.greeks.theta?.toFixed(4) || '—'}</div>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">V Vega</span>
+                                  <div className="text-amber-300 font-medium">{position.greeks.vega?.toFixed(4) || '—'}</div>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          {position.expiryDate && (
+                            <div className="mt-1 text-[10px] sm:text-xs">
+                              <span className="text-gray-500">Verfall: </span>
+                              <span className={`font-medium ${
+                                new Date(position.expiryDate).getTime() - Date.now() < 7 * 24 * 60 * 60 * 1000
+                                  ? 'text-red-400' : 'text-amber-300'
+                              }`}>
+                                {new Date(position.expiryDate).toLocaleDateString('de-DE')}
+                                {' '}({Math.max(0, Math.ceil((new Date(position.expiryDate).getTime() - Date.now()) / (24 * 60 * 60 * 1000)))} Tage)
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
                       {/* SL/TP Display & Edit */}
                       <div className="border-t border-slate-700 pt-2 sm:pt-3">
                         {editingPosition === position.id ? (
