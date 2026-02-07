@@ -4327,6 +4327,28 @@ app.delete('/api/ai-traders/:id/decisions/:did', async (req, res) => {
 });
 
 /**
+ * Force recalculate stats for all AI traders
+ * POST /api/ai-traders/recalculate-stats
+ */
+app.post('/api/ai-traders/recalculate-stats', async (req, res) => {
+  try {
+    // First update any pending outcomes
+    const outcomesUpdated = await aiTrader.updatePendingOutcomes();
+    
+    // Then recalculate stats for ALL traders
+    const traders = await aiTrader.getAllAITraders();
+    for (const trader of traders) {
+      await aiTrader.updateTraderStats(trader.id);
+    }
+    
+    res.json({ success: true, tradersUpdated: traders.length, outcomesUpdated });
+  } catch (e) {
+    console.error('Recalculate stats error:', e);
+    res.status(500).json({ error: 'Failed to recalculate stats' });
+  }
+});
+
+/**
  * Mark AI trader decision as executed
  * PATCH /api/ai-traders/:id/decisions/mark-executed
  */
@@ -4443,17 +4465,33 @@ app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
       const entryPrice = pos.entryPrice || 0;
       const quantity = pos.quantity || 0;
       const side = pos.side || 'long';
+      const openFee = parseFloat(pos.openFee || pos.open_fee || 0);
       
       const entryValue = entryPrice * quantity;
       const currentValue = currentPrice * quantity;
       
-      // Calculate unrealized P&L based on side
-      let unrealizedPnl;
+      // === REALISM: Calculate unrealized P&L NET of fees ===
+      // Include already-paid open fee + estimated close fee
+      let grossUnrealizedPnl;
       if (side === 'short') {
-        unrealizedPnl = (entryPrice - currentPrice) * quantity;
+        grossUnrealizedPnl = (entryPrice - currentPrice) * quantity;
       } else {
-        unrealizedPnl = (currentPrice - entryPrice) * quantity;
+        grossUnrealizedPnl = (currentPrice - entryPrice) * quantity;
       }
+      
+      // Estimate close fee (same broker, sell side)
+      const brokerKey = portfolio.broker_profile || 'flatex';
+      const estCloseFees = trading.calculateFees({
+        productType: pos.productType || pos.product_type || 'stock',
+        side: 'sell',
+        quantity,
+        price: currentPrice,
+        brokerProfile: brokerKey,
+      });
+      const estimatedCloseFee = estCloseFees.totalFees;
+      
+      // Net unrealized P&L = gross - open fee - estimated close fee
+      const unrealizedPnl = grossUnrealizedPnl - openFee - estimatedCloseFee;
       
       // Calculate daily P&L
       if (live?.previousClose) {
@@ -4479,7 +4517,9 @@ app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
         current_value: currentValue,
         stop_loss: pos.stopLoss || null,
         take_profit: pos.takeProfit || null,
-        opened_at: pos.openedAt || null
+        opened_at: pos.openedAt || null,
+        open_fee: openFee,
+        estimated_close_fee: estimatedCloseFee,
       };
     }
     
@@ -4524,6 +4564,18 @@ app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
     const brokerKey = portfolio.broker_profile || traderObj?.personality?.capital?.brokerProfile || 'flatex';
     const brokerName = trading.BROKER_PROFILES[brokerKey]?.name || brokerKey;
     
+    // === REALISM: Persist high-water-mark for accurate drawdown tracking ===
+    const previousMaxValue = parseFloat(portfolio.max_value) || initialCapital;
+    const currentMaxValue = Math.max(previousMaxValue, totalValue);
+    if (currentMaxValue > previousMaxValue) {
+      // New all-time high — update DB
+      await db.query(
+        `UPDATE portfolios SET max_value = $1, updated_at = NOW() WHERE id = $2`,
+        [currentMaxValue, portfolio.id]
+      );
+    }
+    const currentDrawdown = currentMaxValue > 0 ? ((currentMaxValue - totalValue) / currentMaxValue) * 100 : 0;
+    
     res.json({
       cash: cashBalance,
       total_value: totalValue,
@@ -4538,7 +4590,8 @@ app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
       daily_pnl: dailyPnl,
       daily_pnl_pct: dailyPnlPct,
       initial_capital: initialCapital,
-      max_value: totalValue,
+      max_value: currentMaxValue,
+      current_drawdown: currentDrawdown,
       // Trade stats from closed positions
       trades_executed: totalTrades,
       winning_trades: winningTrades,
@@ -4563,11 +4616,38 @@ app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
 app.post('/api/ai-traders/:id/execute', async (req, res) => {
   try {
     const traderId = parseInt(req.params.id);
-    const { symbol, action, quantity, price, stop_loss, take_profit, reasoning } = req.body;
+    const { symbol, action, quantity, stop_loss, take_profit, reasoning } = req.body;
+    let { price } = req.body;
     
     // Validate quantity
     if (!quantity || quantity <= 0) {
       return res.status(400).json({ error: 'Invalid quantity', quantity });
+    }
+    
+    // === REALISM: Reject trades outside market hours ===
+    if (backgroundJobs.isOutsideTradingHours()) {
+      return res.status(400).json({ error: 'Market is closed. Trades can only be executed during trading hours (Mon-Fri 09:00-17:30 CET).' });
+    }
+    
+    // === REALISM: Verify price with live market data ===
+    // Don't blindly trust the price from the RL service — fetch the actual current price
+    try {
+      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
+      const liveRes = await fetch(yahooUrl);
+      if (liveRes.ok) {
+        const liveData = await liveRes.json();
+        const liveMeta = liveData?.chart?.result?.[0]?.meta;
+        const livePrice = liveMeta?.regularMarketPrice;
+        if (livePrice && livePrice > 0) {
+          const priceDiff = Math.abs(price - livePrice) / livePrice * 100;
+          if (priceDiff > 1.0) {
+            console.warn(`[AI Trader ${traderId}] Price correction: ${symbol} requested $${price.toFixed(2)}, market is $${livePrice.toFixed(2)} (${priceDiff.toFixed(1)}% diff)`);
+          }
+          price = livePrice;  // Always use the live market price
+        }
+      }
+    } catch (priceErr) {
+      console.warn(`[AI Trader ${traderId}] Could not verify live price for ${symbol}, using submitted price:`, priceErr.message);
     }
     
     // Get AI trader
@@ -4594,18 +4674,32 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
       await client.query('BEGIN');
       
       if (action === 'buy' || action === 'short') {
-        // Calculate broker fees
+        // === REALISM: Use correct product type for short positions ===
+        // Short selling stocks requires margin/CFD in reality
+        const productType = action === 'short' ? 'cfd' : 'stock';
+        
+        // Calculate broker fees (includes spread cost)
         const fees = trading.calculateFees({
-          productType: 'stock',
+          productType,
           side: action === 'short' ? 'sell' : 'buy',
           quantity: Math.abs(quantity),
           price,
           brokerProfile,
         });
-        const orderFee = fees.totalFees;  // commission + spread (matches RL training)
+        const orderFee = fees.totalFees;  // commission + spread
+        
+        // === REALISM: Use effective price (includes bid-ask spread) ===
+        // In real markets, buy orders fill at the ask price (higher than mid)
+        // and sell/short orders fill at the bid price (lower than mid)
+        const executionPrice = fees.effectivePrice;
+        
+        // === REALISM: Add random slippage (0.01-0.05% for liquid stocks) ===
+        const slippagePct = 0.0001 + Math.random() * 0.0004; // 0.01% to 0.05%
+        const slippageDirection = (action === 'buy') ? 1 : -1; // buy = worse (higher), short = worse (lower)
+        const finalPrice = executionPrice * (1 + slippageDirection * slippagePct);
         
         // Check if we have enough cash (cost + fee)
-        const cost = Math.abs(quantity) * price;
+        const cost = Math.abs(quantity) * finalPrice;
         const totalCost = cost + orderFee;
         if (totalCost > parseFloat(portfolio.cash_balance)) {
           await client.query('ROLLBACK');
@@ -4625,7 +4719,7 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
           // Add to existing position (average up/down)
           const existing = existingPos.rows[0];
           const newQuantity = parseFloat(existing.quantity) + Math.abs(quantity);
-          const newAvgPrice = ((parseFloat(existing.quantity) * parseFloat(existing.entry_price)) + (Math.abs(quantity) * price)) / newQuantity;
+          const newAvgPrice = ((parseFloat(existing.quantity) * parseFloat(existing.entry_price)) + (Math.abs(quantity) * finalPrice)) / newQuantity;
           
           const updateResult = await client.query(
             `UPDATE positions SET quantity = $1, entry_price = $2, total_fees_paid = COALESCE(total_fees_paid, 0) + $3, open_fee = COALESCE(open_fee, 0) + $4, updated_at = NOW()
@@ -4634,13 +4728,13 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
           );
           position = updateResult.rows[0];
         } else {
-          // Create new position
+          // Create new position with effective price (spread + slippage included)
           const insertResult = await client.query(
             `INSERT INTO positions (portfolio_id, symbol, side, quantity, entry_price, current_price, 
              stop_loss, take_profit, product_type, is_open, close_reason, total_fees_paid, open_fee, opened_at)
-             VALUES ($1, $2, $3, $4, $5, $5, $6, $7, 'stock', true, $8, $9, $9, NOW())
+             VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, true, $9, $10, $10, NOW())
              RETURNING *`,
-            [portfolio.id, symbol, side, Math.abs(quantity), price, stop_loss, take_profit, reasoning, orderFee]
+            [portfolio.id, symbol, side, Math.abs(quantity), finalPrice, stop_loss, take_profit, productType, reasoning, orderFee]
           );
           position = insertResult.rows[0];
         }
@@ -4653,22 +4747,32 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
         
         await client.query('COMMIT');
         
-        // Update trader stats
+        // Log with realistic execution details
+        const slippageCents = Math.abs(finalPrice - price) * Math.abs(quantity);
         await aiTrader.updateAITrader(traderId, {
-          status_message: `${action === 'short' ? 'Shorted' : 'Bought'} ${quantity} ${symbol} @ $${price.toFixed(2)} (Gebühr: $${orderFee.toFixed(2)})`
+          status_message: `${action === 'short' ? 'Shorted' : 'Bought'} ${quantity} ${symbol} @ $${finalPrice.toFixed(2)} (Mid: $${price.toFixed(2)}, Spread+Slip: $${slippageCents.toFixed(2)}, Gebühr: $${orderFee.toFixed(2)})`
         });
+        
+        // Update trader stats (trades_executed counter)
+        try {
+          await aiTrader.updateTraderStats(traderId);
+        } catch (statsErr) {
+          console.error(`[AI Trader ${traderId}] Stats update error (non-fatal):`, statsErr.message);
+        }
         
         // Emit SSE event for real-time UI updates
         emitTradeExecuted(traderId, traderName, {
           symbol,
           action,
           quantity,
-          price,
+          price: finalPrice,
+          midPrice: price,
           cost,
           fee: orderFee,
+          slippage: slippageCents,
         });
         
-        res.status(201).json({ success: true, position, action, fee: orderFee });
+        res.status(201).json({ success: true, position, action, fee: orderFee, executionPrice: finalPrice, requestedPrice: price });
         
       } else if (action === 'sell' || action === 'close') {
         // Get existing position
@@ -4685,39 +4789,46 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
         const position = positionsResult.rows[0];
         const entryPrice = parseFloat(position.entry_price);
         const positionQty = parseFloat(position.quantity);
+        const posProductType = position.product_type || 'stock';
         
-        // Calculate close broker fees
+        // === REALISM: Calculate close fees with correct product type ===
         const closeFees = trading.calculateFees({
-          productType: 'stock',
+          productType: posProductType,
           side: 'sell',
           quantity: positionQty,
           price,
           brokerProfile,
         });
-        const closeFee = closeFees.totalFees;  // commission + spread (matches RL training)
+        const closeFee = closeFees.totalFees;
+        
+        // === REALISM: Apply spread + slippage to close price ===
+        // Sell orders fill at bid (lower), buy-to-cover (short) at ask (higher)
+        const closeEffectivePrice = closeFees.effectivePrice;
+        const closeSlippagePct = 0.0001 + Math.random() * 0.0004; // 0.01-0.05%
+        const closeSlippageDir = (position.side === 'long') ? -1 : 1; // selling long = worse (lower), covering short = worse (higher)
+        const closePrice = closeEffectivePrice * (1 + closeSlippageDir * closeSlippagePct);
+        
         const totalFeesPaid = parseFloat(position.total_fees_paid || 0) + closeFee;
         
-        // Calculate P&L based on position side (AFTER fees)
+        // Calculate P&L based on position side (AFTER fees) using realistic close price
         let grossPnl, pnl, pnlPercent;
         if (position.side === 'short') {
-          // Short position: profit when price goes down
-          grossPnl = (entryPrice - price) * positionQty;
+          grossPnl = (entryPrice - closePrice) * positionQty;
         } else {
-          // Long position: profit when price goes up
-          grossPnl = (price - entryPrice) * positionQty;
+          grossPnl = (closePrice - entryPrice) * positionQty;
         }
         pnl = grossPnl - totalFeesPaid;  // Net P&L after all fees (open + close)
         pnlPercent = (entryPrice * positionQty) > 0 ? (pnl / (entryPrice * positionQty) * 100) : 0;
         
-        // Close position
+        // Close position with realistic execution price
         await client.query(
           `UPDATE positions SET is_open = false, close_price = $1, closed_at = NOW(),
            realized_pnl = $2, close_reason = $3, total_fees_paid = $5
            WHERE id = $4`,
-          [price, pnl, reasoning || action, position.id, totalFeesPaid]
+          [closePrice, pnl, reasoning || action, position.id, totalFeesPaid]
         );
         
-        // Update portfolio cash (add back margin + gross P&L - close fee)
+        // Update portfolio cash (add back cost basis + gross P&L - close fee)
         const proceeds = Math.max(0, (entryPrice * positionQty) + grossPnl - closeFee);
         if (proceeds === 0) {
           console.warn(`[AI Trader ${traderId}] Proceeds capped at 0 for ${symbol} (gross: ${grossPnl.toFixed(2)}, closeFee: ${closeFee.toFixed(2)})`);
@@ -4729,24 +4840,35 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
         
         await client.query('COMMIT');
         
-        // Update trader stats
+        // Update trader stats with realistic details
+        const closeSlipCents = Math.abs(closePrice - price) * positionQty;
         await aiTrader.updateAITrader(traderId, {
-          status_message: `Closed ${position.side} ${positionQty} ${symbol} @ $${price.toFixed(2)} (${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%, Gebühren: $${totalFeesPaid.toFixed(2)})`
+          status_message: `Closed ${position.side} ${positionQty} ${symbol} @ $${closePrice.toFixed(2)} (${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%, Gebühren: $${totalFeesPaid.toFixed(2)}, Slip: $${closeSlipCents.toFixed(2)})`
         });
+        
+        // Update outcomes and recalculate trader stats
+        try {
+          await aiTrader.updatePendingOutcomes();
+          await aiTrader.updateTraderStats(traderId);
+        } catch (statsErr) {
+          console.error(`[AI Trader ${traderId}] Stats update error (non-fatal):`, statsErr.message);
+        }
         
         // Emit SSE event for real-time UI updates
         emitTradeExecuted(traderId, traderName, {
           symbol,
           action: action === 'close' ? 'close' : 'sell',
           quantity: positionQty,
-          price,
+          price: closePrice,
+          midPrice: price,
           proceeds,
           pnl: pnlPercent.toFixed(2),
           fee: closeFee,
           totalFees: totalFeesPaid,
+          slippage: closeSlipCents,
         });
         
-        res.status(200).json({ success: true, position: { ...position, close_price: price, realized_pnl: pnl, total_fees_paid: totalFeesPaid }, action, pnl, pnlPercent, fee: closeFee, totalFees: totalFeesPaid });
+        res.status(200).json({ success: true, position: { ...position, close_price: closePrice, realized_pnl: pnl, total_fees_paid: totalFeesPaid }, action, pnl, pnlPercent, fee: closeFee, totalFees: totalFeesPaid });
       } else {
         await client.query('ROLLBACK');
         res.status(400).json({ error: 'Invalid action. Use buy, sell, short, or close.' });

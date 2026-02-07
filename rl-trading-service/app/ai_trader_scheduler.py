@@ -648,12 +648,14 @@ class AITraderScheduler:
             
             data = response.json()
             
-            # Extract OHLCV data
+            # Extract OHLCV data and real-time price from meta
             prices = []
+            meta = {}
             if 'chart' in data and 'result' in data['chart']:
                 results = data['chart']['result']
                 if results and len(results) > 0:
                     result = results[0]
+                    meta = result.get('meta', {})
                     timestamps = result.get('timestamp', [])
                     quote = result.get('indicators', {}).get('quote', [{}])[0]
                     
@@ -676,13 +678,45 @@ class AITraderScheduler:
             if not prices:
                 return None
             
-            # Get current price
-            current_price = prices[-1]['close'] if prices else 0
+            # === REALISM: Use real-time price, not stale daily close ===
+            # The Yahoo chart API returns meta.regularMarketPrice as the live price,
+            # BUT when served from the backend's DB cache, it's just the last close.
+            # Detect cache responses and fetch a separate live quote if needed.
+            last_close = prices[-1]['close']
+            is_from_cache = data.get('_source') == 'database_cache' or data.get('_cache', {}).get('source') == 'historical_prices_db'
+            
+            realtime_price = None
+            if not is_from_cache:
+                # Direct Yahoo response — meta.regularMarketPrice is real-time
+                realtime_price = meta.get('regularMarketPrice')
+            
+            if not realtime_price or realtime_price == last_close:
+                # Cache response or no meta price — fetch a separate live quote
+                try:
+                    live_resp = await self.http_client.get(
+                        f"{self.backend_url}/api/yahoo/chart/{symbol}",
+                        params={'period': '1d', 'interval': '1m'}  # Short range forces direct Yahoo API (not cached)
+                    )
+                    if live_resp.status_code == 200:
+                        live_data = live_resp.json()
+                        live_result = live_data.get('chart', {}).get('result', [{}])
+                        if live_result:
+                            live_meta = live_result[0].get('meta', {})
+                            realtime_price = live_meta.get('regularMarketPrice')
+                except Exception as e:
+                    print(f"⚠️ Could not fetch live quote for {symbol}: {e}")
+            
+            if not realtime_price:
+                realtime_price = last_close  # Ultimate fallback
+            
+            if abs(realtime_price - last_close) > 0.01:
+                print(f"📊 {symbol}: Real-time ${realtime_price:.2f} vs last close ${last_close:.2f} (Δ {((realtime_price/last_close - 1) * 100):+.2f}%)")
             
             return {
                 'symbol': symbol,
                 'prices': prices,
-                'current_price': current_price,
+                'current_price': realtime_price,
+                'last_close': last_close,
                 'volume': prices[-1]['volume'] if prices else 0
             }
             
@@ -788,6 +822,27 @@ class AITraderScheduler:
                 
                 # Execute close if needed
                 if should_close:
+                    # === REALISM: Determine realistic execution price ===
+                    # For SL: If price gapped through SL, execute at current price (worse than SL)
+                    # For TP: If price gapped through TP, execute at TP level (limit order behavior)
+                    if close_reason == 'stop_loss':
+                        # Stop-loss is a market order: executes at current price (which may be worse than SL)
+                        # In a gap scenario, current_price can be far below SL (long) or above SL (short)
+                        exec_price = current_price  # Realistic: you get the current market price, not SL
+                        if side == 'long':
+                            slippage_info = f"Gap: ${stop_loss:.2f}→${current_price:.2f}" if current_price < stop_loss * 0.999 else ""
+                        else:
+                            slippage_info = f"Gap: ${stop_loss:.2f}→${current_price:.2f}" if current_price > stop_loss * 1.001 else ""
+                    else:
+                        # Take-profit is a limit order: executes at TP level or better
+                        if side == 'long':
+                            exec_price = max(take_profit, current_price) if current_price > take_profit else take_profit
+                        else:
+                            exec_price = min(take_profit, current_price) if current_price < take_profit else take_profit
+                        slippage_info = ""
+                    
+                    gap_note = f" ({slippage_info})" if slippage_info else ""
+                    
                     # Create a synthetic close decision
                     decision = TradingDecision(
                         symbol=symbol,
@@ -803,11 +858,13 @@ class AITraderScheduler:
                             'trigger': close_reason,
                             'trigger_price': stop_loss if close_reason == 'stop_loss' else take_profit,
                             'current_price': current_price,
-                            'side': side
+                            'execution_price': exec_price,
+                            'side': side,
+                            'gap_slippage': slippage_info or None
                         },
-                        summary_short=f"{close_reason.upper()}: Closing {side} {symbol} @ ${current_price:.2f}",
+                        summary_short=f"{close_reason.upper()}: Closing {side} {symbol} @ ${exec_price:.2f}{gap_note}",
                         quantity=abs(quantity),
-                        price=current_price,
+                        price=exec_price,  # Use realistic execution price
                         stop_loss=stop_loss,
                         take_profit=take_profit,
                         risk_checks_passed=True,  # SL/TP exits bypass risk checks

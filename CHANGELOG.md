@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.32.0] - 2026-02-07
+
+### Changed
+- **Paper Trading Realismus-Audit** – Vollständiges Audit der AI-Trader-Simulation auf Realismus. Ergebnisse der Simulation entsprechen nun deutlich besser echten Marktbedingungen.
+
+### Fixed
+- **Echtzeit-Kurse für AI-Entscheidungen** – `_fetch_market_data()` nutzt jetzt `meta.regularMarketPrice` (Yahoo Finance Echtzeit-Kurs) statt `prices[-1]['close']` (gestriger Tagesschluss). Bei DB-Cache-Responses wird ein separater Live-Quote geholt. Position Sizing, SL/TP-Levels und Handelspreis basieren jetzt auf dem aktuellen Marktpreis.
+- **Backend Live-Preis-Verifizierung** – `POST /api/ai-traders/:id/execute` holt eigenständig den aktuellen Marktpreis von Yahoo Finance, statt dem Preis vom RL-Service blind zu vertrauen. Abweichungen >1% werden geloggt.
+- **Spread & Slippage bei Trade-Ausführung** – AI Trader Entry/Exit-Preise verwenden jetzt den `effectivePrice` (inkl. Bid-Ask-Spread) + zufällige Slippage (0,01–0,05%). Vorher wurde der rohe Midpoint-Preis ohne Spread als Entry gespeichert.
+- **Marktzeiten-Check im Backend** – `POST /api/ai-traders/:id/execute` lehnt Trades außerhalb der Handelszeit (Mo–Fr 09:00–17:30 CET) ab. Letzte Verteidigungslinie gegen außerbörsliche Ausführungen.
+- **SL/TP Gap-Ausführung** – Stop-Loss wird jetzt realistisch zum aktuellen Marktpreis ausgeführt (nicht zum SL-Level), was Gap-Slippage korrekt abbildet. Take-Profit wird als Limit-Order behandelt (min. TP-Level garantiert).
+- **Unrealized P&L inkl. Gebühren** – Offene Positionen zeigen jetzt den Net-P&L an: Brutto-P&L minus bereits gezahlte Open-Fee minus geschätzte Close-Fee. Vorher wurden Gebühren ignoriert.
+- **High-Water-Mark für Drawdown** – Neues DB-Feld `portfolios.max_value` speichert das historische Portfolio-Maximum persistent. Drawdown wird jetzt korrekt berechnet statt immer 0%.
+- **Short Selling als CFD** – Short-Positionen werden jetzt mit `product_type = 'cfd'` eröffnet (statt `'stock'`), was realistische Overnight-Gebühren und Margin-Anforderungen ermöglicht.
+- **P&L-Anzeige korrigiert** – Header zeigt jetzt die korrekte Portfolio-Rendite (Gesamtwert vs. Startkapital) statt der irreführenden Summe von Einzel-Trade-P&L-Prozenten.
+- **Redundante Stats entfernt** – "Win" und "P&L (netto)" aus der Stats-Leiste entfernt, da bereits im Header angezeigt.
+
 ## [1.31.0] - 2026-02-07
 
 ### Changed

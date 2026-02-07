@@ -317,6 +317,17 @@ export async function initializeAITraderSchema() {
       END $$;
     `);
 
+    // Add max_value (high-water-mark) column for realistic drawdown tracking
+    await client.query(`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'portfolios' AND column_name = 'max_value') THEN
+          ALTER TABLE portfolios ADD COLUMN max_value NUMERIC(15,2) DEFAULT 0;
+          UPDATE portfolios SET max_value = initial_capital WHERE max_value = 0;
+        END IF;
+      END $$;
+    `);
+
     // Create ai_trader_decisions table
     await client.query(`
       CREATE TABLE IF NOT EXISTS ai_trader_decisions (
@@ -801,13 +812,16 @@ export async function updatePendingOutcomes() {
     const result = await query(
       `SELECT d.id, d.decision_type, d.ai_trader_id, d.timestamp,
               d.ml_score, d.rl_score, d.sentiment_score, d.technical_score,
-              p.symbol, p.entry_price, p.exit_price, p.realized_pnl, 
-              p.realized_pnl_percent, p.closed_at
+              p.symbol, p.entry_price, p.close_price, p.realized_pnl, 
+              CASE WHEN p.entry_price > 0 AND p.quantity > 0 
+                   THEN (p.realized_pnl / (p.entry_price * p.quantity)) * 100 
+                   ELSE 0 END as realized_pnl_percent,
+              p.closed_at
        FROM ai_trader_decisions d
        JOIN positions p ON d.position_id = p.id
        WHERE d.executed = true
        AND d.outcome_pnl IS NULL
-       AND p.status = 'closed'
+       AND p.is_open = false
        AND p.closed_at IS NOT NULL`
     );
 
@@ -842,6 +856,12 @@ export async function updatePendingOutcomes() {
 
     if (updated > 0) {
       console.log(`Updated ${updated} decision outcomes`);
+      
+      // Re-calculate trader stats for all affected traders
+      const traderIds = [...new Set(decisions.map(d => d.ai_trader_id))];
+      for (const tid of traderIds) {
+        await updateTraderStats(tid);
+      }
     }
 
     return updated;
@@ -1041,42 +1061,122 @@ export async function createDailyReport(aiTraderId, reportData) {
 // ============================================================================
 
 /**
- * Update trader statistics by counting from decisions table
- * This recalculates trades_executed, winning_trades, losing_trades, total_pnl
+ * Update trader statistics from POSITIONS table (primary source of truth)
+ * Falls back to decisions table if positions data is unavailable.
+ * Recalculates: trades_executed, winning_trades, losing_trades, total_pnl,
+ * best_trade_pnl, worst_trade_pnl, current_streak, max_drawdown, last_trade_at
  * @param {number} traderId 
  */
 export async function updateTraderStats(traderId) {
-  // Count executed trades (buy, sell, short, close with executed=true)
-  const countResult = await query(
-    `SELECT 
-       COUNT(*) FILTER (WHERE decision_type IN ('buy', 'sell', 'short', 'close')) as trades_executed,
-       COUNT(*) FILTER (WHERE outcome_pnl IS NOT NULL AND outcome_pnl > 0) as winning_trades,
-       COUNT(*) FILTER (WHERE outcome_pnl IS NOT NULL AND outcome_pnl < 0) as losing_trades,
-       COALESCE(SUM(outcome_pnl_percent), 0) as total_pnl_percent
-     FROM ai_trader_decisions 
-     WHERE ai_trader_id = $1 AND executed = true`,
+  // Get portfolio_id for this trader
+  const traderResult = await query(
+    'SELECT portfolio_id FROM ai_traders WHERE id = $1',
     [traderId]
   );
+  const portfolioId = traderResult.rows[0]?.portfolio_id;
   
-  const stats = countResult.rows[0];
-  const tradesExecuted = parseInt(stats.trades_executed) || 0;
-  const winningTrades = parseInt(stats.winning_trades) || 0;
-  const losingTrades = parseInt(stats.losing_trades) || 0;
-  const totalPnl = parseFloat(stats.total_pnl_percent) || 0;
+  if (!portfolioId) {
+    console.log(`[AI Trader] No portfolio for trader ${traderId}, skipping stats update`);
+    return;
+  }
   
-  // Update the ai_traders table
+  // Count positions (total opened = trade executions) and closed trade results
+  const posStats = await query(
+    `SELECT 
+       COUNT(*) as total_positions,
+       COUNT(*) FILTER (WHERE is_open = false AND realized_pnl IS NOT NULL) as closed_trades,
+       COUNT(*) FILTER (WHERE is_open = false AND realized_pnl > 0) as winning_trades,
+       COUNT(*) FILTER (WHERE is_open = false AND realized_pnl < 0) as losing_trades,
+       MAX(COALESCE(closed_at, opened_at)) as last_trade_at
+     FROM positions 
+     WHERE portfolio_id = $1`,
+    [portfolioId]
+  );
+  
+  const ps = posStats.rows[0];
+  const totalPositions = parseInt(ps.total_positions) || 0;
+  const closedTrades = parseInt(ps.closed_trades) || 0;
+  const winningTrades = parseInt(ps.winning_trades) || 0;
+  const losingTrades = parseInt(ps.losing_trades) || 0;
+  const lastTradeAt = ps.last_trade_at || null;
+  
+  // Calculate P&L, best/worst trade from closed positions
+  let totalPnl = 0;
+  let bestTradePnl = null;
+  let worstTradePnl = null;
+  let currentStreak = 0;
+  let maxDrawdown = 0;
+  
+  if (closedTrades > 0) {
+    const pnlResult = await query(
+      `SELECT 
+         realized_pnl,
+         entry_price,
+         quantity,
+         CASE WHEN entry_price * quantity > 0 
+              THEN (realized_pnl / (entry_price * quantity)) * 100 
+              ELSE 0 END as pnl_pct
+       FROM positions 
+       WHERE portfolio_id = $1 AND is_open = false AND realized_pnl IS NOT NULL
+       ORDER BY closed_at ASC`,
+      [portfolioId]
+    );
+    
+    // Aggregate P&L stats
+    let cumPnl = 0;
+    let peakPnl = 0;
+    const pnlPcts = [];
+    
+    for (const row of pnlResult.rows) {
+      const pnlPct = parseFloat(row.pnl_pct) || 0;
+      pnlPcts.push(pnlPct);
+      totalPnl += pnlPct;
+      
+      // Best/worst
+      if (bestTradePnl === null || pnlPct > bestTradePnl) bestTradePnl = pnlPct;
+      if (worstTradePnl === null || pnlPct < worstTradePnl) worstTradePnl = pnlPct;
+      
+      // Max drawdown from cumulative P&L
+      cumPnl += pnlPct;
+      if (cumPnl > peakPnl) peakPnl = cumPnl;
+      const dd = peakPnl - cumPnl;
+      if (dd > maxDrawdown) maxDrawdown = dd;
+    }
+    
+    // Current streak (from most recent trades)
+    for (let i = pnlPcts.length - 1; i >= 0; i--) {
+      if (i === pnlPcts.length - 1) {
+        currentStreak = pnlPcts[i] > 0 ? 1 : -1;
+      } else {
+        const isWinning = currentStreak > 0;
+        if ((isWinning && pnlPcts[i] > 0) || (!isWinning && pnlPcts[i] < 0)) {
+          currentStreak += isWinning ? 1 : -1;
+        } else {
+          break;
+        }
+      }
+    }
+  }
+  
+  // Update the ai_traders table with all stats
   await query(
     `UPDATE ai_traders SET 
        trades_executed = $2,
        winning_trades = $3,
        losing_trades = $4,
        total_pnl = $5,
+       best_trade_pnl = $6,
+       worst_trade_pnl = $7,
+       current_streak = $8,
+       max_drawdown = $9,
+       last_trade_at = COALESCE($10::timestamptz, last_trade_at),
        updated_at = NOW()
      WHERE id = $1`,
-    [traderId, tradesExecuted, winningTrades, losingTrades, totalPnl]
+    [traderId, totalPositions, winningTrades, losingTrades, totalPnl, 
+     bestTradePnl, worstTradePnl, currentStreak, maxDrawdown, lastTradeAt]
   );
   
-  console.log(`[AI Trader] Updated stats for trader ${traderId}: ${tradesExecuted} trades, ${winningTrades} wins, ${losingTrades} losses, ${totalPnl.toFixed(2)}% P&L`);
+  console.log(`[AI Trader] Updated stats for trader ${traderId}: ${totalPositions} trades (${closedTrades} closed), ${winningTrades}W/${losingTrades}L, ${totalPnl.toFixed(2)}% P&L, streak ${currentStreak}, DD ${maxDrawdown.toFixed(2)}%`);
 }
 
 // ============================================================================

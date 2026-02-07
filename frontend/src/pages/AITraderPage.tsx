@@ -120,6 +120,7 @@ export function AITraderPage() {
   const lastRefreshRef = useRef<number>(0);
   const [activityPanelExpanded, setActivityPanelExpanded] = useState(false);
   const [expandedTradeId, setExpandedTradeId] = useState<number | null>(null);
+  const [expandedPositionId, setExpandedPositionId] = useState<number | null>(null);
   
   // Trade alert state for sticky notification
   const [currentTradeAlert, setCurrentTradeAlert] = useState<TradeAlert | null>(null);
@@ -555,7 +556,7 @@ export function AITraderPage() {
         soundEnabled={notificationSettings.sound}
       />
       
-      <div className="max-w-7xl mx-auto px-2 sm:px-4 py-2 sm:py-3 space-y-2">
+      <div className="max-w-[1600px] mx-auto px-2 sm:px-4 py-2 sm:py-3 space-y-2">
       {/* Compact Header: Back + Name + Status + Controls + Market + Live */}
       <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 px-3 py-2">
         <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -598,10 +599,43 @@ export function AITraderPage() {
           
           {/* Right: Controls + Market + Settings + Live */}
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            {/* Compact Training Status */}
-            <div className="hidden sm:block">
-              <AITraderTrainingStatus traderId={trader.id} compact={true} />
-            </div>
+            {/* Compact Overall Status */}
+            {(() => {
+              const closedTrades = trader.winningTrades + trader.losingTrades;
+              const winRate = closedTrades > 0 ? (trader.winningTrades / closedTrades) * 100 : null;
+              // Use portfolio-level P&L (correct overall return), not sum of per-trade %
+              const pnl = portfolio?.pnl ?? 0;
+              const pnlColor = pnl >= 0 ? 'text-green-400' : 'text-red-400';
+              const pnlBg = pnl >= 0 ? 'bg-green-500/15' : 'bg-red-500/15';
+              return (
+                <div className={`hidden sm:flex items-center gap-3 px-3 py-1.5 rounded-lg ${pnlBg} border ${pnl >= 0 ? 'border-green-500/30' : 'border-red-500/30'}`}>
+                  <div className="text-right">
+                    <div className={`text-sm font-bold ${pnlColor}`}>
+                      {pnl >= 0 ? '+' : ''}{pnl.toFixed(1)}%
+                    </div>
+                    <div className="text-[9px] text-gray-400">Gesamt P&L</div>
+                  </div>
+                  <div className="w-px h-6 bg-slate-600" />
+                  <div className="text-right">
+                    <div className={`text-sm font-bold ${winRate != null ? (winRate >= 50 ? 'text-green-400' : 'text-red-400') : 'text-gray-400'}`}>
+                      {winRate != null ? `${winRate.toFixed(0)}%` : '-'}
+                    </div>
+                    <div className="text-[9px] text-gray-400">Win ({trader.winningTrades}W/{trader.losingTrades}L)</div>
+                  </div>
+                  {trader.currentStreak !== 0 && (
+                    <>
+                      <div className="w-px h-6 bg-slate-600" />
+                      <div className="text-right">
+                        <div className={`text-sm font-bold ${trader.currentStreak > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {trader.currentStreak > 0 ? '🔥' : '❄️'} {trader.currentStreak > 0 ? '+' : ''}{trader.currentStreak}
+                        </div>
+                        <div className="text-[9px] text-gray-400">Streak</div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
             
             {/* Control Buttons */}
             <button onClick={handleStart} disabled={trader.status === 'running'}
@@ -630,7 +664,7 @@ export function AITraderPage() {
                   title={`${tradingStart} - ${tradingEnd} (${schedule?.timezone || 'Europe/Berlin'})`}
                 >
                   <span className="text-sm">{isOpen ? '🟢' : '🟡'}</span>
-                  <span className="hidden sm:inline">{isOpen ? 'Markt offen' : `${tradingStart}-${tradingEnd}`}</span>
+                  <span>{isOpen ? 'Markt offen' : `Markt geschlossen (${tradingStart}–${tradingEnd})`}</span>
                 </div>
               );
             })()}
@@ -661,7 +695,7 @@ export function AITraderPage() {
       
       {/* Compact Stats Row */}
       <div className="space-y-1.5">
-        <div className="grid grid-cols-4 lg:grid-cols-7 gap-1.5">
+        <div className="grid grid-cols-3 lg:grid-cols-5 gap-1.5">
           {portfolio && (
             <>
               <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
@@ -683,16 +717,6 @@ export function AITraderPage() {
           <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
             <div className="text-[10px] text-gray-500">🎯 Trades</div>
             <div className="text-sm font-bold">{portfolio?.tradesExecuted ?? 0}</div>
-          </div>
-          <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
-            <div className="text-[10px] text-gray-500">🏆 Win</div>
-            <div className="text-sm font-bold">{portfolio?.winRate != null ? `${portfolio.winRate.toFixed(0)}%` : '-'}</div>
-          </div>
-          <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5" title="P&L nach Abzug aller Gebühren (netto)">
-            <div className="text-[10px] text-gray-500">💹 P&L (netto)</div>
-            <div className={`text-sm font-bold ${(portfolio?.pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {(portfolio?.pnl ?? 0) >= 0 ? '+' : ''}{(portfolio?.pnl ?? 0).toFixed(1)}%
-            </div>
           </div>
           <div className="bg-slate-800/50 rounded border border-orange-500/30 px-2 py-1.5">
             <div className="text-[10px] text-orange-400/70">🏦 Gebühren</div>
@@ -751,9 +775,9 @@ export function AITraderPage() {
         }} />}
         
         {/* Desktop: 3 columns (Trades, Positions, Decisions) | Mobile: stacked */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          {/* Col 1: Executed Trades */}
-          <div>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
+          {/* Col 1: Executed Trades (5/12 on desktop) */}
+          <div className="lg:col-span-5">
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-blue-500/50 border-l-4 border-l-blue-500">
               <div className="px-3 py-2 border-b border-slate-700/50 flex items-center justify-between">
                 <h3 className="font-bold text-sm text-blue-300">
@@ -761,7 +785,7 @@ export function AITraderPage() {
                   <span className="text-[10px] text-gray-500 ml-1 font-normal">geschlossen</span>
                 </h3>
               </div>
-              <div className="p-1.5 space-y-1.5 max-h-[200px] lg:max-h-[500px] overflow-y-auto">
+              <div className="p-1.5 space-y-1.5 max-h-[400px] lg:max-h-[600px] overflow-y-auto">
                 {executedTrades.length === 0 ? (
                   <div className="text-center text-gray-500 py-4">
                     <div className="text-lg mb-1">📊</div>
@@ -772,54 +796,198 @@ export function AITraderPage() {
                     const isBuy = trade.tradeType === 'open';
                     const actionLabel = trade.action === 'short' ? 'Short' : trade.action === 'buy' ? 'Kauf' : 'Verkauf';
                     const actionColor = isBuy
-                      ? (trade.action === 'short' ? 'bg-orange-500/20 text-orange-400' : 'bg-green-500/20 text-green-400')
-                      : 'bg-red-500/20 text-red-400';
+                      ? (trade.action === 'short' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'bg-green-500/20 text-green-400 border border-green-500/30')
+                      : 'bg-red-500/20 text-red-400 border border-red-500/30';
                     const borderColor = isBuy
-                      ? 'border-l-blue-500'
+                      ? (trade.action === 'short' ? 'border-l-orange-500' : 'border-l-green-500')
                       : (trade.wasWinner ? 'border-l-green-500' : 'border-l-red-500');
                     const isExpanded = expandedTradeId === trade.id;
+                    
+                    // Time-based coloring
+                    const tradeAge = Date.now() - new Date(trade.timestamp).getTime();
+                    const hoursOld = tradeAge / 3600000;
+                    const freshness = Math.max(0.4, 1.0 - (hoursOld / 48) * 0.6);
+                    const isVeryRecent = hoursOld < 1;
+                    const isRecent = hoursOld < 6;
+                    const freshnessStyle = { opacity: freshness };
+                    const recentGlow = isVeryRecent 
+                      ? 'ring-1 ring-blue-400/40 shadow-lg shadow-blue-500/10' 
+                      : isRecent ? 'ring-1 ring-slate-500/30' : '';
+                    
+                    // Calculate SL/TP distances for risk/reward
+                    const refPrice = isBuy ? trade.price : (trade.entryPrice || trade.price);
+                    const slDistPct = trade.stopLoss != null && refPrice > 0
+                      ? ((trade.stopLoss - refPrice) / refPrice * 100) : null;
+                    const tpDistPct = trade.takeProfit != null && refPrice > 0
+                      ? ((trade.takeProfit - refPrice) / refPrice * 100) : null;
+                    const rrRatio = (slDistPct != null && tpDistPct != null && Math.abs(slDistPct) > 0)
+                      ? Math.abs(tpDistPct / slDistPct) : null;
                     
                     return (
                     <div 
                       key={trade.id}
-                      className={`bg-slate-900/50 rounded border-l-2 ${borderColor} transition-all`}
+                      style={freshnessStyle}
+                      className={`bg-slate-900/50 rounded-lg border-l-[3px] ${borderColor} ${recentGlow} transition-all`}
                     >
-                      {/* Compact header - always visible, click to expand */}
+                      {/* Header: Symbol + Action + Time + P&L (for closes) */}
                       <div
-                        className="flex items-center justify-between p-2 cursor-pointer hover:bg-slate-800/50 transition-colors"
+                        className="flex items-center justify-between px-2.5 pt-2 pb-1 cursor-pointer hover:bg-slate-800/30 transition-colors"
                         onClick={() => setExpandedTradeId(isExpanded ? null : trade.id)}
                       >
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-2">
                           <button
                             onClick={(e) => { e.stopPropagation(); navigateToSymbol(trade.symbol); }}
-                            className="font-bold text-sm text-blue-400 hover:text-blue-300 hover:underline transition-colors"
+                            className="font-bold text-base text-white hover:text-blue-300 hover:underline transition-colors"
                             title={`${trade.symbol} im Dashboard anzeigen`}
                           >
                             {trade.symbol}
                           </button>
-                          <span className={`text-[10px] px-1 py-0.5 rounded ${actionColor}`}>
+                          <span className={`text-[11px] px-1.5 py-0.5 rounded-md font-medium ${actionColor}`}>
                             {isBuy ? '📥' : '📤'} {actionLabel}
                           </span>
-                          <svg className={`w-3 h-3 text-gray-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          {isVeryRecent && (
+                            <span className="px-1.5 py-0.5 rounded bg-blue-500/30 text-blue-300 text-[10px] font-semibold animate-pulse">NEU</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {!isBuy && trade.pnlPercent != null && (
+                            <span className={`text-sm font-bold ${(trade.pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {(trade.pnl ?? 0) >= 0 ? '+' : ''}{trade.pnlPercent.toFixed(2)}%
+                              <span className="text-[10px] font-normal ml-0.5">({(trade.pnl ?? 0) >= 0 ? '+' : ''}${(trade.pnl ?? 0).toFixed(0)})</span>
+                            </span>
+                          )}
+                          <svg className={`w-3.5 h-3.5 text-gray-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                           </svg>
                         </div>
-                        {!isBuy && trade.pnlPercent != null ? (
-                          <div className={`text-sm font-bold ${(trade.pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {(trade.pnl ?? 0) >= 0 ? '+' : ''}{trade.pnlPercent.toFixed(2)}%
-                          </div>
-                        ) : (
-                          <div className="text-[10px] text-gray-500">${trade.cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-                        )}
                       </div>
                       
-                      {/* Expanded details */}
+                      {/* Trade Setup: Entry Price, Quantity, Cost */}
+                      <div className="px-2.5 pb-1">
+                        <div className="flex items-baseline gap-3">
+                          <span className="text-lg font-bold font-mono text-white">${trade.price.toFixed(2)}</span>
+                          <span className="text-xs text-gray-400">{trade.quantity}× = <span className="text-gray-300 font-medium">${trade.cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span></span>
+                          {trade.side === 'short' && <span className="text-[10px] text-orange-400 font-medium">SHORT</span>}
+                        </div>
+                      </div>
+                      
+                      {/* SL / TP Bar with % distances and R:R */}
+                      {(trade.stopLoss != null || trade.takeProfit != null) && (
+                        <div className="px-2.5 pb-1.5">
+                          <div className="flex items-center gap-2 text-xs">
+                            {trade.stopLoss != null && (
+                              <div className="flex items-center gap-1">
+                                <span className="text-red-500 font-medium">SL</span>
+                                <span className="text-red-400 font-mono font-bold">${trade.stopLoss.toFixed(2)}</span>
+                                {slDistPct != null && (
+                                  <span className="text-red-400/70 text-[10px]">({slDistPct >= 0 ? '+' : ''}{slDistPct.toFixed(1)}%)</span>
+                                )}
+                              </div>
+                            )}
+                            <span className="text-gray-600">│</span>
+                            {trade.takeProfit != null && (
+                              <div className="flex items-center gap-1">
+                                <span className="text-green-500 font-medium">TP</span>
+                                <span className="text-green-400 font-mono font-bold">${trade.takeProfit.toFixed(2)}</span>
+                                {tpDistPct != null && (
+                                  <span className="text-green-400/70 text-[10px]">({tpDistPct >= 0 ? '+' : ''}{tpDistPct.toFixed(1)}%)</span>
+                                )}
+                              </div>
+                            )}
+                            {rrRatio != null && (
+                              <>
+                                <span className="text-gray-600">│</span>
+                                <span className={`font-bold text-[11px] ${rrRatio >= 2 ? 'text-green-400' : rrRatio >= 1 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                  R:R {rrRatio.toFixed(1)}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Signal Scores Bar - always visible for buy trades */}
+                      {isBuy && (trade.mlScore != null || trade.rlScore != null || trade.sentimentScore != null || trade.technicalScore != null) && (
+                        <div className="px-2.5 pb-1.5">
+                          <div className="flex items-center gap-1.5">
+                            {[
+                              { label: 'ML', value: trade.mlScore },
+                              { label: 'RL', value: trade.rlScore },
+                              { label: 'Sent', value: trade.sentimentScore },
+                              { label: 'Tech', value: trade.technicalScore },
+                            ].filter(s => s.value != null).map(({ label, value }) => {
+                              const pct = (value! * 100);
+                              const color = pct > 20 ? 'text-green-400 bg-green-500/15' : pct > 0 ? 'text-green-400/70 bg-green-500/10' : pct > -20 ? 'text-red-400/70 bg-red-500/10' : 'text-red-400 bg-red-500/15';
+                              return (
+                                <div key={label} className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${color}`}>
+                                  <span className="text-[10px] opacity-70">{label}</span>
+                                  <span className="text-[11px] font-mono font-bold">{pct > 0 ? '+' : ''}{pct.toFixed(0)}%</span>
+                                </div>
+                              );
+                            })}
+                            {trade.confidence != null && (
+                              <div className={`ml-auto flex items-center gap-0.5 px-1.5 py-0.5 rounded ${
+                                trade.confidence >= 0.7 ? 'bg-green-500/15 text-green-400' : 
+                                trade.confidence >= 0.5 ? 'bg-yellow-500/15 text-yellow-400' : 
+                                'bg-red-500/15 text-red-400'
+                              }`}>
+                                <span className="text-[10px] opacity-70">Konf.</span>
+                                <span className="text-[11px] font-mono font-bold">{(trade.confidence * 100).toFixed(0)}%</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* AI Reasoning Preview - always visible for buy trades (first reason) */}
+                      {isBuy && trade.explanation && trade.explanation.length > 0 && (
+                        <div className="px-2.5 pb-1.5">
+                          <div className="text-[11px] text-gray-300 flex items-start gap-1">
+                            <span className="text-blue-400/70 shrink-0">🧠</span>
+                            <span className="line-clamp-2">{trade.explanation[0]}{trade.explanation.length > 1 ? ` (+${trade.explanation.length - 1})` : ''}</span>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Footer: Timestamp + Confidence (for sells) + Agreement */}
+                      <div className="flex items-center justify-between px-2.5 pb-1.5 text-[10px]">
+                        <span className={isRecent ? 'text-gray-300' : 'text-gray-500'}>
+                          {new Date(trade.timestamp).toLocaleString('de-DE', { 
+                            day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' 
+                          })}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {!isBuy && trade.holdingHours != null && (
+                            <span className="text-gray-500">⏱{trade.holdingDays ? `${trade.holdingDays}d` : `${trade.holdingHours}h`}</span>
+                          )}
+                          {trade.signalAgreement && (
+                            <span className={`px-1 py-0 rounded font-medium ${
+                              trade.signalAgreement === 'strong' ? 'bg-green-500/15 text-green-400' :
+                              trade.signalAgreement === 'moderate' ? 'bg-yellow-500/15 text-yellow-400' :
+                              'bg-red-500/15 text-red-400'
+                            }`}>
+                              {trade.signalAgreement === 'strong' ? '✓✓✓ Einig' : trade.signalAgreement === 'moderate' ? '✓✓ Mehrheit' : '✓ Schwach'}
+                            </span>
+                          )}
+                          {!isBuy && trade.confidence != null && (
+                            <span className={`font-mono px-1 py-0 rounded ${
+                              trade.confidence >= 0.7 ? 'bg-green-500/15 text-green-400' : 
+                              trade.confidence >= 0.5 ? 'bg-yellow-500/15 text-yellow-400' : 
+                              'bg-red-500/15 text-red-400'
+                            }`}>
+                              {(trade.confidence * 100).toFixed(0)}%
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Expanded: Details for copying / understanding */}
                       {isExpanded && (
-                        <div className="px-2 pb-2 pt-0 space-y-1.5 border-t border-slate-700/30">
-                          {/* AI Decision Explanation - FIRST so reason is immediately visible */}
+                        <div className="px-2.5 pb-2.5 pt-0 space-y-1.5 border-t border-slate-700/30">
+                          {/* Full AI Reasoning */}
                           {(trade.explanation || trade.summary) ? (
-                            <div className="bg-blue-900/20 border border-blue-500/20 rounded px-2 py-1.5 space-y-1 mt-1.5">
-                              <div className="text-[10px] text-blue-400/80 font-medium">🧠 {isBuy ? 'Warum geöffnet?' : 'Warum geschlossen?'}</div>
+                            <div className="bg-blue-900/20 border border-blue-500/20 rounded px-2.5 py-2 space-y-1 mt-1.5">
+                              <div className="text-[11px] text-blue-400/80 font-medium">🧠 {isBuy ? 'Kaufgrund' : 'Verkaufsgrund'}</div>
                               {trade.explanation ? (
                                 <ul className="space-y-0.5">
                                   {trade.explanation.map((line, i) => (
@@ -834,163 +1002,91 @@ export function AITraderPage() {
                               ) : null}
                             </div>
                           ) : (
-                            <div className="bg-slate-800/30 border border-slate-700/30 rounded px-2 py-1.5 mt-1.5">
-                              <div className="text-[10px] text-gray-500 italic">🧠 {isBuy ? 'Kein Entscheidungsgrund verfügbar' : 'Kein Schließgrund verfügbar'}</div>
+                            <div className="bg-slate-800/30 border border-slate-700/30 rounded px-2.5 py-2 mt-1.5">
+                              <div className="text-[11px] text-gray-500 italic">🧠 Kein Entscheidungsgrund verfügbar</div>
                             </div>
                           )}
                           
-                          {/* Close reason for closed trades */}
+                          {/* Close reason for sells */}
                           {!isBuy && trade.closeReason && (
-                            <div className="bg-slate-800/50 rounded px-2 py-1">
+                            <div className="bg-slate-800/50 rounded px-2.5 py-1.5">
                               <div className="text-[10px] text-gray-500">Auslöser</div>
                               <div className="text-xs text-gray-300">{(() => {
                                 const cr = trade.closeReason?.toLowerCase() || '';
-                                if (cr.includes('stop_loss') || cr.startsWith('stop_loss')) return '🛑 Stop-Loss ausgelöst – Verlustbegrenzung';
-                                if (cr.includes('take_profit') || cr.startsWith('take_profit')) return '🎯 Take-Profit erreicht – Gewinn gesichert';
-                                if (cr.includes('max_holding') || cr.includes('expired')) return '⏰ Maximale Haltezeit überschritten';
-                                if (cr.includes('signal') || cr.includes('bearish') || cr.includes('reversal')) return '📉 Signalumkehr – Trend geändert';
-                                if (cr.includes('user') || cr.includes('manual')) return '👤 Manuell geschlossen';
+                                if (cr.includes('stop_loss') || cr.startsWith('stop_loss')) return '🛑 Stop-Loss ausgelöst';
+                                if (cr.includes('take_profit') || cr.startsWith('take_profit')) return '🎯 Take-Profit erreicht';
+                                if (cr.includes('max_holding') || cr.includes('expired')) return '⏰ Haltezeit überschritten';
+                                if (cr.includes('signal') || cr.includes('bearish') || cr.includes('reversal')) return '📉 Signalumkehr';
+                                if (cr.includes('user') || cr.includes('manual')) return '👤 Manuell';
                                 if (cr.includes('capital') || cr.includes('reset')) return '💰 Portfolio-Anpassung';
                                 if (cr.includes('risk')) return '⚠️ Risiko-Management';
                                 return trade.closeReason;
                               })()}</div>
                             </div>
                           )}
-
-                          {/* Price & Quantity */}
-                          <div className="grid grid-cols-2 gap-1.5">
-                            <div className="bg-slate-800/50 rounded px-2 py-1">
-                              <div className="text-[10px] text-gray-500">Preis</div>
-                              <div className="text-xs font-mono">${trade.price.toFixed(2)}</div>
-                            </div>
-                            <div className="bg-slate-800/50 rounded px-2 py-1">
-                              <div className="text-[10px] text-gray-500">Stück</div>
-                              <div className="text-xs font-mono">{trade.quantity}</div>
-                            </div>
-                            <div className="bg-slate-800/50 rounded px-2 py-1">
-                              <div className="text-[10px] text-gray-500">Wert</div>
-                              <div className="text-xs font-mono">${trade.cost.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
-                            </div>
-                            <div className="bg-slate-800/50 rounded px-2 py-1">
-                              <div className="text-[10px] text-gray-500">Seite</div>
-                              <div className="text-xs font-mono">{trade.side === 'short' ? '🔴 Short' : '🟢 Long'}</div>
-                            </div>
-                          </div>
-                          {/* Broker fee */}
-                          {trade.fees != null && trade.fees > 0 && (
-                            <div className="bg-orange-900/20 rounded px-2 py-1 border border-orange-500/20 flex items-center justify-between">
-                              <span className="text-[10px] text-orange-400/70">🏦 Ordergebühr</span>
-                              <span className="text-xs font-mono text-orange-400">${trade.fees.toFixed(2)}</span>
-                            </div>
-                          )}
                           
-                          {/* Entry price for close trades */}
+                          {/* Entry→Exit for close trades */}
                           {!isBuy && trade.entryPrice && (
-                            <div className="grid grid-cols-2 gap-1.5">
-                              <div className="bg-slate-800/50 rounded px-2 py-1">
+                            <div className="flex items-center gap-2 bg-slate-800/50 rounded px-2.5 py-1.5">
+                              <div>
                                 <div className="text-[10px] text-gray-500">Einstieg</div>
-                                <div className="text-xs font-mono">${trade.entryPrice.toFixed(2)}</div>
+                                <div className="text-xs font-mono font-bold">${trade.entryPrice.toFixed(2)}</div>
                               </div>
-                              <div className="bg-slate-800/50 rounded px-2 py-1">
+                              <span className="text-gray-600">→</span>
+                              <div>
+                                <div className="text-[10px] text-gray-500">Ausstieg</div>
+                                <div className="text-xs font-mono font-bold">${trade.price.toFixed(2)}</div>
+                              </div>
+                              <span className="text-gray-600 mx-1">│</span>
+                              <div>
                                 <div className="text-[10px] text-gray-500">P&L</div>
                                 <div className={`text-xs font-mono font-bold ${(trade.pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                   {(trade.pnl ?? 0) >= 0 ? '+' : ''}${(trade.pnl ?? 0).toFixed(2)}
                                 </div>
                               </div>
-                            </div>
-                          )}
-                          
-                          {/* SL/TP */}
-                          {(trade.stopLoss || trade.takeProfit) && (
-                            <div className="grid grid-cols-2 gap-1.5">
-                              {trade.stopLoss && (
-                                <div className="bg-red-900/20 rounded px-2 py-1">
-                                  <div className="text-[10px] text-red-400/60">Stop Loss</div>
-                                  <div className="text-xs font-mono text-red-400">${trade.stopLoss.toFixed(2)}</div>
-                                </div>
-                              )}
-                              {trade.takeProfit && (
-                                <div className="bg-green-900/20 rounded px-2 py-1">
-                                  <div className="text-[10px] text-green-400/60">Take Profit</div>
-                                  <div className="text-xs font-mono text-green-400">${trade.takeProfit.toFixed(2)}</div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          
-                          {/* Holding time */}
-                          {(trade.holdingDays || trade.holdingHours) && (
-                            <div className="bg-slate-800/50 rounded px-2 py-1">
-                              <div className="text-[10px] text-gray-500">Haltezeit</div>
-                              <div className="text-xs font-mono">
-                                {trade.holdingDays ? `${trade.holdingDays} Tage` : ''}
-                                {trade.holdingDays && trade.holdingHours ? ', ' : ''}
-                                {trade.holdingHours ? `${trade.holdingHours}h` : ''}
-                              </div>
-                            </div>
-                          )}
-                          
-                          
-                          {/* Signal Scores */}
-                          {(trade.mlScore != null || trade.rlScore != null || trade.sentimentScore != null || trade.technicalScore != null) && (
-                            <div className="grid grid-cols-4 gap-1">
-                              {[
-                                { label: 'ML', value: trade.mlScore, color: 'blue' },
-                                { label: 'RL', value: trade.rlScore, color: 'purple' },
-                                { label: 'Sent.', value: trade.sentimentScore, color: 'cyan' },
-                                { label: 'Tech.', value: trade.technicalScore, color: 'amber' },
-                              ].map(({ label, value, color }) => (
-                                value != null && (
-                                  <div key={label} className="bg-slate-800/50 rounded px-1.5 py-1 text-center">
-                                    <div className={`text-[9px] text-${color}-400/60`}>{label}</div>
-                                    <div className={`text-xs font-mono font-bold ${value > 0 ? 'text-green-400' : value < 0 ? 'text-red-400' : 'text-gray-400'}`}>
-                                      {(value * 100).toFixed(0)}%
-                                    </div>
+                              {trade.fees != null && trade.fees > 0 && (
+                                <>
+                                  <span className="text-gray-600 mx-1">│</span>
+                                  <div>
+                                    <div className="text-[10px] text-orange-400/60">Gebühr</div>
+                                    <div className="text-xs font-mono text-orange-400">${trade.fees.toFixed(2)}</div>
                                   </div>
-                                )
-                              ))}
+                                </>
+                              )}
                             </div>
                           )}
                           
-                          {/* Confidence + Agreement */}
-                          {(trade.confidence != null || trade.signalAgreement) && (
+                          {/* Signal Scores for sell trades (not shown in always-visible for sells) */}
+                          {!isBuy && (trade.mlScore != null || trade.rlScore != null || trade.sentimentScore != null || trade.technicalScore != null) && (
+                            <div className="flex items-center gap-1.5">
+                              {[
+                                { label: 'ML', value: trade.mlScore },
+                                { label: 'RL', value: trade.rlScore },
+                                { label: 'Sent', value: trade.sentimentScore },
+                                { label: 'Tech', value: trade.technicalScore },
+                              ].filter(s => s.value != null).map(({ label, value }) => {
+                                const pct = (value! * 100);
+                                const color = pct > 20 ? 'text-green-400 bg-green-500/15' : pct > 0 ? 'text-green-400/70 bg-green-500/10' : pct > -20 ? 'text-red-400/70 bg-red-500/10' : 'text-red-400 bg-red-500/15';
+                                return (
+                                  <div key={label} className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${color}`}>
+                                    <span className="text-[10px] opacity-70">{label}</span>
+                                    <span className="text-[11px] font-mono font-bold">{pct > 0 ? '+' : ''}{pct.toFixed(0)}%</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                          
+                          {/* Buy trade costs/fees in expanded */}
+                          {isBuy && trade.fees != null && trade.fees > 0 && (
                             <div className="flex items-center gap-2 text-[10px]">
-                              {trade.confidence != null && (
-                                <span className={`font-mono ${trade.confidence >= 0.7 ? 'text-green-400' : trade.confidence >= 0.4 ? 'text-yellow-400' : 'text-red-400'}`}>
-                                  Konfidenz: {(trade.confidence * 100).toFixed(0)}%
-                                </span>
-                              )}
-                              {trade.signalAgreement && (
-                                <span className={`px-1 py-0.5 rounded ${
-                                  trade.signalAgreement === 'strong' ? 'bg-green-500/20 text-green-400' :
-                                  trade.signalAgreement === 'moderate' ? 'bg-yellow-500/20 text-yellow-400' :
-                                  'bg-red-500/20 text-red-400'
-                                }`}>
-                                  {trade.signalAgreement === 'strong' ? 'Starke' : trade.signalAgreement === 'moderate' ? 'Moderate' : 'Schwache'} Übereinstimmung
-                                </span>
-                              )}
+                              <span className="text-gray-500">Gebühr:</span>
+                              <span className="text-orange-400 font-mono">${trade.fees.toFixed(2)}</span>
+                              <span className="text-gray-600">│</span>
+                              <span className="text-gray-500">Seite:</span>
+                              <span className="font-mono">{trade.side === 'short' ? '🔴 Short' : '🟢 Long'}</span>
                             </div>
                           )}
-                          
-                          {/* Timestamp */}
-                          <div className="text-[10px] text-gray-600 text-right">
-                            {new Date(trade.timestamp).toLocaleString('de-DE', { 
-                              day: '2-digit', month: '2-digit', year: '2-digit',
-                              hour: '2-digit', minute: '2-digit', second: '2-digit'
-                            })}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {/* Collapsed: minimal info line */}
-                      {!isExpanded && (
-                        <div className="flex items-center justify-between text-[10px] text-gray-500 px-2 pb-1.5 -mt-0.5">
-                          <span>{trade.quantity}x @ ${trade.price.toFixed(2)}</span>
-                          <span>
-                            {new Date(trade.timestamp).toLocaleString('de-DE', { 
-                              day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' 
-                            })}
-                          </span>
                         </div>
                       )}
                     </div>
@@ -1001,20 +1097,20 @@ export function AITraderPage() {
             </div>
           </div>
           
-          {/* Col 2: Open Positions */}
-          <div>
+          {/* Col 2: Open Positions (4/12 on desktop) */}
+          <div className="lg:col-span-4">
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
               <div className="px-3 py-2 border-b border-slate-700/50">
                 <h3 className="font-bold text-sm">📍 Positionen ({positions.length})</h3>
               </div>
-              <div className="p-1.5 max-h-[200px] lg:max-h-[500px] overflow-y-auto">
+              <div className="p-1.5 max-h-[400px] lg:max-h-[600px] overflow-y-auto">
                 {positions.length === 0 ? (
                   <div className="text-center text-gray-500 py-4">
                     <div className="text-lg mb-1">📭</div>
                     <div className="text-xs">Keine Positionen</div>
                   </div>
                 ) : (
-                  <div className="space-y-0.5">
+                  <div className="space-y-1">
                     {positions.map((position) => {
                       const pnlPercent = position.unrealizedPnlPercent || 0;
                       const pnl = position.unrealizedPnl || 0;
@@ -1026,59 +1122,192 @@ export function AITraderPage() {
                       const totalFeesPaid = (position as any).totalFeesPaid || 0;
                       const breakEvenPrice = (position as any).breakEvenPrice || null;
                       const holdLabel = daysHeld > 0 ? `${daysHeld}d` : `${hoursHeld}h`;
+                      const dailyPnl = (position as any).dailyPnl;
+                      const dailyPnlPercent = (position as any).dailyPnlPercent;
+                      const marketState = (position as any).marketState || 'UNKNOWN';
+                      const priceChange = (position as any).priceChange;
+                      const priceChangePercent = (position as any).priceChangePercent;
+                      const notionalValue = (position as any).notionalValue || (currentPrice * position.quantity);
+                      const investedValue = (position as any).investedValue || (position.entryPrice * position.quantity);
+                      const openFee = (position as any).openFee || 0;
+                      const isExpanded = expandedPositionId === position.id;
+                      const pnlColor = pnlPercent >= 0 ? 'text-green-400' : 'text-red-400';
                       
                       return (
                         <div 
                           key={position.id}
-                          className="bg-slate-900/50 rounded px-2 py-1 flex items-center gap-2 text-xs"
+                          className={`bg-slate-900/50 rounded-lg overflow-hidden transition-colors ${isExpanded ? 'ring-1 ring-slate-600' : ''}`}
                         >
-                          {/* Symbol & Side */}
-                          <button
-                            onClick={() => navigateToSymbol(position.symbol)}
-                            className="font-bold text-xs text-blue-400 hover:text-blue-300 hover:underline transition-colors w-14 text-left flex-shrink-0 truncate"
-                            title={`${position.symbol} im Dashboard anzeigen`}
+                          {/* Row 1: Symbol, Qty, Current Price, P&L */}
+                          <div
+                            className="px-2 pt-1.5 pb-0.5 flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-800/50 transition-colors"
+                            onClick={() => setExpandedPositionId(isExpanded ? null : position.id)}
                           >
-                            {position.side === 'short' ? '🔴' : '🟢'} {position.symbol}
-                          </button>
-                          
-                          {/* Qty & Prices */}
-                          <div className="flex-1 text-gray-400 truncate min-w-0">
-                            <span>{position.quantity}x </span>
-                            <span>${position.entryPrice?.toFixed(2)}</span>
-                            <span className="text-gray-600"> → </span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); navigateToSymbol(position.symbol); }}
+                              className="font-bold text-xs text-blue-400 hover:text-blue-300 hover:underline transition-colors flex-shrink-0"
+                              title={`${position.symbol} im Dashboard anzeigen`}
+                            >
+                              {position.side === 'short' ? '🔴' : '🟢'} {position.symbol}
+                            </button>
+                            <span className="text-gray-500">{position.quantity}x</span>
                             <span className="text-gray-300">${currentPrice?.toFixed(2)}</span>
+                            {priceChangePercent != null && (
+                              <span className={`text-[10px] ${priceChangePercent >= 0 ? 'text-green-400/60' : 'text-red-400/60'}`}>
+                                {priceChangePercent >= 0 ? '+' : ''}{priceChangePercent.toFixed(1)}%
+                              </span>
+                            )}
+                            <div className="flex-1" />
+                            <span className={`font-bold ${pnlColor}`}>
+                              {pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%
+                            </span>
+                            <span className={`text-[10px] ${pnl >= 0 ? 'text-green-400/60' : 'text-red-400/60'}`}>
+                              ${Math.abs(pnl).toFixed(0)}
+                            </span>
+                            <span className={`text-gray-600 text-[10px] transition-transform ${isExpanded ? 'rotate-180' : ''}`}>▾</span>
+                          </div>
+                          
+                          {/* Row 2: Entry, SL/TP distance, Hold time */}
+                          <div className="px-2 pb-1.5 flex items-center gap-2 text-[10px] text-gray-500 cursor-pointer" onClick={() => setExpandedPositionId(isExpanded ? null : position.id)}>
+                            <span>Einstieg ${position.entryPrice?.toFixed(2)}</span>
                             {breakEvenPrice && (
-                              <span className="text-yellow-400/60 ml-1" title="Break-Even (inkl. Gebühren)">
-                                BE:{breakEvenPrice.toFixed(2)}
+                              <span className="text-yellow-400/50">BE ${breakEvenPrice.toFixed(2)}</span>
+                            )}
+                            {distanceToSL != null && (
+                              <span className={distanceToSL < 3 ? 'text-red-300' : ''}>
+                                SL {distanceToSL.toFixed(1)}%
+                              </span>
+                            )}
+                            {distanceToTP != null && (
+                              <span className={distanceToTP < 3 ? 'text-green-300' : ''}>
+                                TP {distanceToTP.toFixed(1)}%
+                              </span>
+                            )}
+                            <div className="flex-1" />
+                            <span>{holdLabel}</span>
+                            {marketState !== 'UNKNOWN' && (
+                              <span className={marketState === 'REGULAR' ? 'text-green-500' : 'text-gray-600'}>
+                                {marketState === 'REGULAR' ? '●' : '○'}
                               </span>
                             )}
                           </div>
                           
-                          {/* SL/TP compact */}
-                          {(distanceToSL != null || distanceToTP != null) && (
-                            <div className="flex-shrink-0 flex items-center gap-1 text-[10px]">
-                              {distanceToSL != null && (
-                                <span className={distanceToSL < 3 ? 'text-red-300' : 'text-gray-500'}>
-                                  SL{distanceToSL.toFixed(0)}%
-                                </span>
+                          {/* Expanded Details */}
+                          {isExpanded && (
+                            <div className="px-2 pb-2 pt-1 border-t border-slate-700/50 space-y-1.5 text-[10px]">
+                              {/* Price Details */}
+                              <div className="grid grid-cols-3 gap-x-3 gap-y-1">
+                                <div>
+                                  <span className="text-gray-500">Einstieg</span>
+                                  <div className="text-gray-300">${position.entryPrice?.toFixed(2)}</div>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Aktuell</span>
+                                  <div className="text-gray-300">${currentPrice?.toFixed(2)}</div>
+                                </div>
+                                {breakEvenPrice && (
+                                  <div>
+                                    <span className="text-gray-500">Break-Even</span>
+                                    <div className="text-yellow-400">${breakEvenPrice.toFixed(2)}</div>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {/* Value & P&L */}
+                              <div className="grid grid-cols-3 gap-x-3 gap-y-1">
+                                <div>
+                                  <span className="text-gray-500">Investiert</span>
+                                  <div className="text-gray-300">${investedValue.toFixed(0)}</div>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Marktwert</span>
+                                  <div className="text-gray-300">${notionalValue.toFixed(0)}</div>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Unrealisiert</span>
+                                  <div className={pnlColor}>
+                                    {pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              {/* Daily P&L */}
+                              {dailyPnl != null && (
+                                <div className="grid grid-cols-3 gap-x-3">
+                                  <div>
+                                    <span className="text-gray-500">Tages-P&L</span>
+                                    <div className={dailyPnl >= 0 ? 'text-green-400' : 'text-red-400'}>
+                                      {dailyPnl >= 0 ? '+' : ''}${dailyPnl.toFixed(2)}
+                                      {dailyPnlPercent != null && ` (${dailyPnlPercent >= 0 ? '+' : ''}${dailyPnlPercent.toFixed(2)}%)`}
+                                    </div>
+                                  </div>
+                                  {priceChange != null && (
+                                    <div>
+                                      <span className="text-gray-500">Kursänderung</span>
+                                      <div className={priceChange >= 0 ? 'text-green-400/70' : 'text-red-400/70'}>
+                                        {priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
                               )}
-                              {distanceToTP != null && (
-                                <span className={distanceToTP < 3 ? 'text-green-300' : 'text-gray-500'}>
-                                  TP{distanceToTP.toFixed(0)}%
+                              
+                              {/* Risk */}
+                              <div className="grid grid-cols-3 gap-x-3 gap-y-1">
+                                {position.stopLoss != null && (
+                                  <div>
+                                    <span className="text-gray-500">Stop-Loss</span>
+                                    <div className={`${distanceToSL != null && distanceToSL < 3 ? 'text-red-300' : 'text-gray-300'}`}>
+                                      ${position.stopLoss.toFixed(2)}
+                                      {distanceToSL != null && <span className="text-gray-500 ml-1">({distanceToSL.toFixed(1)}%)</span>}
+                                    </div>
+                                  </div>
+                                )}
+                                {position.takeProfit != null && (
+                                  <div>
+                                    <span className="text-gray-500">Take-Profit</span>
+                                    <div className={`${distanceToTP != null && distanceToTP < 3 ? 'text-green-300' : 'text-gray-300'}`}>
+                                      ${position.takeProfit.toFixed(2)}
+                                      {distanceToTP != null && <span className="text-gray-500 ml-1">({distanceToTP.toFixed(1)}%)</span>}
+                                    </div>
+                                  </div>
+                                )}
+                                <div>
+                                  <span className="text-gray-500">Seite</span>
+                                  <div className="text-gray-300">
+                                    {position.side === 'short' ? '🔴 Short' : '🟢 Long'}
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              {/* Fees & Time */}
+                              <div className="grid grid-cols-3 gap-x-3 gap-y-1">
+                                <div>
+                                  <span className="text-gray-500">Gebühren</span>
+                                  <div className="text-orange-400/80">🏦 ${totalFeesPaid.toFixed(2)}{openFee > 0 && ` (Open: $${openFee.toFixed(2)})`}</div>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Haltedauer</span>
+                                  <div className="text-gray-300">
+                                    {daysHeld > 0 ? `${daysHeld} Tag${daysHeld > 1 ? 'e' : ''}` : `${hoursHeld} Std.`}
+                                  </div>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Eröffnet</span>
+                                  <div className="text-gray-300">
+                                    {new Date(position.openedAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              {/* Market State */}
+                              <div className="flex items-center gap-2 pt-0.5">
+                                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${marketState === 'REGULAR' ? 'bg-green-500/20 text-green-400' : marketState === 'PRE' || marketState === 'POST' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-slate-600/30 text-gray-500'}`}>
+                                  {marketState === 'REGULAR' ? '🟢 Markt offen' : marketState === 'PRE' ? '🟡 Vormarkt' : marketState === 'POST' ? '🟡 Nachmarkt' : '⚫ Geschlossen'}
                                 </span>
-                              )}
+                              </div>
                             </div>
                           )}
-                          
-                          {/* P&L */}
-                          <div className={`font-bold flex-shrink-0 w-14 text-right ${pnlPercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%
-                          </div>
-                          
-                          {/* Fee + Time */}
-                          <div className="text-[10px] text-gray-500 flex-shrink-0 w-8 text-right" title={totalFeesPaid > 0 ? `Gebühren: $${totalFeesPaid.toFixed(2)}` : undefined}>
-                            {holdLabel}
-                          </div>
                         </div>
                       );
                     })}
@@ -1088,12 +1317,12 @@ export function AITraderPage() {
             </div>
           </div>
           
-          {/* Col 3: Recent Decisions */}
-          <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
+          {/* Col 3: Recent Decisions (3/12 on desktop) */}
+          <div className="lg:col-span-3 bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
             <div className="px-3 py-2 border-b border-slate-700/50">
               <h3 className="font-bold text-sm">🧠 Entscheidungen</h3>
             </div>
-            <div className="p-2 space-y-1 max-h-[200px] lg:max-h-[500px] overflow-y-auto">
+            <div className="p-2 space-y-1 max-h-[400px] lg:max-h-[600px] overflow-y-auto">
               {decisions.length === 0 ? (
                 <div className="text-center text-gray-500 py-6">
                   <div className="text-xl mb-1">🤔</div>
