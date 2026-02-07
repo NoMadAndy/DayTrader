@@ -61,6 +61,9 @@ interface StrategyPreset {
   maxDrawdown: number;
   stopLoss: number;
   takeProfit: number;
+  slTpMode: 'dynamic' | 'fixed';
+  atrSlMultiplier: number;
+  minRiskReward: number;
   allowShortSelling: boolean;
   maxShortPositions: number;
   maxShortExposure: number;
@@ -91,6 +94,7 @@ const STRATEGY_PRESETS: StrategyPreset[] = [
     color: 'blue',
     tags: ['Position', 'Sicher'],
     riskTolerance: 'conservative', maxDrawdown: 10, stopLoss: 8, takeProfit: 15,
+    slTpMode: 'dynamic', atrSlMultiplier: 2.0, minRiskReward: 2.0,
     allowShortSelling: false, maxShortPositions: 0, maxShortExposure: 0,
     tradingHorizon: 'position', maxPositions: 5,
     mlWeight: 0.35, rlWeight: 0.15, sentimentWeight: 0.15, technicalWeight: 0.35,
@@ -105,6 +109,7 @@ const STRATEGY_PRESETS: StrategyPreset[] = [
     color: 'cyan',
     tags: ['Day', 'Ausgewogen'],
     riskTolerance: 'moderate', maxDrawdown: 15, stopLoss: 4, takeProfit: 8,
+    slTpMode: 'dynamic', atrSlMultiplier: 1.5, minRiskReward: 2.0,
     allowShortSelling: false, maxShortPositions: 0, maxShortExposure: 0,
     tradingHorizon: 'day', maxPositions: 6,
     mlWeight: 0.25, rlWeight: 0.25, sentimentWeight: 0.20, technicalWeight: 0.30,
@@ -119,6 +124,7 @@ const STRATEGY_PRESETS: StrategyPreset[] = [
     color: 'green',
     tags: ['Swing', 'Trends'],
     riskTolerance: 'moderate', maxDrawdown: 20, stopLoss: 6, takeProfit: 18,
+    slTpMode: 'dynamic', atrSlMultiplier: 1.8, minRiskReward: 3.0,
     allowShortSelling: true, maxShortPositions: 2, maxShortExposure: 20,
     tradingHorizon: 'swing', maxPositions: 4,
     mlWeight: 0.35, rlWeight: 0.20, sentimentWeight: 0.10, technicalWeight: 0.35,
@@ -133,6 +139,7 @@ const STRATEGY_PRESETS: StrategyPreset[] = [
     color: 'orange',
     tags: ['Day', 'Schnell'],
     riskTolerance: 'moderate', maxDrawdown: 18, stopLoss: 3, takeProfit: 6,
+    slTpMode: 'dynamic', atrSlMultiplier: 1.2, minRiskReward: 2.0,
     allowShortSelling: true, maxShortPositions: 3, maxShortExposure: 25,
     tradingHorizon: 'day', maxPositions: 8,
     mlWeight: 0.20, rlWeight: 0.30, sentimentWeight: 0.15, technicalWeight: 0.35,
@@ -147,6 +154,7 @@ const STRATEGY_PRESETS: StrategyPreset[] = [
     color: 'purple',
     tags: ['Day', 'Sentiment'],
     riskTolerance: 'moderate', maxDrawdown: 20, stopLoss: 5, takeProfit: 10,
+    slTpMode: 'dynamic', atrSlMultiplier: 1.5, minRiskReward: 2.0,
     allowShortSelling: true, maxShortPositions: 2, maxShortExposure: 20,
     tradingHorizon: 'day', maxPositions: 6,
     mlWeight: 0.15, rlWeight: 0.20, sentimentWeight: 0.45, technicalWeight: 0.20,
@@ -161,6 +169,7 @@ const STRATEGY_PRESETS: StrategyPreset[] = [
     color: 'yellow',
     tags: ['Scalping', 'Aggressiv'],
     riskTolerance: 'aggressive', maxDrawdown: 12, stopLoss: 1.5, takeProfit: 2.5,
+    slTpMode: 'dynamic', atrSlMultiplier: 1.0, minRiskReward: 1.5,
     allowShortSelling: true, maxShortPositions: 5, maxShortExposure: 40,
     tradingHorizon: 'scalping', maxPositions: 10,
     mlWeight: 0.15, rlWeight: 0.35, sentimentWeight: 0.10, technicalWeight: 0.40,
@@ -175,6 +184,7 @@ const STRATEGY_PRESETS: StrategyPreset[] = [
     color: 'indigo',
     tags: ['Swing', 'AI-Fokus'],
     riskTolerance: 'moderate', maxDrawdown: 15, stopLoss: 5, takeProfit: 12,
+    slTpMode: 'dynamic', atrSlMultiplier: 1.5, minRiskReward: 2.5,
     allowShortSelling: true, maxShortPositions: 3, maxShortExposure: 25,
     tradingHorizon: 'swing', maxPositions: 5,
     mlWeight: 0.40, rlWeight: 0.35, sentimentWeight: 0.10, technicalWeight: 0.15,
@@ -189,6 +199,7 @@ const STRATEGY_PRESETS: StrategyPreset[] = [
     color: 'red',
     tags: ['Day', 'Riskant'],
     riskTolerance: 'aggressive', maxDrawdown: 35, stopLoss: 10, takeProfit: 25,
+    slTpMode: 'dynamic', atrSlMultiplier: 2.5, minRiskReward: 2.5,
     allowShortSelling: true, maxShortPositions: 5, maxShortExposure: 40,
     tradingHorizon: 'day', maxPositions: 8,
     mlWeight: 0.25, rlWeight: 0.30, sentimentWeight: 0.20, technicalWeight: 0.25,
@@ -292,6 +303,9 @@ export function AITraderConfigModal({ trader, isOpen, onClose, onSaved }: AITrad
   const [maxDrawdown, setMaxDrawdown] = useState(20);
   const [stopLoss, setStopLoss] = useState(5);
   const [takeProfit, setTakeProfit] = useState(10);
+  const [slTpMode, setSlTpMode] = useState<'dynamic' | 'fixed'>('dynamic');
+  const [atrSlMultiplier, setAtrSlMultiplier] = useState(1.5);
+  const [minRiskReward, setMinRiskReward] = useState(2.0);
   const [allowShortSelling, setAllowShortSelling] = useState(false);
   const [maxShortPositions, setMaxShortPositions] = useState(3);
   const [maxShortExposure, setMaxShortExposure] = useState(30);
@@ -373,6 +387,9 @@ export function AITraderConfigModal({ trader, isOpen, onClose, onSaved }: AITrad
       setMaxDrawdown(p?.risk?.maxDrawdown || 20);
       setStopLoss(p?.risk?.stopLossPercent || 5);
       setTakeProfit(p?.risk?.takeProfitPercent || 10);
+      setSlTpMode(p?.risk?.slTpMode || 'dynamic');
+      setAtrSlMultiplier(p?.risk?.atrSlMultiplier || 1.5);
+      setMinRiskReward(p?.risk?.minRiskReward || 2.0);
       setAllowShortSelling(p?.risk?.allowShortSelling ?? false);
       setMaxShortPositions(p?.risk?.maxShortPositions || 3);
       setMaxShortExposure((p?.risk?.maxShortExposure || 0.3) * 100);
@@ -419,6 +436,9 @@ export function AITraderConfigModal({ trader, isOpen, onClose, onSaved }: AITrad
       setMaxDrawdown(20);
       setStopLoss(5);
       setTakeProfit(10);
+      setSlTpMode('dynamic');
+      setAtrSlMultiplier(1.5);
+      setMinRiskReward(2.0);
       setAllowShortSelling(false);
       setMaxShortPositions(3);
       setMaxShortExposure(30);
@@ -471,6 +491,9 @@ export function AITraderConfigModal({ trader, isOpen, onClose, onSaved }: AITrad
     setMaxDrawdown(preset.maxDrawdown);
     setStopLoss(preset.stopLoss);
     setTakeProfit(preset.takeProfit);
+    setSlTpMode(preset.slTpMode);
+    setAtrSlMultiplier(preset.atrSlMultiplier);
+    setMinRiskReward(preset.minRiskReward);
     setAllowShortSelling(preset.allowShortSelling);
     setMaxShortPositions(preset.maxShortPositions);
     setMaxShortExposure(preset.maxShortExposure);
@@ -527,6 +550,9 @@ export function AITraderConfigModal({ trader, isOpen, onClose, onSaved }: AITrad
           maxDrawdown,
           stopLossPercent: stopLoss,
           takeProfitPercent: takeProfit,
+          slTpMode,
+          atrSlMultiplier,
+          minRiskReward,
           allowShortSelling,
           maxShortPositions,
           maxShortExposure: maxShortExposure / 100,
@@ -724,7 +750,12 @@ export function AITraderConfigModal({ trader, isOpen, onClose, onSaved }: AITrad
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-gray-500">SL/TP:</span>
-                    <span className="text-white">{selectedPreset.stopLoss}% / {selectedPreset.takeProfit}%</span>
+                    <span className="text-white">
+                      {selectedPreset.slTpMode === 'dynamic' 
+                        ? `ATR ${selectedPreset.atrSlMultiplier}× · R:R 1:${selectedPreset.minRiskReward}`
+                        : `${selectedPreset.stopLoss}% / ${selectedPreset.takeProfit}%`
+                      }
+                    </span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-gray-500">Drawdown:</span>
@@ -732,7 +763,9 @@ export function AITraderConfigModal({ trader, isOpen, onClose, onSaved }: AITrad
                   </div>
                 </div>
                 <p className="text-[10px] text-gray-500 mt-2">
-                  SL/TP und Drawdown werden vom Risikoprofil dynamisch gesteuert.
+                  {selectedPreset.slTpMode === 'dynamic'
+                    ? 'SL/TP werden dynamisch per ATR an die Marktvolatilität angepasst.'
+                    : 'SL/TP sind fest eingestellt – keine Anpassung an Volatilität.'}
                 </p>
               </div>
             )}
@@ -1041,12 +1074,9 @@ export function AITraderConfigModal({ trader, isOpen, onClose, onSaved }: AITrad
               </div>
             </Section>
 
-            {/* Risiko (read-only summary + override) */}
-            <Section title="Risiko" icon="⚠️">
-              <p className="text-xs text-gray-400 mb-3">
-                Risiko-Parameter werden primär vom gewählten Profil gesteuert. SL/TP werden dynamisch vom Risk-Manager angepasst.
-              </p>
-              <div className="grid grid-cols-3 gap-3">
+            {/* Risiko (SL/TP mode toggle + settings) */}
+            <Section title="Risiko & SL/TP" icon="⚠️">
+              <div className="grid grid-cols-3 gap-3 mb-3">
                 <div>
                   <label className="block text-[10px] text-gray-400 mb-1">Risikotoleranz</label>
                   <select
@@ -1070,8 +1100,112 @@ export function AITraderConfigModal({ trader, isOpen, onClose, onSaved }: AITrad
                   <div className="text-sm text-white mt-1">{(minConfidence * 100).toFixed(0)}%</div>
                 </div>
               </div>
-              <div className="mt-3 p-2.5 bg-slate-900/50 rounded border border-slate-700/50 text-[10px] text-gray-500">
-                💡 Stop-Loss ({stopLoss}%) und Take-Profit ({takeProfit}%) werden vom Risikoprofil automatisch gesetzt und dynamisch vom Risk-Manager je nach Marktlage angepasst.
+
+              {/* SL/TP Mode Toggle */}
+              <div className="p-3 bg-slate-700/30 rounded-lg border border-slate-600/50">
+                <label className="block text-xs font-medium text-gray-300 mb-2">
+                  📐 Stop-Loss / Take-Profit Modus
+                </label>
+                <div className="flex rounded-lg overflow-hidden border border-slate-600 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setSlTpMode('dynamic')}
+                    className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+                      slTpMode === 'dynamic'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-800 text-gray-400 hover:text-gray-200'
+                    }`}
+                  >
+                    📊 Dynamisch (ATR)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSlTpMode('fixed')}
+                    className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+                      slTpMode === 'fixed'
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-slate-800 text-gray-400 hover:text-gray-200'
+                    }`}
+                  >
+                    📌 Fix (%)
+                  </button>
+                </div>
+
+                {slTpMode === 'dynamic' ? (
+                  <div className="space-y-3">
+                    <p className="text-[10px] text-gray-500">
+                      SL/TP werden anhand der Average True Range (ATR) berechnet und passen sich automatisch der Marktvolatilität an.
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] text-gray-400 mb-1">
+                          ATR-Multiplikator (SL): {atrSlMultiplier.toFixed(1)}×
+                        </label>
+                        <input
+                          type="range"
+                          value={atrSlMultiplier}
+                          onChange={(e) => setAtrSlMultiplier(Number(e.target.value))}
+                          min={0.5} max={4.0} step={0.1}
+                          className="w-full accent-blue-500"
+                        />
+                        <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
+                          <span>0.5× (eng)</span>
+                          <span>4.0× (weit)</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-gray-400 mb-1">
+                          Min. Risk:Reward: 1:{minRiskReward.toFixed(1)}
+                        </label>
+                        <input
+                          type="range"
+                          value={minRiskReward}
+                          onChange={(e) => setMinRiskReward(Number(e.target.value))}
+                          min={1.0} max={5.0} step={0.1}
+                          className="w-full accent-blue-500"
+                        />
+                        <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
+                          <span>1:1.0</span>
+                          <span>1:5.0</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-2 bg-blue-500/10 rounded border border-blue-500/20 text-[10px] text-blue-300">
+                      💡 TP = SL × {minRiskReward.toFixed(1)} · SL-Fallback: {stopLoss}% · TP-Fallback: {takeProfit}%
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-[10px] text-gray-500">
+                      Feste prozentuale SL/TP-Werte für alle Trades, unabhängig von der Marktvolatilität.
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] text-gray-400 mb-1">Stop-Loss (%)</label>
+                        <input
+                          type="number"
+                          value={stopLoss}
+                          onChange={(e) => setStopLoss(Number(e.target.value))}
+                          min={0.5} max={20} step={0.5}
+                          className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700 rounded text-white text-xs focus:border-red-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-gray-400 mb-1">Take-Profit (%)</label>
+                        <input
+                          type="number"
+                          value={takeProfit}
+                          onChange={(e) => setTakeProfit(Number(e.target.value))}
+                          min={0.5} max={50} step={0.5}
+                          className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700 rounded text-white text-xs focus:border-green-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div className="p-2 bg-orange-500/10 rounded border border-orange-500/20 text-[10px] text-orange-300">
+                      R:R = 1:{(takeProfit / stopLoss).toFixed(1)} · Keine Anpassung an Volatilität
+                    </div>
+                  </div>
+                )}
               </div>
             </Section>
 
