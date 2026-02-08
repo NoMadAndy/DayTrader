@@ -572,6 +572,16 @@ class OptionChainRequest(BaseModel):
     expiry_days: Optional[list[int]] = Field(default=None, description="Custom expiry days. If omitted, uses standard periods.")
 
 
+class RealOptionChainRequest(BaseModel):
+    """Request for real market option chain (triple-hybrid: Yahoo → Emittent → Black-Scholes)"""
+    symbol: str = Field(..., min_length=1, description="Stock ticker symbol (e.g. AAPL, SAP, SIE.DE)")
+    underlying_price: float = Field(0, ge=0, description="Current underlying price (0 = auto-detect)")
+    volatility: float = Field(0.30, gt=0, le=10.0, description="Fallback volatility for Black-Scholes")
+    risk_free_rate: float = Field(0.03, ge=-0.1, le=1.0, description="Fallback risk-free rate")
+    ratio: float = Field(0.1, gt=0, le=10.0, description="Fallback Bezugsverhältnis")
+    force_source: Optional[str] = Field(default=None, description="Force source: 'yahoo', 'emittent', or 'theoretical'")
+
+
 @app.post("/warrant/price", tags=["Warrant Pricing"])
 async def price_warrant_endpoint(request: WarrantPriceRequest):
     """
@@ -730,6 +740,40 @@ async def implied_vol_endpoint(request: ImpliedVolRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ============== Real Options Chain (Triple-Hybrid) ==============
+
+@app.post("/options/chain/real", tags=["Real Options Chain"])
+async def real_option_chain_endpoint(request: RealOptionChainRequest):
+    """
+    Fetch a real options chain using triple-hybrid waterfall:
+      1. Yahoo Finance — real US options (bid/ask/volume/OI/IV)
+      2. Emittenten-API — German warrants (SocGen: WKN/ISIN/bid/ask)
+      3. Black-Scholes — theoretical fallback (always works)
+    
+    The `source` field in the response indicates which provider was used.
+    """
+    from .options_provider import fetch_options_chain
+
+    try:
+        result = await fetch_options_chain(
+            symbol=request.symbol,
+            underlying_price=request.underlying_price,
+            volatility=request.volatility,
+            risk_free_rate=request.risk_free_rate,
+            ratio=request.ratio,
+            force_source=request.force_source,
+        )
+
+        if not result or not result.get("success"):
+            raise HTTPException(status_code=404, detail=f"No options data found for {request.symbol}")
+
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ============== Main ==============

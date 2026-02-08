@@ -3523,6 +3523,113 @@ app.post('/api/trading/warrant/chain', authMiddleware, express.json(), async (re
 // Note: historicalPricesService is already imported above for Yahoo Chart caching
 const historicalPrices = historicalPricesService;
 
+// ============================================================================
+// Real Options Chain (Triple-Hybrid: Yahoo → Emittent → Black-Scholes)
+// ============================================================================
+
+/**
+ * Simple in-memory cache for real options data.
+ * Keys: `${symbol}:${forceSource||'auto'}` → { data, timestamp }
+ * TTL: 5 minutes (options prices don't change every second)
+ */
+const realOptionsCache = new Map();
+const REAL_OPTIONS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCachedOptions(key) {
+  const entry = realOptionsCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > REAL_OPTIONS_CACHE_TTL) {
+    realOptionsCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedOptions(key, data) {
+  // Evict old entries if cache grows too large (max 100 entries)
+  if (realOptionsCache.size > 100) {
+    const oldest = realOptionsCache.keys().next().value;
+    realOptionsCache.delete(oldest);
+  }
+  realOptionsCache.set(key, { data, timestamp: Date.now() });
+}
+
+/**
+ * Get real options chain (triple-hybrid)
+ * POST /api/trading/options/chain/real
+ * Body: { symbol, underlyingPrice?, volatility?, riskFreeRate?, ratio?, forceSource? }
+ */
+app.post('/api/trading/options/chain/real', authMiddleware, express.json(), async (req, res) => {
+  try {
+    const {
+      symbol,
+      underlyingPrice = 0,
+      volatility = 0.30,
+      riskFreeRate = 0.03,
+      ratio = 0.1,
+      forceSource = null,
+    } = req.body;
+
+    if (!symbol || typeof symbol !== 'string' || symbol.trim().length === 0) {
+      return res.status(400).json({ error: 'symbol is required' });
+    }
+
+    const cleanSymbol = symbol.trim().toUpperCase();
+
+    // Check cache first
+    const cacheKey = `${cleanSymbol}:${forceSource || 'auto'}`;
+    const cached = getCachedOptions(cacheKey);
+    if (cached) {
+      console.log(`[Options Cache HIT] ${cacheKey}`);
+      return res.json({ ...cached, cached: true });
+    }
+
+    const mlUrl = process.env.ML_SERVICE_URL || 'http://ml-service:8000';
+    const payload = {
+      symbol: cleanSymbol,
+      underlying_price: underlyingPrice,
+      volatility,
+      risk_free_rate: riskFreeRate,
+      ratio,
+    };
+    if (forceSource) payload.force_source = forceSource;
+
+    const response = await fetch(`${mlUrl}/options/chain/real`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      return res.status(response.status).json({ error: err.detail || 'ML service error' });
+    }
+
+    const data = await response.json();
+
+    // Cache successful responses
+    if (data && data.success) {
+      setCachedOptions(cacheKey, data);
+      console.log(`[Options Cache SET] ${cacheKey} (source: ${data.source})`);
+    }
+
+    res.json(data);
+  } catch (e) {
+    console.error('Real options chain error:', e);
+    res.status(500).json({ error: 'Failed to fetch real options chain' });
+  }
+});
+
+/**
+ * Clear options cache (admin endpoint)
+ * DELETE /api/trading/options/cache
+ */
+app.delete('/api/trading/options/cache', authMiddleware, async (req, res) => {
+  const size = realOptionsCache.size;
+  realOptionsCache.clear();
+  res.json({ success: true, cleared: size });
+});
+
 /**
  * Get all symbols with historical data in database
  * GET /api/historical-prices/symbols/available

@@ -989,6 +989,27 @@ export async function getOptionChain(params: {
   return handleResponse(response);
 }
 
+/**
+ * Get real options chain (Triple-Hybrid: Yahoo → Emittent → Black-Scholes)
+ * Tries Yahoo Finance first (real US options), then emittent APIs (German warrants),
+ * falls back to theoretical Black-Scholes calculations.
+ */
+export async function getRealOptionChain(params: {
+  symbol: string;
+  underlyingPrice?: number;
+  volatility?: number;
+  riskFreeRate?: number;
+  ratio?: number;
+  forceSource?: 'yahoo' | 'emittent' | 'theoretical' | null;
+}): Promise<import('../types/trading').RealOptionChainResult> {
+  const response = await fetch(`${API_BASE}/trading/options/chain/real`, {
+    method: 'POST',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  return handleResponse(response);
+}
+
 export default {
   getBrokerProfiles,
   getProductTypes,
@@ -1043,4 +1064,5 @@ export default {
   getWarrantPrice,
   getImpliedVolatility,
   getOptionChain,
+  getRealOptionChain,
 };

@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.37.0] - 2026-02-08
+
+### Added
+- **Dreifach-Hybrid Optionskette** — Echte Marktdaten für Optionen/Warrants:
+  - **📊 Yahoo Finance**: Echte US-Options-Chains mit Bid/Ask/Volumen/Open Interest/IV
+  - **🏦 Emittenten-API (SocGen)**: Deutsche Optionsscheine mit WKN/ISIN/Bid/Ask/Ratio
+  - **🧮 Black-Scholes Fallback**: Theoretische Berechnung (bisheriges Verhalten, immer verfügbar)
+- **Waterfall-Architektur**: Yahoo → Emittent → Theoretisch — automatisch die beste verfügbare Quelle
+- **Backend-Caching**: 5-Minuten Cache für Options-Daten (Entlastung externer APIs)
+- **Quellen-Badge**: OptionChainPanel zeigt aktive Datenquelle + versuchte Quellen im Footer
+- **Real/BS Toggle**: Nutzer kann zwischen echten Marktdaten und theoretischen Preisen wechseln
+- **Adaptive Tabellenspalten**: Bid/Ask/Vol/OI bei echten Daten, Preis/Innerer Wert/Zeitwert/Greeks bei theoretischen
+
+### Changed
+- OptionChainPanel erweitert für beide Datenmodi (Real + Theoretisch)
+- Neue Types: `RealOptionEntry`, `RealOptionChainResult`, `OptionDataSource`
+- Neuer Backend-Endpoint: `POST /api/trading/options/chain/real`
+- Neuer ML-Service-Endpoint: `POST /options/chain/real`
+- `yfinance` als neue ML-Service-Dependency
+
 ## [1.36.1] - 2026-02-08
 
 ### Fixed

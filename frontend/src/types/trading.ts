@@ -147,6 +147,68 @@ export interface OptionChainResult {
   puts: OptionChainEntry[];
 }
 
+// ============================================================================
+// Real Options Chain Types (Triple-Hybrid)
+// ============================================================================
+
+export type OptionDataSource = 'yahoo' | 'emittent' | 'theoretical';
+
+export interface RealOptionEntry {
+  strike: number;
+  days: number;
+  optionType: 'call' | 'put';
+  expiryDate: string;           // ISO date (YYYY-MM-DD)
+  // Prices
+  lastPrice: number;
+  bid: number;
+  ask: number;
+  // Market data
+  volume: number;
+  openInterest: number;
+  impliedVolatility: number;
+  // Classification
+  moneyness: 'ITM' | 'ATM' | 'OTM';
+  inTheMoney: boolean;
+  // Source info
+  source: OptionDataSource;
+  contractSymbol?: string;
+  // Emittent-specific (German warrants)
+  wkn?: string;
+  isin?: string;
+  emittent?: string;
+  productName?: string;
+  ratio?: number;
+  spread?: number;
+  // Theoretical fallback fields
+  price?: number;
+  intrinsic?: number;
+  timeValue?: number;
+  delta?: number;
+  gamma?: number;
+  theta?: number;
+  vega?: number;
+  leverage?: number;
+  breakEven?: number;
+}
+
+export interface RealOptionChainResult {
+  success: boolean;
+  source: OptionDataSource;
+  source_priority?: string[];
+  symbol: string;
+  underlying_price: number;
+  strikes: number[];
+  expiry_days: number[];
+  calls: RealOptionEntry[];
+  puts: RealOptionEntry[];
+  cached?: boolean;
+  // Optional fields
+  expiry_dates?: string[];
+  volatility?: number;
+  ratio?: number;
+  emittent?: string;
+}
+
 export interface Position {
   id: number;
   portfolioId: number;
