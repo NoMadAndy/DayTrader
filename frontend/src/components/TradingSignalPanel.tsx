@@ -346,10 +346,10 @@ export function TradingSignalPanel({
       </div>
 
       {/* Footer */}
-      <div className="mt-3 pt-3 border-t border-slate-700/50 flex flex-col gap-2 text-xs text-gray-500">
-        <div className="flex items-center justify-between">
-          <span>
-            Datenquellen: {signals.dataSourcesUsed.length > 0 
+      <div className="mt-3 pt-3 border-t border-slate-700/50 flex flex-col gap-1.5 sm:gap-2 text-[10px] sm:text-xs text-gray-500">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+          <span className="truncate">
+            Quellen: {signals.dataSourcesUsed.length > 0 
               ? signals.dataSourcesUsed.map((source, idx) => (
                 <span key={idx} className="inline-flex items-center gap-1">
                   {idx > 0 && ', '}
@@ -360,8 +360,8 @@ export function TradingSignalPanel({
             }
           </span>
           {signals.newsCount > 0 && (
-            <span>
-              Ø Sentiment: {' '}
+            <span className="flex-shrink-0">
+              Ø Sent.: {' '}
               <span className={signals.avgSentiment >= 0 ? 'text-green-400' : 'text-red-400'}>
                 {signals.avgSentiment >= 0 ? '+' : ''}{(signals.avgSentiment * 100).toFixed(0)}%
               </span>
@@ -369,24 +369,24 @@ export function TradingSignalPanel({
           )}
         </div>
         
-        {/* Legend */}
-        <div className="flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-gray-600 flex-wrap">
-          <span className="text-gray-500 hidden sm:inline">Quellen:</span>
+        {/* Legend - hidden on small mobile, visible on sm+ */}
+        <div className="hidden sm:flex items-center gap-2 text-xs text-gray-600">
+          <span className="text-gray-500">Quellen:</span>
           <span>📰</span>
           <span>📊</span>
           <span>🤖</span>
           <span>🎯</span>
-          <span className="text-gray-500 hidden sm:inline">|</span>
-          <span className="text-green-400">●</span>
-          <span className="text-blue-400">◐</span>
-          <span className="text-yellow-400">○</span>
-          <span className="text-red-400">⚠</span>
+          <span className="text-gray-500">|</span>
+          <span className="text-green-400">● stark</span>
+          <span className="text-blue-400">◐ mod.</span>
+          <span className="text-yellow-400">○ schwach</span>
+          <span className="text-red-400">⚠ wid.</span>
         </div>
       </div>
 
       {/* Disclaimer */}
-      <p className="mt-2 text-xs text-gray-600 italic">
-        ⚠️ Nur zur Information - keine Anlageberatung. Eigene Recherche durchführen.
+      <p className="mt-2 text-[10px] sm:text-xs text-gray-600 italic">
+        ⚠️ Keine Anlageberatung<span className="hidden sm:inline"> — eigene Recherche durchführen</span>.
       </p>
     </div>
   );
