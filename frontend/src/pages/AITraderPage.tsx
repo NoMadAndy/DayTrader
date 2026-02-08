@@ -664,7 +664,8 @@ export function AITraderPage() {
                   title={`${tradingStart} - ${tradingEnd} (${schedule?.timezone || 'Europe/Berlin'})`}
                 >
                   <span className="text-sm">{isOpen ? '🟢' : '🟡'}</span>
-                  <span>{isOpen ? 'Markt offen' : `Markt geschlossen (${tradingStart}–${tradingEnd})`}</span>
+                  <span className="hidden sm:inline">{isOpen ? 'Markt offen' : `Markt geschlossen (${tradingStart}–${tradingEnd})`}</span>
+                  <span className="sm:hidden">{isOpen ? 'Offen' : `Geschl.`}</span>
                 </div>
               );
             })()}
@@ -734,27 +735,27 @@ export function AITraderPage() {
       <div className="bg-slate-800/50 rounded border border-slate-700/50 p-0.5 flex gap-0.5">
         <button
           onClick={() => setActiveTab('activity')}
-          className={`flex-1 px-3 py-1.5 rounded text-sm transition-colors ${
+          className={`flex-1 px-1.5 sm:px-3 py-1.5 rounded text-xs sm:text-sm transition-colors ${
             activeTab === 'activity' ? 'bg-blue-500 text-white' : 'text-gray-400 hover:bg-slate-700/50'
           }`}
         >
-          🔴 Live Activity
+          🔴 <span className="hidden sm:inline">Live Activity</span><span className="sm:hidden">Live</span>
         </button>
         <button
           onClick={() => setActiveTab('reports')}
-          className={`flex-1 px-3 py-1.5 rounded text-sm transition-colors ${
+          className={`flex-1 px-1.5 sm:px-3 py-1.5 rounded text-xs sm:text-sm transition-colors ${
             activeTab === 'reports' ? 'bg-blue-500 text-white' : 'text-gray-400 hover:bg-slate-700/50'
           }`}
         >
-          📊 Reports
+          📊 <span className="hidden sm:inline">Reports</span><span className="sm:hidden">Rep.</span>
         </button>
         <button
           onClick={() => setActiveTab('analytics')}
-          className={`flex-1 px-3 py-1.5 rounded text-sm transition-colors ${
+          className={`flex-1 px-1.5 sm:px-3 py-1.5 rounded text-xs sm:text-sm transition-colors ${
             activeTab === 'analytics' ? 'bg-blue-500 text-white' : 'text-gray-400 hover:bg-slate-700/50'
           }`}
         >
-          📈 Analytics
+          📈 <span className="hidden sm:inline">Analytics</span><span className="sm:hidden">Stats</span>
         </button>
       </div>
       
