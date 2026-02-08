@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.37.1] - 2026-02-08
+
+### Fixed
+- **Yahoo Finance NaN-Bug**: `yfinance` liefert teils `NaN` für Volume/OpenInterest — führte zu Crash (`cannot convert float NaN to integer`). Neue `_safe_float()` / `_safe_int()` Helper mit robuster NaN/Inf-Behandlung.
+- Yahoo Finance liefert jetzt zuverlässig Daten (getestet: AAPL 279 Calls + 267 Puts, SAP 144 Calls)
+
 ## [1.37.0] - 2026-02-08
 
 ### Added
