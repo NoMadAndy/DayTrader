@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.36.0] - 2026-02-08
+
+### Changed
+- **Trading-Seite komplett überarbeitet** — Aufgeräumtes Order-Panel mit zwei klaren Modi:
+  - **📈 Aktie**: Symbol → Kauf/Verkauf → Menge → SL/TP → Ausführen
+  - **⚡ Optionsschein**: Symbol → Option Chain (Call/Put-Grid) → Warrant auswählen → Menge → Ausführen
+  - Option Chain wird direkt unterhalb des Order-Panels angezeigt (Desktop & Mobile)
+  - Kostenvorschau mit Delta-Anzeige bei Optionsscheinen
+
+### Removed
+- **CFD/Knockout/Factor-Produkttypen** aus dem Order-Formular entfernt (vereinfachtes Trading)
+- **Limit/Stop/Stop-Limit Order-Typen** aus dem Order-Formular entfernt (nur Market Orders)
+- **Hebel-Slider** entfernt (nicht mehr relevant ohne Derivate-Produkttypen)
+
 ## [1.35.1] - 2026-02-07
 
 ### Added

@@ -54,9 +54,10 @@ import type {
   BrokerProfiles,
   BrokerProfileId,
 } from '../types/trading';
-import { StockSelector, PendingOrders, EquityChart } from '../components';
+import { StockSelector, PendingOrders, EquityChart, OptionChainPanel } from '../components';
 
 type TabType = 'trading' | 'overview' | 'settings';
+type OrderMode = 'stock' | 'warrant';
 
 export function TradingPortfolioPage() {
   const { dataService } = useDataService();
@@ -87,12 +88,27 @@ export function TradingPortfolioPage() {
   const [productType, setProductType] = useState<ProductType>('stock');
   const [side, setSide] = useState<OrderSide>('buy');
   const [quantity, setQuantity] = useState<string>('10');
-  const [leverage, setLeverage] = useState<number>(1);
+  const [leverage] = useState<number>(1);
   const [stopLoss, setStopLoss] = useState<string>('');
   const [takeProfit, setTakeProfit] = useState<string>('');
-  const [orderType, setOrderType] = useState<OrderType>('market');
-  const [limitPrice, setLimitPrice] = useState<string>('');
-  const [stopOrderPrice, setStopOrderPrice] = useState<string>('');
+  const [orderType] = useState<OrderType>('market');
+  const [limitPrice] = useState<string>('');
+  const [stopOrderPrice] = useState<string>('');
+  
+  // Order mode: stock vs warrant
+  const [orderMode, setOrderMode] = useState<OrderMode>('stock');
+  
+  // Warrant state
+  const [selectedWarrant, setSelectedWarrant] = useState<{
+    optionType: 'call' | 'put';
+    strike: number;
+    days: number;
+    price: number;
+    delta: number;
+  } | null>(null);
+  const [warrantQuantity, setWarrantQuantity] = useState<string>('100');
+  const [warrantSide, setWarrantSide] = useState<OrderSide>('buy');
+  const [warrantTradeLoading, setWarrantTradeLoading] = useState(false);
   
   // Position editing state
   const [editingPosition, setEditingPosition] = useState<number | null>(null);
@@ -625,8 +641,76 @@ export function TradingPortfolioPage() {
     );
   }
   
-  const maxLeverage = productTypes?.[productType]?.maxLeverage || 1;
-  const canShort = productTypes?.[productType]?.canShort || false;
+  const maxLeverage = 1;
+  const canShort = productType !== 'stock';
+  
+  // Handle warrant order execution
+  const handleWarrantOrder = async () => {
+    if (!portfolio || !selectedWarrant || !currentPrice) return;
+    
+    const qty = parseInt(warrantQuantity) || 0;
+    if (qty <= 0) {
+      setError('Bitte gültige Menge eingeben');
+      return;
+    }
+    
+    try {
+      setWarrantTradeLoading(true);
+      setError(null);
+      
+      const ratio = 0.1;
+      const vol = 0.30;
+      const wpResult = await getWarrantPrice({
+        underlyingPrice: currentPrice,
+        strikePrice: selectedWarrant.strike,
+        daysToExpiry: selectedWarrant.days,
+        volatility: vol,
+        riskFreeRate: 0.03,
+        optionType: selectedWarrant.optionType,
+        ratio,
+      });
+      
+      if (!wpResult.success || wpResult.warrant_price <= 0) {
+        setError('Warrant-Preis konnte nicht berechnet werden (OTM/wertlos?)');
+        return;
+      }
+      
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + selectedWarrant.days);
+      
+      const result = await executeMarketOrder({
+        portfolioId: portfolio.id,
+        symbol: selectedSymbol,
+        side: warrantSide,
+        quantity: qty,
+        currentPrice: wpResult.warrant_price,
+        productType: 'warrant',
+        strikePrice: selectedWarrant.strike,
+        optionType: selectedWarrant.optionType,
+        underlyingSymbol: selectedSymbol,
+        warrantRatio: ratio,
+        expiryDate: expiryDate.toISOString().split('T')[0],
+        impliedVolatility: vol,
+        greeks: wpResult.greeks,
+        underlyingPrice: currentPrice,
+      });
+      
+      if (result.success) {
+        const sideLabel = warrantSide === 'buy' ? 'Kauf' : 'Short';
+        setSuccessMessage(`${sideLabel} ${qty}x ${selectedWarrant.optionType === 'call' ? 'Call' : 'Put'} ${selectedSymbol} Strike ${selectedWarrant.strike} @ ${formatCurrency(wpResult.warrant_price)}`);
+        setSelectedWarrant(null);
+        setWarrantQuantity('100');
+        await loadPortfolioData();
+        setTimeout(() => setSuccessMessage(null), 5000);
+      } else {
+        setError(result.error || 'Order fehlgeschlagen');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Order fehlgeschlagen');
+    } finally {
+      setWarrantTradeLoading(false);
+    }
+  };
   
   return (
     <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4 space-y-3">
@@ -712,231 +796,267 @@ export function TradingPortfolioPage() {
             {/* Top Row: Order Panel + Pending Orders + Quick Stats */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
               {/* Order Panel */}
-              <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4 space-y-3 sm:space-y-4">
-                <h2 className="text-base sm:text-lg font-semibold">Neue Order</h2>
+              <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4 space-y-3">
+                {/* Order Mode Tabs */}
+                <div className="flex rounded-lg overflow-hidden border border-slate-600">
+                  <button
+                    onClick={() => { setOrderMode('stock'); setProductType('stock'); }}
+                    className={`flex-1 px-3 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${
+                      orderMode === 'stock'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-700/50 text-gray-400 hover:text-white hover:bg-slate-700'
+                    }`}
+                  >
+                    📈 Aktie
+                  </button>
+                  <button
+                    onClick={() => { setOrderMode('warrant'); setProductType('warrant'); }}
+                    className={`flex-1 px-3 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${
+                      orderMode === 'warrant'
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-slate-700/50 text-gray-400 hover:text-white hover:bg-slate-700'
+                    }`}
+                  >
+                    ⚡ Optionsschein
+                  </button>
+                </div>
                 
-                {/* Symbol Selection */}
+                {/* Symbol Selection - shared */}
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Symbol</label>
-                  <StockSelector selectedSymbol={selectedSymbol} onSelect={setSelectedSymbol} />
+                  <label className="block text-xs text-gray-400 mb-1">Symbol</label>
+                  <StockSelector selectedSymbol={selectedSymbol} onSelect={(s) => { setSelectedSymbol(s); setSelectedWarrant(null); }} />
                   {currentPrice > 0 && (
-                    <div className="mt-2 text-sm text-gray-400">
-                      Aktuell: <span className="text-white font-medium">{formatCurrency(currentPrice)}</span>
+                    <div className="mt-1.5 text-xs text-gray-400">
+                      Kurs: <span className="text-white font-medium">{formatCurrency(currentPrice)}</span>
                     </div>
                   )}
                 </div>
                 
-                {/* Product Type */}
-                <div>
-                  <label className="block text-xs sm:text-sm text-gray-400 mb-1">Produkttyp</label>
-                  <div className="grid grid-cols-4 sm:grid-cols-2 gap-1 sm:gap-2">
-                    {['stock', 'cfd', 'knockout', 'factor'].map((type) => (
+                {/* ==================== STOCK MODE ==================== */}
+                {orderMode === 'stock' && (
+                  <>
+                    {/* Side */}
+                    <div className="grid grid-cols-2 gap-1.5">
                       <button
-                        key={type}
-                        onClick={() => {
-                          setProductType(type as ProductType);
-                          if (type === 'stock') {
-                            setLeverage(1);
-                            if (side === 'short') setSide('buy');
-                          }
-                        }}
-                        className={`px-1.5 sm:px-3 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-sm font-medium transition-colors ${
-                          productType === type
-                            ? 'bg-blue-600 text-white'
+                        onClick={() => setSide('buy')}
+                        className={`px-2 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          side === 'buy'
+                            ? 'bg-green-600 text-white'
                             : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
                         }`}
                       >
-                        {getProductTypeName(type as ProductType)}
+                        📈 Kauf
                       </button>
-                    ))}
-                  </div>
-                </div>
-                
-                {/* Side */}
-                <div>
-                  <label className="block text-xs sm:text-sm text-gray-400 mb-1">Richtung</label>
-                  <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
-                    <button
-                      onClick={() => setSide('buy')}
-                      className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-base font-medium transition-colors ${
-                        side === 'buy'
-                          ? 'bg-green-600 text-white'
-                          : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
-                      }`}
-                    >
-                      📈 <span className="hidden sm:inline">Kauf </span>Long
-                    </button>
-                    <button
-                      onClick={() => setSide('short')}
-                      disabled={!canShort}
-                      className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-base font-medium transition-colors ${
-                        side === 'short'
-                          ? 'bg-red-600 text-white'
-                          : canShort 
-                            ? 'bg-slate-700 text-gray-300 hover:bg-slate-600'
-                            : 'bg-slate-800 text-gray-600 cursor-not-allowed'
-                      }`}
-                    >
-                      📉 Short
-                    </button>
-                  </div>
-                </div>
-                
-                {/* Quantity & Order Type */}
-                <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
-                  <div>
-                    <label className="block text-xs sm:text-sm text-gray-400 mb-1">Menge</label>
-                    <input
-                      type="number"
-                      value={quantity}
-                      onChange={(e) => setQuantity(e.target.value)}
-                      min="1"
-                      className="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs sm:text-sm text-gray-400 mb-1">Order-Typ</label>
-                    <select
-                      value={orderType}
-                      onChange={(e) => setOrderType(e.target.value as OrderType)}
-                      className="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                    >
-                      <option value="market">Market</option>
-                      <option value="limit">Limit</option>
-                      <option value="stop">Stop</option>
-                      <option value="stop_limit">Stop-Limit</option>
-                    </select>
-                  </div>
-                </div>
-                
-                {/* Limit/Stop Price Fields */}
-                {orderType !== 'market' && (
-                  <div className="space-y-2">
-                    {(orderType === 'stop' || orderType === 'stop_limit') && (
-                      <div>
-                        <label className="block text-sm text-gray-400 mb-1">Stop-Preis</label>
-                        <input
-                          type="number"
-                          value={stopOrderPrice}
-                          onChange={(e) => setStopOrderPrice(e.target.value)}
-                          placeholder={`z.B. ${(currentPrice * 0.98).toFixed(2)}`}
-                          step="0.01"
-                          className="w-full px-3 py-2 bg-slate-700 rounded-lg text-white focus:ring-2 focus:ring-purple-500 outline-none"
-                        />
-                      </div>
-                    )}
-                    {(orderType === 'limit' || orderType === 'stop_limit') && (
-                      <div>
-                        <label className="block text-sm text-gray-400 mb-1">Limit-Preis</label>
-                        <input
-                          type="number"
-                          value={limitPrice}
-                          onChange={(e) => setLimitPrice(e.target.value)}
-                          placeholder={`z.B. ${(currentPrice * 0.95).toFixed(2)}`}
-                          step="0.01"
-                          className="w-full px-3 py-2 bg-slate-700 rounded-lg text-white focus:ring-2 focus:ring-purple-500 outline-none"
-                        />
-                      </div>
-                    )}
-                  </div>
-                )}
-                
-                {/* Leverage */}
-                {productType !== 'stock' && (
-                  <div>
-                    <label className="block text-sm text-gray-400 mb-1">
-                      Hebel: <span className="text-white font-medium">1:{leverage}</span>
-                    </label>
-                    <input
-                      type="range"
-                      min="1"
-                      max={maxLeverage}
-                      value={leverage}
-                      onChange={(e) => setLeverage(parseInt(e.target.value))}
-                      className="w-full accent-blue-500"
-                    />
-                    <div className="flex justify-between text-xs text-gray-500">
-                      <span>1:1</span>
-                      <span>1:{maxLeverage}</span>
+                      <button
+                        onClick={() => setSide('sell')}
+                        className={`px-2 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          side === 'sell'
+                            ? 'bg-red-600 text-white'
+                            : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                        }`}
+                      >
+                        📉 Verkauf
+                      </button>
                     </div>
-                  </div>
-                )}
-                
-                {/* Stop Loss & Take Profit */}
-                {orderType === 'market' && (
-                  <div className="grid grid-cols-2 gap-2">
+                    
+                    {/* Quantity */}
                     <div>
-                      <label className="block text-sm text-gray-400 mb-1">Stop-Loss</label>
+                      <label className="block text-xs text-gray-400 mb-1">Menge</label>
                       <input
                         type="number"
-                        value={stopLoss}
-                        onChange={(e) => setStopLoss(e.target.value)}
-                        placeholder="Optional"
-                        step="0.01"
-                        className="w-full px-3 py-2 bg-slate-700 rounded-lg text-white focus:ring-2 focus:ring-red-500 outline-none text-sm"
+                        value={quantity}
+                        onChange={(e) => setQuantity(e.target.value)}
+                        min="1"
+                        className="w-full px-3 py-2 bg-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm text-gray-400 mb-1">Take-Profit</label>
-                      <input
-                        type="number"
-                        value={takeProfit}
-                        onChange={(e) => setTakeProfit(e.target.value)}
-                        placeholder="Optional"
-                        step="0.01"
-                        className="w-full px-3 py-2 bg-slate-700 rounded-lg text-white focus:ring-2 focus:ring-green-500 outline-none text-sm"
-                      />
+                    
+                    {/* Stop Loss & Take Profit */}
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Stop-Loss</label>
+                        <input
+                          type="number"
+                          value={stopLoss}
+                          onChange={(e) => setStopLoss(e.target.value)}
+                          placeholder="Optional"
+                          step="0.01"
+                          className="w-full px-2 py-1.5 bg-slate-700 rounded-lg text-white focus:ring-2 focus:ring-red-500 outline-none text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Take-Profit</label>
+                        <input
+                          type="number"
+                          value={takeProfit}
+                          onChange={(e) => setTakeProfit(e.target.value)}
+                          placeholder="Optional"
+                          step="0.01"
+                          className="w-full px-2 py-1.5 bg-slate-700 rounded-lg text-white focus:ring-2 focus:ring-green-500 outline-none text-sm"
+                        />
+                      </div>
                     </div>
-                  </div>
-                )}
-                
-                {/* Fee Preview */}
-                {feePreview && (
-                  <div className="bg-slate-900/50 rounded-lg p-3 text-sm">
-                    <div className="text-gray-400 mb-2 font-medium">Kostenvorschau</div>
-                    <div className="space-y-1">
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Ordervolumen:</span>
-                        <span>{formatCurrency(feePreview.notionalValue)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Gebühren:</span>
-                        <span className="text-yellow-400">{formatCurrency(feePreview.totalFees)}</span>
-                      </div>
-                      {productType !== 'stock' && (
+                    
+                    {/* Fee Preview */}
+                    {feePreview && (
+                      <div className="bg-slate-900/50 rounded-lg p-2 text-xs">
                         <div className="flex justify-between">
-                          <span className="text-gray-500">Margin:</span>
-                          <span>{formatCurrency(feePreview.marginRequired)}</span>
+                          <span className="text-gray-500">Volumen:</span>
+                          <span>{formatCurrency(feePreview.notionalValue)}</span>
                         </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Gebühren:</span>
+                          <span className="text-yellow-400">{formatCurrency(feePreview.totalFees)}</span>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Submit */}
+                    <button
+                      onClick={handleSubmitOrder}
+                      disabled={orderLoading || !feePreview || currentPrice <= 0}
+                      className={`w-full py-2.5 rounded-lg font-semibold text-sm text-white transition-colors ${
+                        side === 'buy'
+                          ? 'bg-green-600 hover:bg-green-700 disabled:bg-green-900'
+                          : 'bg-red-600 hover:bg-red-700 disabled:bg-red-900'
+                      } disabled:cursor-not-allowed`}
+                    >
+                      {orderLoading ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-white"></div>
+                          ...
+                        </span>
+                      ) : (
+                        `${side === 'buy' ? '📈 Kaufen' : '📉 Verkaufen'} · ${formatCurrency(feePreview?.marginRequired || 0)}`
                       )}
-                    </div>
-                  </div>
+                    </button>
+                  </>
                 )}
                 
-                {/* Submit Button */}
-                <button
-                  onClick={handleSubmitOrder}
-                  disabled={orderLoading || !feePreview || currentPrice <= 0}
-                  className={`w-full py-2.5 sm:py-3 rounded-lg font-semibold text-sm sm:text-base text-white transition-colors ${
-                    orderType !== 'market' 
-                      ? 'bg-purple-600 hover:bg-purple-700 disabled:bg-purple-900'
-                      : side === 'buy'
-                        ? 'bg-green-600 hover:bg-green-700 disabled:bg-green-900'
-                        : 'bg-red-600 hover:bg-red-700 disabled:bg-red-900'
-                  } disabled:cursor-not-allowed`}
-                >
-                  {orderLoading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-white"></div>
-                      <span className="hidden sm:inline">Wird ausgeführt...</span>
-                      <span className="sm:hidden">...</span>
-                    </span>
-                  ) : orderType !== 'market' ? (
-                    <span><span className="hidden sm:inline">📋 {getOrderTypeName(orderType)}-Order erstellen</span><span className="sm:hidden">{getOrderTypeName(orderType)}</span></span>
-                  ) : (
-                    `${side === 'buy' ? '📈' : '📉'} ${formatCurrency(feePreview?.marginRequired || 0)}`
-                  )}
-                </button>
+                {/* ==================== WARRANT MODE ==================== */}
+                {orderMode === 'warrant' && (
+                  <>
+                    {currentPrice > 0 ? (
+                      <>
+                        {/* Selected Warrant Display */}
+                        {selectedWarrant ? (
+                          <div className="space-y-2">
+                            <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-2.5">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                                  selectedWarrant.optionType === 'call' 
+                                    ? 'bg-green-500/20 text-green-400' 
+                                    : 'bg-red-500/20 text-red-400'
+                                }`}>
+                                  {selectedWarrant.optionType === 'call' ? '📈 CALL' : '📉 PUT'}
+                                </span>
+                                <button
+                                  onClick={() => setSelectedWarrant(null)}
+                                  className="text-gray-400 hover:text-white text-xs"
+                                >
+                                  ✕ Ändern
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2 text-xs mt-1.5">
+                                <div>
+                                  <div className="text-gray-500">Strike</div>
+                                  <div className="font-medium">{formatCurrency(selectedWarrant.strike)}</div>
+                                </div>
+                                <div>
+                                  <div className="text-gray-500">Preis</div>
+                                  <div className="font-medium text-purple-300">{formatCurrency(selectedWarrant.price)}</div>
+                                </div>
+                                <div>
+                                  <div className="text-gray-500">Laufzeit</div>
+                                  <div className="font-medium">{selectedWarrant.days}T</div>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Side */}
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <button
+                                onClick={() => setWarrantSide('buy')}
+                                className={`px-2 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                  warrantSide === 'buy'
+                                    ? 'bg-green-600 text-white'
+                                    : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                                }`}
+                              >
+                                📈 Kauf
+                              </button>
+                              <button
+                                onClick={() => setWarrantSide('short')}
+                                className={`px-2 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                  warrantSide === 'short'
+                                    ? 'bg-red-600 text-white'
+                                    : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                                }`}
+                              >
+                                📉 Short
+                              </button>
+                            </div>
+                            
+                            {/* Quantity */}
+                            <div>
+                              <label className="block text-xs text-gray-400 mb-1">Menge</label>
+                              <input
+                                type="number"
+                                value={warrantQuantity}
+                                onChange={(e) => setWarrantQuantity(e.target.value)}
+                                min="1"
+                                className="w-full px-3 py-2 bg-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-purple-500 outline-none"
+                              />
+                            </div>
+                            
+                            {/* Cost Preview */}
+                            <div className="bg-slate-900/50 rounded-lg p-2 text-xs">
+                              <div className="flex justify-between">
+                                <span className="text-gray-500">Kosten:</span>
+                                <span className="text-purple-300 font-medium">
+                                  {formatCurrency(selectedWarrant.price * (parseInt(warrantQuantity) || 0))}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-500">Delta:</span>
+                                <span>{selectedWarrant.delta.toFixed(4)}</span>
+                              </div>
+                            </div>
+                            
+                            {/* Execute */}
+                            <button
+                              onClick={handleWarrantOrder}
+                              disabled={warrantTradeLoading || (parseInt(warrantQuantity) || 0) <= 0}
+                              className={`w-full py-2.5 rounded-lg font-semibold text-sm text-white transition-colors ${
+                                warrantSide === 'buy'
+                                  ? 'bg-green-600 hover:bg-green-700 disabled:bg-green-900'
+                                  : 'bg-red-600 hover:bg-red-700 disabled:bg-red-900'
+                              } disabled:cursor-not-allowed`}
+                            >
+                              {warrantTradeLoading ? (
+                                <span className="flex items-center justify-center gap-2">
+                                  <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-white"></div>
+                                  ...
+                                </span>
+                              ) : (
+                                `${warrantSide === 'buy' ? '📈' : '📉'} ${selectedWarrant.optionType === 'call' ? 'Call' : 'Put'} ${warrantSide === 'buy' ? 'Kaufen' : 'Shorten'}`
+                              )}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-center py-3">
+                            <div className="text-sm text-gray-400 mb-1">⚡ Wähle einen Optionsschein aus der Kette unten</div>
+                            <div className="text-[10px] text-gray-500">Klicke auf einen Preis um ihn auszuwählen</div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-center py-4 text-sm text-gray-500">
+                        Wähle zuerst ein Symbol aus
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             
               {/* Pending Orders */}
@@ -980,6 +1100,17 @@ export function TradingPortfolioPage() {
                 </div>
               )}
             </div>
+            
+            {/* Option Chain Panel - shown when warrant mode active */}
+            {orderMode === 'warrant' && currentPrice > 0 && (
+              <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4">
+                <OptionChainPanel
+                  symbol={selectedSymbol}
+                  underlyingPrice={currentPrice}
+                  onSelect={(params) => setSelectedWarrant(params)}
+                />
+              </div>
+            )}
             
             {/* Margin Warnings */}
             {metrics?.isMarginWarning && (
