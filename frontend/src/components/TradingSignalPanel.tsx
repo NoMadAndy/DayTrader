@@ -264,12 +264,12 @@ export function TradingSignalPanel({
   return (
     <div className={`bg-slate-800/50 rounded-xl p-4 border border-slate-700 ${className}`}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="flex items-center justify-between mb-4 gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <svg className="w-5 h-5 text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
           </svg>
-          <h3 className="font-semibold text-white">Trading-Signale für {symbol}</h3>
+          <h3 className="font-semibold text-white text-sm sm:text-base truncate">Trading-Signale <span className="hidden sm:inline">für </span>{symbol}</h3>
           {/* Settings Toggle Button */}
           {onConfigChange && signalConfig && (
             <button
@@ -284,13 +284,13 @@ export function TradingSignalPanel({
             </button>
           )}
         </div>
-        <div className="flex items-center gap-3 text-xs">
+        <div className="flex items-center gap-1.5 sm:gap-3 text-[10px] sm:text-xs flex-shrink-0">
           <span className={biasDisplay.color}>
-            {biasDisplay.emoji} {biasDisplay.label}
+            {biasDisplay.emoji} <span className="hidden sm:inline">{biasDisplay.label}</span>
           </span>
           <span className="text-gray-500">|</span>
           <span className="text-gray-400">
-            Volatilität: <span className={volatilityDisplay.color}>{volatilityDisplay.label}</span>
+            <span className="hidden sm:inline">Volatilität: </span><span className={volatilityDisplay.color}>{volatilityDisplay.label}</span>
           </span>
         </div>
       </div>
@@ -370,18 +370,17 @@ export function TradingSignalPanel({
         </div>
         
         {/* Legend */}
-        <div className="flex items-center gap-3 text-gray-600 flex-wrap">
+        <div className="flex items-center gap-1.5 sm:gap-3 text-[10px] sm:text-xs text-gray-600 flex-wrap">
           <span className="text-gray-500">Quellen:</span>
-          <span>📰 News</span>
-          <span>📊 Technisch</span>
-          <span>🤖 ML-Prognose</span>
-          <span>🎯 RL-Agent</span>
-          <span className="text-gray-500 ml-2">|</span>
-          <span className="text-gray-500">Agreement:</span>
+          <span>📰</span>
+          <span>📊</span>
+          <span>🤖</span>
+          <span>🎯</span>
+          <span className="text-gray-500">|</span>
           <span className="text-green-400">● stark</span>
-          <span className="text-blue-400">◐ moderat</span>
+          <span className="text-blue-400">◐ mod.</span>
           <span className="text-yellow-400">○ schwach</span>
-          <span className="text-red-400">⚠ widerspr.</span>
+          <span className="text-red-400">⚠ wid.</span>
         </div>
       </div>
 

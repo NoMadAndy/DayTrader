@@ -33,18 +33,18 @@ export function IndicatorControls({
   ];
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-1.5 sm:gap-2">
       {indicators.map((indicator) => (
         <button
           key={indicator.key}
           onClick={() => onToggle(indicator.key, !indicator.value)}
-          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+          className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
             indicator.value
               ? 'bg-slate-700 text-white'
               : 'bg-slate-900/50 text-gray-400 hover:bg-slate-700/50'
           }`}
         >
-          <span className={`w-3 h-3 rounded-full ${indicator.value ? indicator.color : 'bg-gray-600'}`} />
+          <span className={`w-2 sm:w-3 h-2 sm:h-3 rounded-full ${indicator.value ? indicator.color : 'bg-gray-600'}`} />
           {indicator.label}
         </button>
       ))}

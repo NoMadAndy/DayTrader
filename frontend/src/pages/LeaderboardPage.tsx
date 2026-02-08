@@ -71,20 +71,20 @@ export function LeaderboardPage() {
   };
   
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
             🏆 {t('leaderboard.title')}
           </h1>
-          <p className="text-gray-400 text-sm mt-1">
+          <p className="text-gray-400 text-xs sm:text-sm mt-1">
             {t('leaderboard.description')}
           </p>
         </div>
         
         {/* Timeframe Selector */}
-        <div className="flex gap-2">
+        <div className="flex gap-1 sm:gap-2">
           {[
             { id: 'all', labelKey: 'leaderboard.timeframe.all' },
             { id: 'month', labelKey: 'leaderboard.timeframe.month' },
@@ -94,7 +94,7 @@ export function LeaderboardPage() {
             <button
               key={tf.id}
               onClick={() => setTimeframe(tf.id as TimeframeType)}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              className={`px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
                 timeframe === tf.id
                   ? 'bg-blue-600 text-white'
                   : 'bg-slate-800 text-gray-300 hover:bg-slate-700'
@@ -107,7 +107,7 @@ export function LeaderboardPage() {
       </div>
       
       {/* Filter Buttons */}
-      <div className="flex gap-2 justify-center">
+      <div className="flex gap-1.5 sm:gap-2 justify-center">
         {[
           { id: 'all', label: 'Alle', icon: '👥' },
           { id: 'humans', label: 'Menschen', icon: '👤' },
@@ -116,7 +116,7 @@ export function LeaderboardPage() {
           <button
             key={f.id}
             onClick={() => setFilter(f.id as FilterType)}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+            className={`px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center gap-1.5 sm:gap-2 ${
               filter === f.id
                 ? 'bg-purple-600 text-white'
                 : 'bg-slate-800 text-gray-300 hover:bg-slate-700'
@@ -186,29 +186,29 @@ export function LeaderboardPage() {
                 
                 const content = (
                   <>
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 text-center text-xl font-bold">
+                    <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+                      <div className="w-8 sm:w-12 text-center text-sm sm:text-xl font-bold flex-shrink-0">
                         {getRankIcon(entry.rank)}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                         {entry.isAITrader && entry.avatar && (
-                          <span className="text-2xl" title="AI Trader">{entry.avatar}</span>
+                          <span className="text-lg sm:text-2xl flex-shrink-0" title="AI Trader">{entry.avatar}</span>
                         )}
-                        <div>
-                          <div className="font-semibold flex items-center gap-2">
-                            {entry.username}
+                        <div className="min-w-0">
+                          <div className="font-semibold flex items-center gap-1 sm:gap-2 text-sm sm:text-base">
+                            <span className="truncate">{entry.username}</span>
                             {entry.isAITrader && (
-                              <span className="text-xs bg-purple-600/30 text-purple-300 px-2 py-0.5 rounded-full">
+                              <span className="text-[10px] sm:text-xs bg-purple-600/30 text-purple-300 px-1.5 sm:px-2 py-0.5 rounded-full flex-shrink-0">
                                 KI
                               </span>
                             )}
                           </div>
-                          <div className="text-sm text-gray-400">{entry.name}</div>
+                          <div className="text-xs sm:text-sm text-gray-400 truncate">{entry.name}</div>
                         </div>
                       </div>
                     </div>
                     
-                    <div className="flex items-center gap-8">
+                    <div className="flex items-center gap-3 sm:gap-8 flex-shrink-0">
                       <div className="text-right hidden md:block">
                         <div className="text-sm text-gray-400">{t('leaderboard.columns.trades')}</div>
                         <div className="font-medium">{entry.totalTrades}</div>
@@ -219,12 +219,12 @@ export function LeaderboardPage() {
                           {entry.winRate.toFixed(1)}%
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-sm text-gray-400">Portfolio</div>
-                        <div className="font-medium">{formatCurrency(entry.currentValue)}</div>
+                      <div className="text-right hidden sm:block">
+                        <div className="text-xs sm:text-sm text-gray-400">Portfolio</div>
+                        <div className="text-sm sm:text-base font-medium">{formatCurrency(entry.currentValue)}</div>
                       </div>
-                      <div className="text-right min-w-[100px]">
-                        <div className={`text-xl font-bold ${entry.totalReturnPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      <div className="text-right min-w-[60px] sm:min-w-[100px]">
+                        <div className={`text-sm sm:text-xl font-bold ${entry.totalReturnPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                           {formatPercent(entry.totalReturnPct)}
                         </div>
                       </div>
@@ -236,14 +236,14 @@ export function LeaderboardPage() {
                   <Link
                     key={entry.portfolioId}
                     to={`/ai-trader/${entry.aiTraderId}`}
-                    className={`p-4 flex items-center justify-between border-l-4 ${getRankStyle(entry.rank)} hover:bg-slate-700/30 transition-colors`}
+                    className={`p-2.5 sm:p-4 flex items-center justify-between gap-2 border-l-4 ${getRankStyle(entry.rank)} hover:bg-slate-700/30 transition-colors`}
                   >
                     {content}
                   </Link>
                 ) : (
                   <div
                     key={entry.portfolioId}
-                    className={`p-4 flex items-center justify-between border-l-4 ${getRankStyle(entry.rank)}`}
+                    className={`p-2.5 sm:p-4 flex items-center justify-between gap-2 border-l-4 ${getRankStyle(entry.rank)}`}
                   >
                     {content}
                   </div>

@@ -445,21 +445,22 @@ export function AIModelsHubPage() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex border-b border-slate-700 mb-4">
+      <div className="flex border-b border-slate-700 mb-4 overflow-x-auto scrollbar-hide">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 ${
+            className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium transition-colors border-b-2 whitespace-nowrap flex-1 sm:flex-none justify-center sm:justify-start ${
               activeTab === tab.id
                 ? 'border-blue-400 text-blue-400'
                 : 'border-transparent text-gray-400 hover:text-white'
             }`}
           >
             <span>{tab.icon}</span>
-            <span>{tab.label}</span>
+            <span className="hidden sm:inline">{tab.label}</span>
+            <span className="sm:hidden">{tab.id === 'ml-models' ? 'ML' : tab.id === 'rl-agents' ? 'RL' : 'Daten'}</span>
             {tab.count !== null && tab.count > 0 && (
-              <span className="px-1.5 py-0.5 text-xs bg-slate-700 rounded-full">{tab.count}</span>
+              <span className="px-1 sm:px-1.5 py-0.5 text-[10px] sm:text-xs bg-slate-700 rounded-full">{tab.count}</span>
             )}
           </button>
         ))}
