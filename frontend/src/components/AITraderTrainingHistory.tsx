@@ -111,23 +111,24 @@ export function AITraderTrainingHistory({ traderId, compact = false, className =
 
   // Full version
   return (
-    <div className={`bg-slate-800/50 rounded-xl p-5 border border-slate-700 ${className}`}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-bold flex items-center gap-2">
+    <div className={`bg-slate-800/50 rounded-xl p-3 sm:p-5 border border-slate-700 ${className}`}>
+      <div className="flex items-center justify-between mb-3 sm:mb-4">
+        <h3 className="text-base sm:text-lg font-bold flex items-center gap-2">
           <span>🎓</span>
-          Training-Historie
+          <span className="hidden sm:inline">Training-Historie</span>
+          <span className="sm:hidden">Training</span>
         </h3>
         <button
           onClick={loadData}
-          className="text-gray-400 hover:text-white text-sm px-2 py-1 rounded hover:bg-slate-700 transition-colors"
+          className="text-gray-400 hover:text-white text-xs sm:text-sm px-2 py-1 rounded hover:bg-slate-700 transition-colors"
         >
-          🔄 Aktualisieren
+          🔄 <span className="hidden sm:inline">Aktualisieren</span>
         </button>
       </div>
 
       {/* Statistics Summary */}
       {stats && stats.total_sessions > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-5">
           <StatCard
             label="Trainings"
             value={stats.total_sessions.toString()}
@@ -184,10 +185,10 @@ function StatCard({ label, value, subValue, color }: {
   };
 
   return (
-    <div className="bg-slate-700/50 rounded-lg p-3">
-      <div className="text-xs text-gray-400 mb-1">{label}</div>
-      <div className={`text-lg font-bold ${colorClasses[color]}`}>{value}</div>
-      {subValue && <div className="text-xs text-gray-500">{subValue}</div>}
+    <div className="bg-slate-700/50 rounded-lg p-2 sm:p-3">
+      <div className="text-[10px] sm:text-xs text-gray-400 mb-0.5 sm:mb-1 truncate">{label}</div>
+      <div className={`text-sm sm:text-lg font-bold ${colorClasses[color]} truncate`}>{value}</div>
+      {subValue && <div className="text-[10px] sm:text-xs text-gray-500 truncate">{subValue}</div>}
     </div>
   );
 }
@@ -232,63 +233,76 @@ function TrainingEntry({ entry, expanded, onToggle }: {
       {/* Header - always visible */}
       <button
         onClick={onToggle}
-        className="w-full p-4 flex items-center justify-between text-left"
+        className="w-full p-2.5 sm:p-4 text-left"
       >
-        <div className="flex items-center gap-3">
-          <span className="text-xl">{isSuccess ? '✅' : '❌'}</span>
-          <div>
-            <div className="font-medium text-white flex items-center gap-2">
-              {date.toLocaleDateString('de-DE', { 
-                day: '2-digit', 
-                month: '2-digit', 
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-              })}
-              <span className={`text-xs px-2 py-0.5 rounded ${
-                isSuccess ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-              }`}>
-                {isSuccess ? 'Erfolgreich' : 'Fehlgeschlagen'}
-              </span>
-            </div>
-            <div className="text-sm text-gray-400 flex items-center gap-2 mt-1">
-              {entry.symbols_trained && entry.symbols_trained.length > 0 && (
-                <span>📈 {entry.symbols_trained.join(', ')}</span>
-              )}
-              {entry.duration_seconds && (
-                <span>⏱️ {formatDuration(entry.duration_seconds)}</span>
-              )}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <span className="text-base sm:text-xl flex-shrink-0">{isSuccess ? '✅' : '❌'}</span>
+            <div className="min-w-0">
+              <div className="font-medium text-white flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <span className="text-xs sm:text-sm">
+                  {date.toLocaleDateString('de-DE', { 
+                    day: '2-digit', 
+                    month: '2-digit', 
+                    year: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </span>
+                <span className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded ${
+                  isSuccess ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                }`}>
+                  {isSuccess ? '✓ OK' : '✗ Fehler'}
+                </span>
+              </div>
+              <div className="text-[10px] sm:text-sm text-gray-400 flex items-center gap-1.5 sm:gap-2 mt-0.5 sm:mt-1 truncate">
+                {entry.symbols_trained && entry.symbols_trained.length > 0 && (
+                  <span className="truncate">📈 {entry.symbols_trained.slice(0, 3).join(', ')}{entry.symbols_trained.length > 3 ? ` +${entry.symbols_trained.length - 3}` : ''}</span>
+                )}
+                {entry.duration_seconds && (
+                  <span className="flex-shrink-0">⏱️ {formatDuration(entry.duration_seconds)}</span>
+                )}
+              </div>
             </div>
           </div>
-        </div>
         
-        <div className="flex items-center gap-4">
-          {entry.final_reward !== null && (
-            <div className="text-right">
-              <div className={`text-lg font-bold ${Number(entry.final_reward) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {Number(entry.final_reward) >= 0 ? '+' : ''}{Number(entry.final_reward).toFixed(2)}
+          <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
+            {entry.final_reward !== null && (
+              <div className="text-right">
+                <div className={`text-sm sm:text-lg font-bold ${Number(entry.final_reward) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {Number(entry.final_reward) >= 0 ? '+' : ''}{Number(entry.final_reward).toFixed(1)}
+                </div>
+                <div className="text-[10px] sm:text-xs text-gray-400">Reward</div>
               </div>
-              <div className="text-xs text-gray-400">Reward</div>
-            </div>
-          )}
-          {entry.mean_return_pct !== null && (
-            <div className="text-right">
-              <div className={`text-lg font-bold ${Number(entry.mean_return_pct) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {Number(entry.mean_return_pct) >= 0 ? '+' : ''}{Number(entry.mean_return_pct).toFixed(1)}%
+            )}
+            {entry.mean_return_pct !== null && (
+              <div className="text-right hidden sm:block">
+                <div className={`text-lg font-bold ${Number(entry.mean_return_pct) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {Number(entry.mean_return_pct) >= 0 ? '+' : ''}{Number(entry.mean_return_pct).toFixed(1)}%
+                </div>
+                <div className="text-xs text-gray-400">Ø Return</div>
               </div>
-              <div className="text-xs text-gray-400">Ø Return</div>
-            </div>
-          )}
-          <span className={`transform transition-transform ${expanded ? 'rotate-180' : ''}`}>
-            ▼
-          </span>
+            )}
+            <span className={`transform transition-transform text-xs sm:text-base ${expanded ? 'rotate-180' : ''}`}>
+              ▼
+            </span>
+          </div>
         </div>
       </button>
       
       {/* Expanded details */}
       {expanded && (
-        <div className="px-4 pb-4 pt-0 border-t border-slate-700/50">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+        <div className="px-2.5 sm:px-4 pb-3 sm:pb-4 pt-0 border-t border-slate-700/50">
+          {/* Show Ø Return on mobile (hidden in header) */}
+          {entry.mean_return_pct !== null && (
+            <div className="sm:hidden mt-2 mb-2 flex items-center gap-2 text-xs">
+              <span className="text-gray-400">Ø Return:</span>
+              <span className={`font-bold ${Number(entry.mean_return_pct) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {Number(entry.mean_return_pct) >= 0 ? '+' : ''}{Number(entry.mean_return_pct).toFixed(1)}%
+              </span>
+            </div>
+          )}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mt-2 sm:mt-3">
             {entry.total_timesteps && (
               <div className="bg-slate-700/30 rounded p-2">
                 <div className="text-xs text-gray-400">Steps</div>
@@ -336,7 +350,7 @@ function TrainingEntry({ entry, expanded, onToggle }: {
             </div>
           )}
           
-          <div className="mt-3 text-xs text-gray-500">
+          <div className="mt-2 sm:mt-3 text-[10px] sm:text-xs text-gray-500 truncate">
             Agent: {entry.agent_name} • Typ: {entry.training_type}
           </div>
         </div>
