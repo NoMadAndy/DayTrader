@@ -20,6 +20,8 @@ interface OptionChainPanelProps {
     days: number;
     price: number;
     delta: number;
+    volatility: number;
+    ratio: number;
   }) => void;
   onClose?: () => void;
 }
@@ -137,6 +139,8 @@ export function OptionChainPanel({ symbol, underlyingPrice, onSelect, onClose }:
         days: entry.days,
         price: entry.price,
         delta: entry.delta,
+        volatility: volatility / 100,
+        ratio,
       });
     }
   };

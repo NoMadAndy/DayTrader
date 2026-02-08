@@ -370,17 +370,17 @@ export function TradingSignalPanel({
         </div>
         
         {/* Legend */}
-        <div className="flex items-center gap-1.5 sm:gap-3 text-[10px] sm:text-xs text-gray-600 flex-wrap">
-          <span className="text-gray-500">Quellen:</span>
+        <div className="flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-gray-600 flex-wrap">
+          <span className="text-gray-500 hidden sm:inline">Quellen:</span>
           <span>📰</span>
           <span>📊</span>
           <span>🤖</span>
           <span>🎯</span>
-          <span className="text-gray-500">|</span>
-          <span className="text-green-400">● stark</span>
-          <span className="text-blue-400">◐ mod.</span>
-          <span className="text-yellow-400">○ schwach</span>
-          <span className="text-red-400">⚠ wid.</span>
+          <span className="text-gray-500 hidden sm:inline">|</span>
+          <span className="text-green-400">●</span>
+          <span className="text-blue-400">◐</span>
+          <span className="text-yellow-400">○</span>
+          <span className="text-red-400">⚠</span>
         </div>
       </div>
 

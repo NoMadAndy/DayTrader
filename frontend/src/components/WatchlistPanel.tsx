@@ -922,8 +922,8 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
     if (!item?.currentPrice) return { success: false, message: 'Kein aktueller Kurs verfügbar' };
     
     try {
-      const ratio = 0.1;
-      const vol = 0.30;
+      const ratio = params.ratio;
+      const vol = params.volatility;
       const wpResult = await getWarrantPrice({
         underlyingPrice: item.currentPrice,
         strikePrice: params.strike,
@@ -1887,12 +1887,12 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
 
       {/* Legend - compact signal explanation only */}
       <div className="text-[10px] sm:text-xs text-gray-500 pt-2 border-t border-slate-700 flex-shrink-0">
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          <span className="flex items-center gap-0.5"><span>🚀</span> Stark Kauf (≥50)</span>
-          <span className="flex items-center gap-0.5"><span>📈</span> Kauf (≥20)</span>
-          <span className="flex items-center gap-0.5"><span>➡️</span> Halten (±19)</span>
-          <span className="flex items-center gap-0.5"><span>📉</span> Verkauf (≤-20)</span>
-          <span className="flex items-center gap-0.5"><span>⚠️</span> Stark Verk. (≤-50)</span>
+        <div className="flex flex-wrap gap-x-1.5 sm:gap-x-3 gap-y-1">
+          <span className="flex items-center gap-0.5"><span>🚀</span><span className="hidden sm:inline"> Stark Kauf</span> ≥50</span>
+          <span className="flex items-center gap-0.5"><span>📈</span><span className="hidden sm:inline"> Kauf</span> ≥20</span>
+          <span className="flex items-center gap-0.5"><span>➡️</span><span className="hidden sm:inline"> Halten</span> ±19</span>
+          <span className="flex items-center gap-0.5"><span>📉</span><span className="hidden sm:inline"> Verkauf</span> ≤-20</span>
+          <span className="flex items-center gap-0.5"><span>⚠️</span><span className="hidden sm:inline"> Stark Verk.</span> ≤-50</span>
         </div>
       </div>
     </div>

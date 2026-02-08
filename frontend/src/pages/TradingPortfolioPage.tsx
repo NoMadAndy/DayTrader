@@ -27,9 +27,7 @@ import {
   formatPercent,
   getProductTypeName,
   getSideName,
-  getOrderTypeName,
   validateOrder,
-  createPendingOrder,
   checkTriggers,
   updatePositionLevels,
   resetPortfolio,
@@ -50,7 +48,6 @@ import type {
   ProductType,
   OrderSide,
   ExecuteOrderRequest,
-  OrderType,
   BrokerProfiles,
   BrokerProfileId,
 } from '../types/trading';
@@ -88,13 +85,9 @@ export function TradingPortfolioPage() {
   const [productType, setProductType] = useState<ProductType>('stock');
   const [side, setSide] = useState<OrderSide>('buy');
   const [quantity, setQuantity] = useState<string>('10');
-  const [leverage] = useState<number>(1);
+  const leverage = 1;
   const [stopLoss, setStopLoss] = useState<string>('');
   const [takeProfit, setTakeProfit] = useState<string>('');
-  const [orderType] = useState<OrderType>('market');
-  const [limitPrice] = useState<string>('');
-  const [stopOrderPrice] = useState<string>('');
-  
   // Order mode: stock vs warrant
   const [orderMode, setOrderMode] = useState<OrderMode>('stock');
   
@@ -105,6 +98,8 @@ export function TradingPortfolioPage() {
     days: number;
     price: number;
     delta: number;
+    volatility: number;
+    ratio: number;
   } | null>(null);
   const [warrantQuantity, setWarrantQuantity] = useState<string>('100');
   const [warrantSide, setWarrantSide] = useState<OrderSide>('buy');
@@ -355,64 +350,6 @@ export function TradingPortfolioPage() {
   const handleSubmitOrder = async () => {
     if (!portfolio || !feePreview) return;
     
-    // For pending orders (limit/stop)
-    if (orderType !== 'market') {
-      try {
-        setOrderLoading(true);
-        setError(null);
-        
-        const parsedLimitPrice = parseFloat(limitPrice);
-        const parsedStopPrice = parseFloat(stopOrderPrice);
-        
-        if (orderType === 'limit' && (isNaN(parsedLimitPrice) || parsedLimitPrice <= 0)) {
-          setError(t('trading.enterValidLimitPrice'));
-          return;
-        }
-        if (orderType === 'stop' && (isNaN(parsedStopPrice) || parsedStopPrice <= 0)) {
-          setError(t('trading.enterValidStopPrice'));
-          return;
-        }
-        if (orderType === 'stop_limit' && ((isNaN(parsedStopPrice) || parsedStopPrice <= 0) || (isNaN(parsedLimitPrice) || parsedLimitPrice <= 0))) {
-          setError(t('trading.enterValidBothPrices'));
-          return;
-        }
-        
-        const qty = parseInt(quantity) || 0;
-        if (qty <= 0) {
-          setError(t('trading.enterValidQuantity'));
-          return;
-        }
-        
-        const result = await createPendingOrder({
-          portfolioId: portfolio.id,
-          symbol: selectedSymbol,
-          side,
-          quantity: qty,
-          orderType: orderType as 'limit' | 'stop' | 'stop_limit',
-          limitPrice: orderType === 'limit' || orderType === 'stop_limit' ? parsedLimitPrice : undefined,
-          stopPrice: orderType === 'stop' || orderType === 'stop_limit' ? parsedStopPrice : undefined,
-          productType,
-          leverage: productType !== 'stock' ? leverage : 1,
-        });
-        
-        if (result.success) {
-          setSuccessMessage(`${t('trading.orderCreated')} ${selectedSymbol}`);
-          await loadPortfolioData();
-          setQuantity('10');
-          setLimitPrice('');
-          setStopOrderPrice('');
-          setTimeout(() => setSuccessMessage(null), 5000);
-        } else {
-          setError(result.error || t('trading.orderFailed'));
-        }
-      } catch (e) {
-        setError(e instanceof Error ? e.message : t('trading.orderFailed'));
-      } finally {
-        setOrderLoading(false);
-      }
-      return;
-    }
-    
     // Market order
     const qty = parseInt(quantity) || 0;
     if (qty <= 0) {
@@ -641,8 +578,6 @@ export function TradingPortfolioPage() {
     );
   }
   
-  const maxLeverage = 1;
-  const canShort = productType !== 'stock';
   
   // Handle warrant order execution
   const handleWarrantOrder = async () => {
@@ -650,7 +585,7 @@ export function TradingPortfolioPage() {
     
     const qty = parseInt(warrantQuantity) || 0;
     if (qty <= 0) {
-      setError('Bitte gültige Menge eingeben');
+      setError(t('trading.enterValidQuantity'));
       return;
     }
     
@@ -658,8 +593,8 @@ export function TradingPortfolioPage() {
       setWarrantTradeLoading(true);
       setError(null);
       
-      const ratio = 0.1;
-      const vol = 0.30;
+      const ratio = selectedWarrant.ratio;
+      const vol = selectedWarrant.volatility;
       const wpResult = await getWarrantPrice({
         underlyingPrice: currentPrice,
         strikePrice: selectedWarrant.strike,
@@ -671,7 +606,7 @@ export function TradingPortfolioPage() {
       });
       
       if (!wpResult.success || wpResult.warrant_price <= 0) {
-        setError('Warrant-Preis konnte nicht berechnet werden (OTM/wertlos?)');
+        setError(t('trading.warrantPriceError') || 'Warrant-Preis konnte nicht berechnet werden');
         return;
       }
       
@@ -703,10 +638,10 @@ export function TradingPortfolioPage() {
         await loadPortfolioData();
         setTimeout(() => setSuccessMessage(null), 5000);
       } else {
-        setError(result.error || 'Order fehlgeschlagen');
+        setError(result.error || t('trading.orderFailed'));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Order fehlgeschlagen');
+      setError(e instanceof Error ? e.message : t('trading.orderFailed'));
     } finally {
       setWarrantTradeLoading(false);
     }

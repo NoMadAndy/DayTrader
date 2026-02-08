@@ -44,6 +44,8 @@ export interface WarrantTradeParams {
   days: number;
   price: number;
   delta: number;
+  volatility: number;
+  ratio: number;
   quantity: number;
   side: OrderSide;
 }
@@ -90,6 +92,8 @@ export function WatchlistTableView({
     days: number;
     price: number;
     delta: number;
+    volatility: number;
+    ratio: number;
   } | null>(null);
   const [warrantQuantity, setWarrantQuantity] = useState('10');
   const [warrantSide, setWarrantSide] = useState<OrderSide>('buy');

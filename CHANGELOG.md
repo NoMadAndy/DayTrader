@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.36.1] - 2026-02-08
+
+### Fixed
+- **Watchlist-Legende**: Signal-Labels auf Mobile verkürzt (nur Emoji + Schwellenwert statt voller Text)
+- **Dashboard Signal-Legende**: "Quellen:" und Separator auf Mobile ausgeblendet, Agreement-Dots ohne Text
+- **Warrant-Preis-Inkonsistenz behoben**: OptionChainPanel übergibt jetzt Volatilität und Ratio an den Trade-Handler — Preis bei Kauf stimmt mit angezeigtem Preis überein
+- **Toter Code entfernt**: Unerreichbare Pending-Order-Logik (Limit/Stop/Stop-Limit) und unbenutzte Variablen (`maxLeverage`, `canShort`, `orderType`, `limitPrice`, `stopOrderPrice`) aus TradingPortfolioPage entfernt
+
+### Changed
+- `leverage` von `useState` zu einfacher Konstante geändert (immer 1)
+- Hardcodierte deutsche Fehlermeldungen durch i18n-Fallbacks (`t(...)`) ersetzt
+
 ## [1.36.0] - 2026-02-08
 
 ### Changed
