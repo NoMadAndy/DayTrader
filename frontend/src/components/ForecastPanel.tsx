@@ -196,14 +196,14 @@ export function ForecastPanel({ forecast, currentPrice }: ForecastPanelProps) {
 
       {/* Indicator Details */}
       <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-white font-semibold">{t('forecast.technicalIndicators')}</h3>
-          <div className="flex items-center gap-2 text-xs text-gray-500">
-            <span>{t('forecast.agreement')}:</span>
-            <span className="text-green-400">● {t('forecast.agreementStrong')}</span>
-            <span className="text-blue-400">◐ {t('forecast.agreementModerate')}</span>
-            <span className="text-yellow-400">○ {t('forecast.agreementWeak')}</span>
-            <span className="text-red-400">⚠ {t('forecast.agreementConflicting')}</span>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h3 className="text-white font-semibold text-sm sm:text-base">{t('forecast.technicalIndicators')}</h3>
+          <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs text-gray-500">
+            <span className="hidden sm:inline">{t('forecast.agreement')}:</span>
+            <span className="text-green-400">●<span className="hidden sm:inline"> {t('forecast.agreementStrong')}</span></span>
+            <span className="text-blue-400">◐<span className="hidden sm:inline"> {t('forecast.agreementModerate')}</span></span>
+            <span className="text-yellow-400">○<span className="hidden sm:inline"> {t('forecast.agreementWeak')}</span></span>
+            <span className="text-red-400">⚠<span className="hidden sm:inline"> {t('forecast.agreementConflicting')}</span></span>
           </div>
         </div>
         <div className="space-y-3">
