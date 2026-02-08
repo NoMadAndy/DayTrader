@@ -9,11 +9,34 @@ OptionChainPanel frontend component.
 """
 
 import logging
+import math
 from dataclasses import dataclass, asdict
 from typing import Optional
 from datetime import datetime, date
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_float(val, default: float = 0.0) -> float:
+    """Safely convert a value to float, handling NaN/None."""
+    if val is None:
+        return default
+    try:
+        f = float(val)
+        return default if math.isnan(f) or math.isinf(f) else f
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_int(val, default: int = 0) -> int:
+    """Safely convert a value to int, handling NaN/None."""
+    if val is None:
+        return default
+    try:
+        f = float(val)
+        return default if math.isnan(f) or math.isinf(f) else int(f)
+    except (ValueError, TypeError):
+        return default
 
 
 @dataclass
@@ -124,17 +147,17 @@ async def fetch_yahoo_options(symbol: str, underlying_price: float = 0) -> Optio
             # Process calls
             if chain.calls is not None and len(chain.calls) > 0:
                 for _, row in chain.calls.iterrows():
-                    strike = float(row.get('strike', 0))
+                    strike = _safe_float(row.get('strike', 0))
                     if strike <= 0:
                         continue
                     all_strikes.add(strike)
                     
-                    iv = float(row.get('impliedVolatility', 0))
-                    last = float(row.get('lastPrice', 0))
-                    bid = float(row.get('bid', 0))
-                    ask = float(row.get('ask', 0))
-                    vol = int(row.get('volume', 0) or 0)
-                    oi = int(row.get('openInterest', 0) or 0)
+                    iv = _safe_float(row.get('impliedVolatility', 0))
+                    last = _safe_float(row.get('lastPrice', 0))
+                    bid = _safe_float(row.get('bid', 0))
+                    ask = _safe_float(row.get('ask', 0))
+                    vol = _safe_int(row.get('volume', 0))
+                    oi = _safe_int(row.get('openInterest', 0))
                     itm = bool(row.get('inTheMoney', False))
                     contract = str(row.get('contractSymbol', ''))
                     
@@ -160,17 +183,17 @@ async def fetch_yahoo_options(symbol: str, underlying_price: float = 0) -> Optio
             # Process puts
             if chain.puts is not None and len(chain.puts) > 0:
                 for _, row in chain.puts.iterrows():
-                    strike = float(row.get('strike', 0))
+                    strike = _safe_float(row.get('strike', 0))
                     if strike <= 0:
                         continue
                     all_strikes.add(strike)
                     
-                    iv = float(row.get('impliedVolatility', 0))
-                    last = float(row.get('lastPrice', 0))
-                    bid = float(row.get('bid', 0))
-                    ask = float(row.get('ask', 0))
-                    vol = int(row.get('volume', 0) or 0)
-                    oi = int(row.get('openInterest', 0) or 0)
+                    iv = _safe_float(row.get('impliedVolatility', 0))
+                    last = _safe_float(row.get('lastPrice', 0))
+                    bid = _safe_float(row.get('bid', 0))
+                    ask = _safe_float(row.get('ask', 0))
+                    vol = _safe_int(row.get('volume', 0))
+                    oi = _safe_int(row.get('openInterest', 0))
                     itm = bool(row.get('inTheMoney', False))
                     contract = str(row.get('contractSymbol', ''))
                     
