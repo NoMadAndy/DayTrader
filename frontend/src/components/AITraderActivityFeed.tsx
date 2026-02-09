@@ -38,10 +38,18 @@ export function AITraderActivityFeed({
   enableVibration = false,
   enableFlash = true,
 }: AITraderActivityFeedProps) {
+  const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const prevEventCountRef = useRef(events.length);
   const [flashingIndices, setFlashingIndices] = useState<Set<number>>(new Set());
   const audioContextRef = useRef<AudioContext | null>(null);
+  
+  // Navigate to symbol details (trading page with symbol)
+  const navigateToSymbol = useCallback((symbol: string) => {
+    if (symbol) {
+      navigate(`/trading?symbol=${encodeURIComponent(symbol)}`);
+    }
+  }, [navigate]);
   
   // Sort events by timestamp (newest first) to ensure correct display order
   const sortedEvents = useMemo(() => {

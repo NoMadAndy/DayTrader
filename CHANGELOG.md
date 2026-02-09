@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.37.2] - 2026-02-09
+
+### Fixed
+- **AI Trader Mobile Responsive** - Stats-Zeile vollständig responsive:
+  - Grid von `grid-cols-3` zu `grid-cols-2 sm:grid-cols-3 md:grid-cols-6`
+  - Schriftgrößen optimiert für kleine Screens
+  - `truncate` für lange Werte
+- **Trade Hervorhebung verbessert** - Neue Trades deutlicher sichtbar:
+  - Sehr neue Trades (< 1h): Blauer Hintergrund, Ring, Glow, Puls-Animation, `✨ NEU` Badge
+  - Neuere Trades (1-6h): Dezenter blauer Ring, Zeitanzeige `🕐 2h`
+- **Entscheidungsgrund (summaryShort)** - Fehlte in API-Response:
+  - Neue `formatDecisionForApi()` Funktion für snake_case → camelCase Transformation
+  - Frontend `transformDecision` akzeptiert jetzt beide Formate
+- **TradeReasoningCard Crash** - Fallback für unbekannte Decision-Types hinzugefügt
+- **Fehlende Komponenten wiederhergestellt**:
+  - AITraderCard, AITraderSettingsModal, AITraderDecisionModal
+  - TradeDetailCard, RLAgentDetailModal, AITraderWeightHistoryChart
+  - ApiConfigPanel, HamburgerMenu, DataFreshnessIndicator, ApiQuotaDisplay
+- **TypeScript-Fehler** - Fehlende Properties in AITraderRiskConfig/AITraderCapitalConfig
+
 ## [1.37.1] - 2026-02-08
 
 ### Fixed

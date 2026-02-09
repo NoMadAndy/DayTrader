@@ -47,7 +47,7 @@ import {
 import type { NewsItem } from '../services/types';
 import { getOrCreatePortfolio, executeMarketOrder, getPortfolioMetrics, getWarrantPrice } from '../services/tradingService';
 import { useSettings } from '../contexts/SettingsContext';
-import type { Portfolio, PortfolioMetrics, OrderSide, ProductType } from '../types/trading';
+import type { Portfolio, PortfolioMetrics, OrderSide, ProductType, Greeks } from '../types/trading';
 import { OptionChainPanel } from './OptionChainPanel';
 import { 
   EXCHANGES, 
@@ -184,7 +184,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
 
       // For warrants: calculate warrant price from underlying price via Black-Scholes
       let effectivePrice = price; // For stocks/CFDs: use stock price directly
-      let warrantGreeks: Record<string, number> | undefined;
+      let warrantGreeks: Greeks | undefined;
       if (productType === 'warrant') {
         const strike = parseFloat(warrantStrike);
         const ratio = parseFloat(warrantRatio) || 0.1;

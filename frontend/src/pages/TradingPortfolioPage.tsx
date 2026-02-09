@@ -77,7 +77,7 @@ export function TradingPortfolioPage() {
   const [brokerProfiles, setBrokerProfiles] = useState<BrokerProfiles | null>(null);
   
   // Configuration
-  const [productTypes, setProductTypes] = useState<ProductTypes | null>(null);
+  const [_productTypes, setProductTypes] = useState<ProductTypes | null>(null);
   
   // Trading form - initialize from URL param if present
   const [selectedSymbol, setSelectedSymbol] = useState(() => searchParams.get('symbol') || 'AAPL');

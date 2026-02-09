@@ -349,7 +349,7 @@ export function AITraderConfigModal({ trader, isOpen, onClose, onSaved }: AITrad
   const [availableRLAgents, setAvailableRLAgents] = useState<RLAgentStatus[]>([]);
   const [availableSymbols, setAvailableSymbols] = useState<AvailableSymbol[]>([]);
   const [userWatchlistSymbols, setUserWatchlistSymbols] = useState<string[]>([]);
-  const [loadingData, setLoadingData] = useState(false);
+  const [_loadingData, setLoadingData] = useState(false);
 
   // ============================================================================
   // Load data

@@ -247,33 +247,33 @@ export function AITraderPage() {
   
   const { reports } = useAITraderReports(traderId);
   
-  // Helper function to transform decision data from snake_case to camelCase
+  // Helper function to transform decision data (handles both snake_case and camelCase)
   const transformDecision = useCallback((d: Record<string, unknown>): AITraderDecision => ({
     id: d.id as number,
-    aiTraderId: d.ai_trader_id as number,
+    aiTraderId: (d.aiTraderId ?? d.ai_trader_id) as number,
     timestamp: d.timestamp as string,
     symbol: d.symbol as string,
-    symbolsAnalyzed: (d.symbols_analyzed || []) as string[],
-    decisionType: d.decision_type as AITraderDecision['decisionType'],
+    symbolsAnalyzed: (d.symbolsAnalyzed ?? d.symbols_analyzed ?? []) as string[],
+    decisionType: (d.decisionType ?? d.decision_type) as AITraderDecision['decisionType'],
     reasoning: (d.reasoning || {}) as AITraderDecision['reasoning'],
     executed: d.executed as boolean,
-    positionId: d.position_id as number | null,
-    orderId: d.order_id as number | null,
-    executionError: d.execution_error as string | null,
-    confidence: parseFloat(String(d.confidence)) || 0,
-    weightedScore: parseFloat(String(d.weighted_score)) || 0,
-    mlScore: parseFloat(String(d.ml_score)) || 0,
-    rlScore: parseFloat(String(d.rl_score)) || 0,
-    sentimentScore: parseFloat(String(d.sentiment_score)) || 0,
-    technicalScore: parseFloat(String(d.technical_score)) || 0,
-    signalAgreement: d.signal_agreement as AITraderDecision['signalAgreement'],
-    summaryShort: d.summary_short as string | null,
-    marketContext: (d.market_context || {}) as AITraderDecision['marketContext'],
-    portfolioSnapshot: (d.portfolio_snapshot || {}) as AITraderDecision['portfolioSnapshot'],
-    outcomePnl: d.outcome_pnl as number | null,
-    outcomePnlPercent: d.outcome_pnl_percent as number | null,
-    outcomeHoldingDays: d.outcome_holding_days as number | null,
-    outcomeWasCorrect: d.outcome_was_correct as boolean | null,
+    positionId: (d.positionId ?? d.position_id) as number | null,
+    orderId: (d.orderId ?? d.order_id) as number | null,
+    executionError: (d.executionError ?? d.execution_error) as string | null,
+    confidence: parseFloat(String(d.confidence ?? 0)) || 0,
+    weightedScore: parseFloat(String(d.weightedScore ?? d.weighted_score ?? 0)) || 0,
+    mlScore: parseFloat(String(d.mlScore ?? d.ml_score ?? 0)) || 0,
+    rlScore: parseFloat(String(d.rlScore ?? d.rl_score ?? 0)) || 0,
+    sentimentScore: parseFloat(String(d.sentimentScore ?? d.sentiment_score ?? 0)) || 0,
+    technicalScore: parseFloat(String(d.technicalScore ?? d.technical_score ?? 0)) || 0,
+    signalAgreement: (d.signalAgreement ?? d.signal_agreement) as AITraderDecision['signalAgreement'],
+    summaryShort: (d.summaryShort ?? d.summary_short) as string | null,
+    marketContext: (d.marketContext ?? d.market_context ?? {}) as AITraderDecision['marketContext'],
+    portfolioSnapshot: (d.portfolioSnapshot ?? d.portfolio_snapshot ?? {}) as AITraderDecision['portfolioSnapshot'],
+    outcomePnl: (d.outcomePnl ?? d.outcome_pnl) as number | null,
+    outcomePnlPercent: (d.outcomePnlPercent ?? d.outcome_pnl_percent) as number | null,
+    outcomeHoldingDays: (d.outcomeHoldingDays ?? d.outcome_holding_days) as number | null,
+    outcomeWasCorrect: (d.outcomeWasCorrect ?? d.outcome_was_correct) as boolean | null,
   }), []);
   
   // Load all trader data (trader details, decisions, positions, portfolio)
@@ -807,13 +807,13 @@ export function AITraderPage() {
                     // Time-based coloring
                     const tradeAge = Date.now() - new Date(trade.timestamp).getTime();
                     const hoursOld = tradeAge / 3600000;
-                    const freshness = Math.max(0.4, 1.0 - (hoursOld / 48) * 0.6);
+                    const freshness = Math.max(0.5, 1.0 - (hoursOld / 72) * 0.5);
                     const isVeryRecent = hoursOld < 1;
                     const isRecent = hoursOld < 6;
                     const freshnessStyle = { opacity: freshness };
                     const recentGlow = isVeryRecent 
-                      ? 'ring-1 ring-blue-400/40 shadow-lg shadow-blue-500/10' 
-                      : isRecent ? 'ring-1 ring-slate-500/30' : '';
+                      ? 'ring-2 ring-blue-400/60 shadow-lg shadow-blue-500/30 animate-pulse' 
+                      : isRecent ? 'ring-1 ring-blue-400/30 shadow-md shadow-blue-500/10' : '';
                     
                     // Calculate SL/TP distances for risk/reward
                     const refPrice = isBuy ? trade.price : (trade.entryPrice || trade.price);
@@ -824,11 +824,16 @@ export function AITraderPage() {
                     const rrRatio = (slDistPct != null && tpDistPct != null && Math.abs(slDistPct) > 0)
                       ? Math.abs(tpDistPct / slDistPct) : null;
                     
+                    // Background color based on freshness
+                    const bgColor = isVeryRecent 
+                      ? 'bg-blue-900/40' 
+                      : isRecent ? 'bg-slate-800/60' : 'bg-slate-900/50';
+                    
                     return (
                     <div 
                       key={trade.id}
                       style={freshnessStyle}
-                      className={`bg-slate-900/50 rounded-lg border-l-[3px] ${borderColor} ${recentGlow} transition-all`}
+                      className={`${bgColor} rounded-lg border-l-[3px] ${borderColor} ${recentGlow} transition-all duration-500`}
                     >
                       {/* Header: Symbol + Action + Time + P&L (for closes) */}
                       <div
@@ -847,7 +852,10 @@ export function AITraderPage() {
                             {isBuy ? '📥' : '📤'} {actionLabel}
                           </span>
                           {isVeryRecent && (
-                            <span className="px-1.5 py-0.5 rounded bg-blue-500/30 text-blue-300 text-[10px] font-semibold animate-pulse">NEU</span>
+                            <span className="px-2 py-0.5 rounded-md bg-blue-500 text-white text-[10px] font-bold animate-pulse shadow-lg shadow-blue-500/50">✨ NEU</span>
+                          )}
+                          {!isVeryRecent && isRecent && (
+                            <span className="text-[10px] text-blue-400">🕐 {Math.floor(hoursOld)}h</span>
                           )}
                         </div>
                         <div className="flex items-center gap-2">

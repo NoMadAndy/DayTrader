@@ -34,6 +34,8 @@ const SIGNAL_COLORS: Record<DecisionType, { bg: string; text: string; emoji: str
   skip: { bg: 'bg-gray-500/15', text: 'text-gray-400', emoji: '⏭️' },
 };
 
+const DEFAULT_SIGNAL_STYLE = { bg: 'bg-gray-500/15', text: 'text-gray-400', emoji: '❓' };
+
 export function TradeReasoningCard({ decision, expanded: controlledExpanded, onToggle, isNew = false }: TradeReasoningCardProps) {
   const navigateToSymbol = useNavigateToSymbol();
   
@@ -46,7 +48,7 @@ export function TradeReasoningCard({ decision, expanded: controlledExpanded, onT
   const isExpanded = controlledExpanded !== undefined ? controlledExpanded : internalExpanded;
   const handleToggle = onToggle || (() => setInternalExpanded(!internalExpanded));
   
-  const signalStyle = SIGNAL_COLORS[decision.decisionType];
+  const signalStyle = SIGNAL_COLORS[decision.decisionType] || DEFAULT_SIGNAL_STYLE;
   const timestamp = new Date(decision.timestamp).toLocaleString('de-DE', {
     day: '2-digit',
     month: '2-digit',

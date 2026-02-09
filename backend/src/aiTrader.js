@@ -166,6 +166,44 @@ export function formatTraderForApi(trader) {
   };
 }
 
+/**
+ * Format decision object for API response (snake_case to camelCase).
+ * 
+ * @param {object} decision - Decision object from database
+ * @returns {object} Formatted decision object for API response
+ */
+export function formatDecisionForApi(decision) {
+  if (!decision) return null;
+  
+  return {
+    id: decision.id,
+    aiTraderId: decision.ai_trader_id,
+    timestamp: decision.timestamp,
+    symbol: decision.symbol,
+    symbolsAnalyzed: decision.symbols_analyzed || [],
+    decisionType: decision.decision_type,
+    reasoning: decision.reasoning,
+    executed: decision.executed,
+    positionId: decision.position_id,
+    orderId: decision.order_id,
+    executionError: decision.execution_error,
+    confidence: decision.confidence !== null ? parseFloat(decision.confidence) : null,
+    weightedScore: decision.weighted_score !== null ? parseFloat(decision.weighted_score) : null,
+    mlScore: decision.ml_score !== null ? parseFloat(decision.ml_score) : null,
+    rlScore: decision.rl_score !== null ? parseFloat(decision.rl_score) : null,
+    sentimentScore: decision.sentiment_score !== null ? parseFloat(decision.sentiment_score) : null,
+    technicalScore: decision.technical_score !== null ? parseFloat(decision.technical_score) : null,
+    signalAgreement: decision.signal_agreement,
+    summaryShort: decision.summary_short,
+    marketContext: decision.market_context,
+    portfolioSnapshot: decision.portfolio_snapshot,
+    outcomePnl: decision.outcome_pnl !== null ? parseFloat(decision.outcome_pnl) : null,
+    outcomePnlPercent: decision.outcome_pnl_percent !== null ? parseFloat(decision.outcome_pnl_percent) : null,
+    outcomeHoldingDays: decision.outcome_holding_days,
+    outcomeWasCorrect: decision.outcome_was_correct,
+  };
+}
+
 // ============================================================================
 // Default Personality Configuration
 // ============================================================================
@@ -753,7 +791,7 @@ export async function getDecisions(aiTraderId, limit = 50, offset = 0) {
      LIMIT $2 OFFSET $3`,
     [aiTraderId, limit, offset]
   );
-  return result.rows;
+  return result.rows.map(formatDecisionForApi);
 }
 
 /**
@@ -766,7 +804,7 @@ export async function getDecision(decisionId) {
     'SELECT * FROM ai_trader_decisions WHERE id = $1',
     [decisionId]
   );
-  return result.rows[0] || null;
+  return formatDecisionForApi(result.rows[0]);
 }
 
 // ============================================================================
