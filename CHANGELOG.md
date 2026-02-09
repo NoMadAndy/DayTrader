@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.37.3] - 2026-02-09
+
+### Fixed
+- **AI Trader Header vollständig responsive** - Header in zwei Zeilen aufgeteilt:
+  - Zeile 1: Zurück + Trader-Info + Status + Settings + Live-Indikator
+  - Zeile 2: Control-Buttons (▶️⏸️⏹️) + Markt-Status + Overall Stats
+  - StatusMessage als eigene Zeile auf Mobile (`line-clamp-2`)
+  - Trader-Name mit `max-w-[120px]` auf kleinen Screens
+  - Stats-Grid: `grid-cols-2 sm:grid-cols-3 lg:grid-cols-5` für alle Breakpoints
+
 ## [1.37.2] - 2026-02-09
 
 ### Fixed
