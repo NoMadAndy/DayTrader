@@ -194,7 +194,7 @@ export async function initializeTradingSchema() {
         opened_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         last_overnight_charge TIMESTAMP WITH TIME ZONE,
         closed_at TIMESTAMP WITH TIME ZONE,
-        close_reason VARCHAR(50),
+        close_reason VARCHAR(255),
         close_price DECIMAL(15,4),
         realized_pnl DECIMAL(15,4),
         

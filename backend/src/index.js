@@ -4981,12 +4981,13 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
           position = updateResult.rows[0];
         } else {
           // Create new position with effective price (spread + slippage included)
+          // Note: close_reason is NULL for new positions (only set when closing)
           const insertResult = await client.query(
             `INSERT INTO positions (portfolio_id, symbol, side, quantity, entry_price, current_price, 
-             stop_loss, take_profit, product_type, is_open, close_reason, total_fees_paid, open_fee, opened_at)
-             VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, true, $9, $10, $10, NOW())
+             stop_loss, take_profit, product_type, is_open, total_fees_paid, open_fee, opened_at)
+             VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, true, $9, $9, NOW())
              RETURNING *`,
-            [portfolio.id, symbol, side, Math.abs(quantity), finalPrice, stop_loss, take_profit, productType, reasoning, orderFee]
+            [portfolio.id, symbol, side, Math.abs(quantity), finalPrice, stop_loss, take_profit, productType, orderFee]
           );
           position = insertResult.rows[0];
         }

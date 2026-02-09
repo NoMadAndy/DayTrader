@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.37.4] - 2026-02-09
+
+### Fixed
+- **Entscheidungsgrund immer leer** - Root cause: `/execute`-Route schrieb `reasoning` (JSON) in `close_reason` (varchar(50)), was einen DB-Fehler (22001 string_data_right_truncation) auslöste
+  - Alle Trade-Executions schlugen mit HTTP 500 fehl
+  - Dadurch wurde `executed` nie auf `true` gesetzt
+  - `/trades`-Endpoint JOIN fand keine Matches
+  - Fix: `close_reason` bei Position-Eröffnung korrekt auf `NULL` gesetzt
+  - `close_reason` Spalte von `varchar(50)` auf `varchar(255)` erweitert
+
 ## [1.37.3] - 2026-02-09
 
 ### Fixed
