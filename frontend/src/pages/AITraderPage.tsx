@@ -556,139 +556,89 @@ export function AITraderPage() {
         soundEnabled={notificationSettings.sound}
       />
       
-      <div className="max-w-[1600px] mx-auto px-2 sm:px-4 py-2 sm:py-3 space-y-2">
-      {/* Compact Header: Back + Name + Status + Controls + Market + Live */}
-      <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 px-3 py-2 space-y-2">
-        {/* Row 1: Back + Trader Info + Settings + Live */}
-        <div className="flex items-center justify-between gap-2">
-          {/* Left: Back + Trader Info + Status */}
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <button
-              onClick={() => navigate('/ai-traders')}
-              className="p-1 hover:bg-slate-700/50 rounded transition-colors flex-shrink-0"
-              title="Zurück"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <span className="text-xl flex-shrink-0">{trader.avatar}</span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-sm sm:text-base font-bold truncate max-w-[120px] sm:max-w-none">{trader.name}</h1>
-                {/* Status Badge */}
-                {(() => {
-                  const statusStyles: Record<string, { bg: string; text: string; icon: string }> = {
-                    running: { bg: 'bg-green-500/20', text: 'text-green-400', icon: '▶️' },
-                    paused: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', icon: '⏸️' },
-                    stopped: { bg: 'bg-slate-500/20', text: 'text-slate-400', icon: '⏹️' },
-                    error: { bg: 'bg-red-500/20', text: 'text-red-400', icon: '❌' },
-                  };
-                  const s = statusStyles[trader.status] || statusStyles.stopped;
-                  return (
-                    <span className={`px-1.5 py-0.5 rounded-full ${s.bg} ${s.text} text-[10px] font-medium uppercase flex items-center gap-1 flex-shrink-0`}>
-                      <span>{s.icon}</span> <span className="hidden xs:inline">{trader.status}</span>
-                    </span>
-                  );
-                })()}
-              </div>
-            </div>
-          </div>
+      <div className="max-w-[1600px] mx-auto px-2 sm:px-4 py-1 sm:py-2 space-y-1.5">
+      {/* Ultra-Compact Header: Everything in minimal space */}
+      <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 px-2 py-1.5">
+        {/* Single Row: Back + Name + Controls + Market + Settings + Live */}
+        <div className="flex items-center gap-1.5">
+          {/* Back */}
+          <button
+            onClick={() => navigate('/ai-traders')}
+            className="p-0.5 hover:bg-slate-700/50 rounded transition-colors flex-shrink-0"
+            title="Zurück"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <span className="text-lg flex-shrink-0">{trader.avatar}</span>
+          <h1 className="text-sm font-bold truncate max-w-[100px] sm:max-w-[200px]">{trader.name}</h1>
           
-          {/* Right on Row 1: Settings + Connection (always visible) */}
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            {/* Settings */}
-            <button onClick={() => setShowSettings(true)}
-              className="p-1 rounded hover:bg-slate-700/50 transition-colors" title="Einstellungen">⚙️</button>
-            
-            {/* Connection */}
-            <button onClick={reconnect}
-              className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors ${
-                connected ? 'hover:bg-slate-700/50' : 'bg-red-500/20'
-              }`}
-              title={connected ? `${mode === 'sse' ? 'SSE' : 'Polling'}` : 'Reconnect'}
-            >
-              <div className={`w-1.5 h-1.5 rounded-full ${connected ? mode === 'sse' ? 'bg-green-500 animate-pulse' : 'bg-yellow-500' : 'bg-red-500'}`} />
-              <span className="text-[10px] text-gray-400">{connected ? mode === 'sse' ? 'Live' : 'Poll' : '…'}</span>
-            </button>
-          </div>
-        </div>
-        
-        {/* Status Message - separate line on mobile for better readability */}
-        {trader.statusMessage && (
-          <p className="text-[10px] text-gray-500 line-clamp-2 sm:hidden">{trader.statusMessage}</p>
-        )}
-        
-        {/* Row 2: Controls + Market Status + Overall Stats */}
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          {/* Left: Control Buttons + Market */}
-          <div className="flex items-center gap-1.5">
-            {/* Control Buttons */}
-            <button onClick={handleStart} disabled={trader.status === 'running'}
-              className="px-2 py-1 bg-green-600 hover:bg-green-700 disabled:bg-slate-700 disabled:text-gray-500 rounded text-xs transition-colors">▶️</button>
-            <button onClick={handlePause} disabled={trader.status !== 'running'}
-              className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 disabled:bg-slate-700 disabled:text-gray-500 rounded text-xs transition-colors">⏸️</button>
-            <button onClick={handleStop} disabled={trader.status === 'stopped'}
-              className="px-2 py-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-700 disabled:text-gray-500 rounded text-xs transition-colors">⏹️</button>
-            
-            <div className="w-px h-5 bg-slate-700 mx-0.5" />
-            
-            {/* Market Status */}
-            {(() => {
-              const schedule = trader.personality?.schedule;
-              const tradingStart = schedule?.tradingStart || '15:30';
-              const tradingEnd = schedule?.tradingEnd || '22:00';
-              const isOpen = trader.tradingTime;
-              return (
-                <div className={`px-2 py-0.5 rounded flex items-center gap-1 text-xs font-medium ${
-                  isOpen ? 'bg-green-500/20 border border-green-500/40' : 'bg-amber-500/20 border border-amber-500/40'
-                }`}
-                  title={`${tradingStart} - ${tradingEnd} (${schedule?.timezone || 'Europe/Berlin'})`}
-                >
-                  <span className="text-sm">{isOpen ? '🟢' : '🟡'}</span>
-                  <span className="hidden md:inline">{isOpen ? 'Markt offen' : `Geschlossen (${tradingStart}–${tradingEnd})`}</span>
-                  <span className="md:hidden">{isOpen ? 'Offen' : 'Geschl.'}</span>
-                </div>
-              );
-            })()}
-          </div>
-          
-          {/* Right: Compact Overall Stats (only on larger screens) */}
+          {/* Status Badge - icon only on mobile */}
           {(() => {
-            const closedTrades = trader.winningTrades + trader.losingTrades;
-            const winRate = closedTrades > 0 ? (trader.winningTrades / closedTrades) * 100 : null;
-            const pnl = portfolio?.pnl ?? 0;
-            const pnlColor = pnl >= 0 ? 'text-green-400' : 'text-red-400';
-            const pnlBg = pnl >= 0 ? 'bg-green-500/15' : 'bg-red-500/15';
+            const statusStyles: Record<string, { bg: string; text: string; icon: string }> = {
+              running: { bg: 'bg-green-500/20', text: 'text-green-400', icon: '▶️' },
+              paused: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', icon: '⏸️' },
+              stopped: { bg: 'bg-slate-500/20', text: 'text-slate-400', icon: '⏹️' },
+              error: { bg: 'bg-red-500/20', text: 'text-red-400', icon: '❌' },
+            };
+            const s = statusStyles[trader.status] || statusStyles.stopped;
             return (
-              <div className={`hidden sm:flex items-center gap-2 px-2 py-1 rounded-lg ${pnlBg} border ${pnl >= 0 ? 'border-green-500/30' : 'border-red-500/30'}`}>
-                <div className="text-right">
-                  <div className={`text-xs font-bold ${pnlColor}`}>
-                    {pnl >= 0 ? '+' : ''}{pnl.toFixed(1)}%
-                  </div>
-                  <div className="text-[8px] text-gray-400">P&L</div>
-                </div>
-                <div className="w-px h-5 bg-slate-600" />
-                <div className="text-right">
-                  <div className={`text-xs font-bold ${winRate != null ? (winRate >= 50 ? 'text-green-400' : 'text-red-400') : 'text-gray-400'}`}>
-                    {winRate != null ? `${winRate.toFixed(0)}%` : '-'}
-                  </div>
-                  <div className="text-[8px] text-gray-400">{trader.winningTrades}W/{trader.losingTrades}L</div>
-                </div>
-                {trader.currentStreak !== 0 && (
-                  <>
-                    <div className="w-px h-5 bg-slate-600" />
-                    <div className="text-right">
-                      <div className={`text-xs font-bold ${trader.currentStreak > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {trader.currentStreak > 0 ? '🔥' : '❄️'}{Math.abs(trader.currentStreak)}
-                      </div>
-                    </div>
-                  </>
-                )}
+              <span className={`px-1 py-0.5 rounded-full ${s.bg} ${s.text} text-[10px] flex-shrink-0`}>
+                {s.icon}
+              </span>
+            );
+          })()}
+          
+          {/* Spacer */}
+          <div className="flex-1" />
+          
+          {/* Control Buttons - compact */}
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            <button onClick={handleStart} disabled={trader.status === 'running'}
+              className="px-1.5 py-0.5 bg-green-600 hover:bg-green-700 disabled:bg-slate-700 disabled:text-gray-500 rounded text-[10px] transition-colors">▶️</button>
+            <button onClick={handlePause} disabled={trader.status !== 'running'}
+              className="px-1.5 py-0.5 bg-yellow-600 hover:bg-yellow-700 disabled:bg-slate-700 disabled:text-gray-500 rounded text-[10px] transition-colors">⏸️</button>
+            <button onClick={handleStop} disabled={trader.status === 'stopped'}
+              className="px-1.5 py-0.5 bg-red-600 hover:bg-red-700 disabled:bg-slate-700 disabled:text-gray-500 rounded text-[10px] transition-colors">⏹️</button>
+          </div>
+          
+          {/* Market Status - minimal */}
+          {(() => {
+            const schedule = trader.personality?.schedule;
+            const tradingStart = schedule?.tradingStart || '15:30';
+            const tradingEnd = schedule?.tradingEnd || '22:00';
+            const isOpen = trader.tradingTime;
+            return (
+              <div className={`px-1.5 py-0.5 rounded flex items-center gap-1 text-[10px] font-medium flex-shrink-0 ${
+                isOpen ? 'bg-green-500/20 border border-green-500/40' : 'bg-amber-500/20 border border-amber-500/40'
+              }`}
+                title={`${tradingStart} - ${tradingEnd} (${schedule?.timezone || 'Europe/Berlin'})`}
+              >
+                <span className="text-xs">{isOpen ? '🟢' : '🟡'}</span>
+                <span className="hidden sm:inline text-xs">{isOpen ? 'Offen' : 'Geschl.'}</span>
               </div>
             );
           })()}
+          
+          {/* Settings + Connection */}
+          <button onClick={() => setShowSettings(true)}
+            className="p-0.5 rounded hover:bg-slate-700/50 transition-colors flex-shrink-0 text-sm" title="Einstellungen">⚙️</button>
+          <button onClick={reconnect}
+            className={`flex items-center gap-0.5 px-1 py-0.5 rounded transition-colors flex-shrink-0 ${
+              connected ? 'hover:bg-slate-700/50' : 'bg-red-500/20'
+            }`}
+            title={connected ? `${mode === 'sse' ? 'SSE' : 'Polling'}` : 'Reconnect'}
+          >
+            <div className={`w-1.5 h-1.5 rounded-full ${connected ? mode === 'sse' ? 'bg-green-500 animate-pulse' : 'bg-yellow-500' : 'bg-red-500'}`} />
+            <span className="text-[9px] text-gray-400">{connected ? mode === 'sse' ? 'Live' : 'Poll' : '…'}</span>
+          </button>
         </div>
+        
+        {/* Status Message - only if exists, single line */}
+        {trader.statusMessage && (
+          <p className="text-[9px] text-gray-500 truncate mt-0.5 pl-7">{trader.statusMessage}</p>
+        )}
       </div>
       
       {/* Settings Modal (unified config modal) */}
@@ -701,68 +651,61 @@ export function AITraderPage() {
         />
       )}
       
-      {/* Compact Stats Row */}
-      <div className="space-y-1.5">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5">
-          {portfolio && (
-            <>
-              <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
-                <div className="text-[10px] text-gray-500">💰 Cash</div>
-                <div className="text-sm font-bold">${portfolio.cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-              </div>
-              <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
-                <div className="text-[10px] text-gray-500">📊 Wert</div>
-                <div className="text-sm font-bold">${portfolio.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-              </div>
-              <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
-                <div className="text-[10px] text-gray-500">📈 Unreal.</div>
-                <div className={`text-sm font-bold ${(portfolio.unrealizedPnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {(portfolio.unrealizedPnl || 0) >= 0 ? '+' : ''}${(portfolio.unrealizedPnl || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                </div>
-              </div>
-            </>
-          )}
-          <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1.5">
-            <div className="text-[10px] text-gray-500">🎯 Trades</div>
-            <div className="text-sm font-bold">{portfolio?.tradesExecuted ?? 0}</div>
-          </div>
-          <div className="bg-slate-800/50 rounded border border-orange-500/30 px-2 py-1.5">
-            <div className="text-[10px] text-orange-400/70">🏦 Gebühren</div>
-            <div className="text-sm font-bold text-orange-400">
-              ${(portfolio?.totalFees ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+      {/* Inline Stats Bar - single horizontal row */}
+      <div className="flex gap-1 overflow-x-auto">
+        {portfolio && (
+          <>
+            <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1 min-w-0 flex-1">
+              <div className="text-[9px] text-gray-500">💰 Cash</div>
+              <div className="text-xs font-bold">${portfolio.cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
             </div>
-            {portfolio?.brokerName && (
-              <div className="text-[8px] text-gray-500 truncate">{portfolio.brokerName}</div>
-            )}
-          </div>
+            <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1 min-w-0 flex-1">
+              <div className="text-[9px] text-gray-500">📊 Wert</div>
+              <div className="text-xs font-bold">${portfolio.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+            </div>
+            <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1 min-w-0 flex-1">
+              <div className="text-[9px] text-gray-500">📈 P&L</div>
+              <div className={`text-xs font-bold ${(portfolio.unrealizedPnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {(portfolio.unrealizedPnl || 0) >= 0 ? '+' : ''}${(portfolio.unrealizedPnl || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </div>
+            </div>
+          </>
+        )}
+        <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1 min-w-0 flex-1">
+          <div className="text-[9px] text-gray-500">🎯 Trades</div>
+          <div className="text-xs font-bold">{portfolio?.tradesExecuted ?? 0}</div>
+        </div>
+        <div className="bg-slate-800/50 rounded border border-orange-500/30 px-2 py-1 min-w-0 flex-1">
+          <div className="text-[9px] text-orange-400/70">🏦 Gebühr</div>
+          <div className="text-xs font-bold text-orange-400">${(portfolio?.totalFees ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
         </div>
       </div>
       
-      {/* Tab Navigation - compact */}
+      {/* Tab Navigation - minimal */}
       <div className="bg-slate-800/50 rounded border border-slate-700/50 p-0.5 flex gap-0.5">
         <button
           onClick={() => setActiveTab('activity')}
-          className={`flex-1 px-1.5 sm:px-3 py-1.5 rounded text-xs sm:text-sm transition-colors ${
+          className={`flex-1 px-1.5 sm:px-3 py-1 rounded text-xs transition-colors ${
             activeTab === 'activity' ? 'bg-blue-500 text-white' : 'text-gray-400 hover:bg-slate-700/50'
           }`}
         >
-          🔴 <span className="hidden sm:inline">Live Activity</span><span className="sm:hidden">Live</span>
+          🔴 <span className="hidden sm:inline">Live</span><span className="sm:hidden">Live</span>
         </button>
         <button
           onClick={() => setActiveTab('reports')}
-          className={`flex-1 px-1.5 sm:px-3 py-1.5 rounded text-xs sm:text-sm transition-colors ${
+          className={`flex-1 px-1.5 sm:px-3 py-1 rounded text-xs transition-colors ${
             activeTab === 'reports' ? 'bg-blue-500 text-white' : 'text-gray-400 hover:bg-slate-700/50'
           }`}
         >
-          📊 <span className="hidden sm:inline">Reports</span><span className="sm:hidden">Rep.</span>
+          📊 Rep.
         </button>
         <button
           onClick={() => setActiveTab('analytics')}
-          className={`flex-1 px-1.5 sm:px-3 py-1.5 rounded text-xs sm:text-sm transition-colors ${
+          className={`flex-1 px-1.5 sm:px-3 py-1 rounded text-xs transition-colors ${
             activeTab === 'analytics' ? 'bg-blue-500 text-white' : 'text-gray-400 hover:bg-slate-700/50'
           }`}
         >
-          📈 <span className="hidden sm:inline">Analytics</span><span className="sm:hidden">Stats</span>
+          📈 Stats
         </button>
       </div>
       

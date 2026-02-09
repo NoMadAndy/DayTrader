@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.37.5] - 2026-02-09
+
+### Changed
+- **AI Trader Header ultra-kompakt** - Header von 2-Zeilen-Layout auf einzelne Zeile komprimiert
+- **Stats-Leiste horizontal** - Stats von 2x3 Grid auf horizontale Flex-Reihe mit Mini-Cards umgestellt
+- **Tab-Navigation kompakter** - Kleinere Padding/Font-Größe für mehr Platz auf Mobile
+- Gesamter oberer Bereich ~50% weniger Höhe, mehr Platz für Trade-Informationen
+
 ## [1.37.4] - 2026-02-09
 
 ### Fixed
