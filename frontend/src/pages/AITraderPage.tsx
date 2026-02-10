@@ -121,6 +121,8 @@ export function AITraderPage() {
   const [activityPanelExpanded, setActivityPanelExpanded] = useState(false);
   const [expandedTradeId, setExpandedTradeId] = useState<number | null>(null);
   const [expandedPositionId, setExpandedPositionId] = useState<number | null>(null);
+  const [positionsCollapsed, setPositionsCollapsed] = useState(true);
+  const [decisionsCollapsed, setDecisionsCollapsed] = useState(true);
   
   // Trade alert state for sticky notification
   const [currentTradeAlert, setCurrentTradeAlert] = useState<TradeAlert | null>(null);
@@ -651,33 +653,33 @@ export function AITraderPage() {
         />
       )}
       
-      {/* Inline Stats Bar - single horizontal row */}
-      <div className="flex gap-1 overflow-x-auto">
+      {/* Inline Stats Bar - wraps on very small screens */}
+      <div className="grid grid-cols-3 sm:grid-cols-5 gap-1">
         {portfolio && (
           <>
-            <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1 min-w-0 flex-1">
+            <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1 min-w-0">
               <div className="text-[9px] text-gray-500">💰 Cash</div>
-              <div className="text-xs font-bold">${portfolio.cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+              <div className="text-xs font-bold truncate">${portfolio.cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
             </div>
-            <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1 min-w-0 flex-1">
+            <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1 min-w-0">
               <div className="text-[9px] text-gray-500">📊 Wert</div>
-              <div className="text-xs font-bold">${portfolio.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+              <div className="text-xs font-bold truncate">${portfolio.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
             </div>
-            <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1 min-w-0 flex-1">
+            <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1 min-w-0">
               <div className="text-[9px] text-gray-500">📈 P&L</div>
-              <div className={`text-xs font-bold ${(portfolio.unrealizedPnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              <div className={`text-xs font-bold truncate ${(portfolio.unrealizedPnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                 {(portfolio.unrealizedPnl || 0) >= 0 ? '+' : ''}${(portfolio.unrealizedPnl || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </div>
             </div>
           </>
         )}
-        <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1 min-w-0 flex-1">
+        <div className="bg-slate-800/50 rounded border border-slate-700/50 px-2 py-1 min-w-0">
           <div className="text-[9px] text-gray-500">🎯 Trades</div>
           <div className="text-xs font-bold">{portfolio?.tradesExecuted ?? 0}</div>
         </div>
-        <div className="bg-slate-800/50 rounded border border-orange-500/30 px-2 py-1 min-w-0 flex-1">
+        <div className="bg-slate-800/50 rounded border border-orange-500/30 px-2 py-1 min-w-0">
           <div className="text-[9px] text-orange-400/70">🏦 Gebühr</div>
-          <div className="text-xs font-bold text-orange-400">${(portfolio?.totalFees ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+          <div className="text-xs font-bold text-orange-400 truncate">${(portfolio?.totalFees ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
         </div>
       </div>
       
@@ -733,10 +735,9 @@ export function AITraderPage() {
               <div className="px-3 py-2 border-b border-slate-700/50 flex items-center justify-between">
                 <h3 className="font-bold text-sm text-blue-300">
                   ⚡ Trades ({executedTrades.length})
-                  <span className="text-[10px] text-gray-500 ml-1 font-normal">geschlossen</span>
                 </h3>
               </div>
-              <div className="p-1.5 space-y-1.5 max-h-[400px] lg:max-h-[600px] overflow-y-auto">
+              <div className="p-1.5 space-y-1.5">
                 {executedTrades.length === 0 ? (
                   <div className="text-center text-gray-500 py-4">
                     <div className="text-lg mb-1">📊</div>
@@ -1056,12 +1057,20 @@ export function AITraderPage() {
             </div>
           </div>
           
-          {/* Col 2: Open Positions (4/12 on desktop) */}
+          {/* Col 2: Open Positions (4/12 on desktop) - collapsed by default */}
           <div className="lg:col-span-4">
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
-              <div className="px-3 py-2 border-b border-slate-700/50">
+              <div
+                className="px-3 py-2 border-b border-slate-700/50 flex items-center justify-between cursor-pointer hover:bg-slate-700/30 transition-colors"
+                onClick={() => setPositionsCollapsed(!positionsCollapsed)}
+              >
                 <h3 className="font-bold text-sm">📍 Positionen ({positions.length})</h3>
+                <svg className={`w-4 h-4 text-gray-400 transition-transform ${positionsCollapsed ? '' : 'rotate-180'}`}
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
               </div>
+              {!positionsCollapsed && (
               <div className="p-1.5 max-h-[400px] lg:max-h-[600px] overflow-y-auto">
                 {positions.length === 0 ? (
                   <div className="text-center text-gray-500 py-4">
@@ -1325,14 +1334,23 @@ export function AITraderPage() {
                   </div>
                 )}
               </div>
+              )}
             </div>
           </div>
           
-          {/* Col 3: Recent Decisions (3/12 on desktop) */}
+          {/* Col 3: Recent Decisions (3/12 on desktop) - collapsed by default */}
           <div className="lg:col-span-3 bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50">
-            <div className="px-3 py-2 border-b border-slate-700/50">
+            <div
+              className="px-3 py-2 border-b border-slate-700/50 flex items-center justify-between cursor-pointer hover:bg-slate-700/30 transition-colors"
+              onClick={() => setDecisionsCollapsed(!decisionsCollapsed)}
+            >
               <h3 className="font-bold text-sm">🧠 Entscheidungen</h3>
+              <svg className={`w-4 h-4 text-gray-400 transition-transform ${decisionsCollapsed ? '' : 'rotate-180'}`}
+                fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
             </div>
+            {!decisionsCollapsed && (
             <div className="p-2 space-y-1 max-h-[400px] lg:max-h-[600px] overflow-y-auto">
               {decisions.length === 0 ? (
                 <div className="text-center text-gray-500 py-6">
@@ -1349,6 +1367,7 @@ export function AITraderPage() {
                 ))
               )}
             </div>
+            )}
           </div>
         </div>
         

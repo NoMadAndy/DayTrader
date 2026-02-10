@@ -4796,20 +4796,22 @@ app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
     );
     // Also get fees from open positions
     const openFeeResult = await db.query(
-      `SELECT COALESCE(SUM(total_fees_paid), 0) as total_fees_open
+      `SELECT COUNT(*) as open_count, COALESCE(SUM(total_fees_paid), 0) as total_fees_open
        FROM positions
        WHERE portfolio_id = $1 AND is_open = true`,
       [portfolio.id]
     );
     const closedStats = closedPositionsResult.rows[0] || {};
-    const totalTrades = parseInt(closedStats.total_trades) || 0;
+    const totalClosedTrades = parseInt(closedStats.total_trades) || 0;
+    const totalOpenTrades = parseInt(openFeeResult.rows[0]?.open_count) || 0;
+    const totalTrades = totalClosedTrades + totalOpenTrades; // All positions = all trades
     const winningTrades = parseInt(closedStats.winning_trades) || 0;
     const losingTrades = parseInt(closedStats.losing_trades) || 0;
     const realizedPnlTotal = parseFloat(closedStats.realized_pnl_total) || 0;
     const totalFeesClosed = parseFloat(closedStats.total_fees_closed) || 0;
     const totalFeesOpen = parseFloat(openFeeResult.rows[0]?.total_fees_open) || 0;
     const totalFeesAll = totalFeesClosed + totalFeesOpen;
-    const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : null;
+    const winRate = totalClosedTrades > 0 ? (winningTrades / totalClosedTrades) * 100 : null;
     
     // Determine broker name (source of truth: DB column, fallback: personality)
     const traderObj = await aiTrader.getAITrader(parseInt(req.params.id));
@@ -5311,9 +5313,8 @@ app.get('/api/ai-traders/:id/trades', async (req, res) => {
          FROM ai_trader_decisions
          WHERE ai_trader_id = $2
            AND symbol = p.symbol
-           AND executed = true
            AND decision_type IN ('buy', 'short')
-         ORDER BY ABS(EXTRACT(EPOCH FROM (timestamp - p.opened_at)))
+         ORDER BY executed DESC, ABS(EXTRACT(EPOCH FROM (timestamp - p.opened_at)))
          LIMIT 1
        ) open_d ON true
        LEFT JOIN LATERAL (
@@ -5321,10 +5322,9 @@ app.get('/api/ai-traders/:id/trades', async (req, res) => {
          FROM ai_trader_decisions
          WHERE ai_trader_id = $2
            AND symbol = p.symbol
-           AND executed = true
            AND decision_type IN ('sell', 'close')
            AND p.closed_at IS NOT NULL
-         ORDER BY ABS(EXTRACT(EPOCH FROM (timestamp - p.closed_at)))
+         ORDER BY executed DESC, ABS(EXTRACT(EPOCH FROM (timestamp - p.closed_at)))
          LIMIT 1
        ) close_d ON true
        WHERE p.portfolio_id = $1

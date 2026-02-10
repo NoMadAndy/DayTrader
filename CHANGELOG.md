@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.37.7] - 2026-02-10\n\n### Fixed\n- **Mobile Responsiveness < 465px** - Stats-Leiste von `flex overflow-x-auto` auf `grid grid-cols-3 sm:grid-cols-5` umgestellt; Werte mit `truncate` vor Überlauf geschützt\n- **Trades-Zählung** - Offene Positionen werden jetzt als ausgeführte Trades gezählt (nicht erst nach Verkauf); Win Rate basiert weiterhin nur auf geschlossenen Trades\n\n### Changed\n- **Positionen & Entscheidungen** standardmäßig eingeklappt (klickbarer Header zum Aufklappen) — mehr Fokus auf Trades\n- **Trades-Liste** ohne Scrollbalken (kein `max-h` / `overflow-y-auto` mehr) — alle Trades direkt sichtbar\n\n## [1.37.6] - 2026-02-10
+
+### Fixed
+- **AI Trader Trades Entscheidungstext** - `/api/ai-traders/:id/trades` nutzt jetzt die naechstliegende Entscheidung als Fallback, wenn `executed` nicht gesetzt ist; damit werden Begruendungen wieder angezeigt
+
 ## [1.37.5] - 2026-02-09
 
 ### Changed

@@ -20,7 +20,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        BUILD_VERSION: ${BUILD_VERSION:-1.34.0}
+        BUILD_VERSION: ${BUILD_VERSION:-1.37.7}
         BUILD_COMMIT: ${BUILD_COMMIT:-dev}
         BUILD_TIME: ${BUILD_TIME:-}
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
@@ -41,7 +41,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       args:
-        BUILD_VERSION: ${BUILD_VERSION:-1.34.0}
+        BUILD_VERSION: ${BUILD_VERSION:-1.37.7}
         BUILD_COMMIT: ${BUILD_COMMIT:-dev}
         BUILD_TIME: ${BUILD_TIME:-}
     ports:
@@ -68,7 +68,7 @@ services:
       context: ./ml-service
       dockerfile: Dockerfile
       args:
-        BUILD_VERSION: ${BUILD_VERSION:-1.34.0}
+        BUILD_VERSION: ${BUILD_VERSION:-1.37.7}
         BUILD_COMMIT: ${BUILD_COMMIT:-dev}
         BUILD_TIME: ${BUILD_TIME:-}
     ports:
@@ -97,7 +97,7 @@ services:
       context: ./rl-trading-service
       dockerfile: Dockerfile
       args:
-        BUILD_VERSION: ${BUILD_VERSION:-1.34.0}
+        BUILD_VERSION: ${BUILD_VERSION:-1.37.7}
         BUILD_COMMIT: ${BUILD_COMMIT:-dev}
         BUILD_TIME: ${BUILD_TIME:-}
     ports:

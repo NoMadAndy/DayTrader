@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     
     # Service info
     service_name: str = "daytrader-ml-service"
-    version: str = os.getenv("BUILD_VERSION", "1.35.0")
+    version: str = os.getenv("BUILD_VERSION", "1.37.7")
     commit: str = os.getenv("BUILD_COMMIT", "unknown")
     build_time: str = os.getenv("BUILD_TIME", "unknown")
     

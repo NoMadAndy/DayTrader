@@ -2,7 +2,7 @@
 FROM node:20-alpine
 
 # Build arguments for version info
-ARG BUILD_VERSION=1.34.0
+ARG BUILD_VERSION=1.37.7
 ARG BUILD_COMMIT=unknown
 ARG BUILD_TIME
 
