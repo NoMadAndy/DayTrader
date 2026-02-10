@@ -562,7 +562,7 @@ export function AITraderPage() {
       {/* Ultra-Compact Header: Everything in minimal space */}
       <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 px-2 py-1.5">
         {/* Single Row: Back + Name + Controls + Market + Settings + Live */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1 sm:gap-1.5">
           {/* Back */}
           <button
             onClick={() => navigate('/ai-traders')}
@@ -573,8 +573,8 @@ export function AITraderPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <span className="text-lg flex-shrink-0">{trader.avatar}</span>
-          <h1 className="text-sm font-bold truncate max-w-[100px] sm:max-w-[200px]">{trader.name}</h1>
+          <span className="text-base sm:text-lg flex-shrink-0">{trader.avatar}</span>
+          <h1 className="text-xs sm:text-sm font-bold truncate max-w-[72px] sm:max-w-[200px] min-w-0">{trader.name}</h1>
           
           {/* Status Badge - icon only on mobile */}
           {(() => {
@@ -596,13 +596,13 @@ export function AITraderPage() {
           <div className="flex-1" />
           
           {/* Control Buttons - compact */}
-          <div className="flex items-center gap-0.5 flex-shrink-0">
+          <div className="flex items-center gap-px sm:gap-0.5 flex-shrink-0">
             <button onClick={handleStart} disabled={trader.status === 'running'}
-              className="px-1.5 py-0.5 bg-green-600 hover:bg-green-700 disabled:bg-slate-700 disabled:text-gray-500 rounded text-[10px] transition-colors">▶️</button>
+              className="px-1 sm:px-1.5 py-0.5 bg-green-600 hover:bg-green-700 disabled:bg-slate-700 disabled:text-gray-500 rounded text-[10px] transition-colors">▶️</button>
             <button onClick={handlePause} disabled={trader.status !== 'running'}
-              className="px-1.5 py-0.5 bg-yellow-600 hover:bg-yellow-700 disabled:bg-slate-700 disabled:text-gray-500 rounded text-[10px] transition-colors">⏸️</button>
+              className="px-1 sm:px-1.5 py-0.5 bg-yellow-600 hover:bg-yellow-700 disabled:bg-slate-700 disabled:text-gray-500 rounded text-[10px] transition-colors">⏸️</button>
             <button onClick={handleStop} disabled={trader.status === 'stopped'}
-              className="px-1.5 py-0.5 bg-red-600 hover:bg-red-700 disabled:bg-slate-700 disabled:text-gray-500 rounded text-[10px] transition-colors">⏹️</button>
+              className="px-1 sm:px-1.5 py-0.5 bg-red-600 hover:bg-red-700 disabled:bg-slate-700 disabled:text-gray-500 rounded text-[10px] transition-colors">⏹️</button>
           </div>
           
           {/* Market Status - minimal */}
@@ -625,15 +625,15 @@ export function AITraderPage() {
           
           {/* Settings + Connection */}
           <button onClick={() => setShowSettings(true)}
-            className="p-0.5 rounded hover:bg-slate-700/50 transition-colors flex-shrink-0 text-sm" title="Einstellungen">⚙️</button>
+            className="p-0.5 rounded hover:bg-slate-700/50 transition-colors flex-shrink-0 text-xs sm:text-sm" title="Einstellungen">⚙️</button>
           <button onClick={reconnect}
-            className={`flex items-center gap-0.5 px-1 py-0.5 rounded transition-colors flex-shrink-0 ${
+            className={`flex items-center gap-0.5 px-0.5 sm:px-1 py-0.5 rounded transition-colors flex-shrink-0 ${
               connected ? 'hover:bg-slate-700/50' : 'bg-red-500/20'
             }`}
             title={connected ? `${mode === 'sse' ? 'SSE' : 'Polling'}` : 'Reconnect'}
           >
             <div className={`w-1.5 h-1.5 rounded-full ${connected ? mode === 'sse' ? 'bg-green-500 animate-pulse' : 'bg-yellow-500' : 'bg-red-500'}`} />
-            <span className="text-[9px] text-gray-400">{connected ? mode === 'sse' ? 'Live' : 'Poll' : '…'}</span>
+            <span className="text-[9px] text-gray-400 hidden sm:inline">{connected ? mode === 'sse' ? 'Live' : 'Poll' : '…'}</span>
           </button>
         </div>
         
@@ -824,9 +824,9 @@ export function AITraderPage() {
                       
                       {/* Trade Setup: Entry Price, Quantity, Cost */}
                       <div className="px-2.5 pb-1">
-                        <div className="flex items-baseline gap-3">
-                          <span className="text-lg font-bold font-mono text-white">${trade.price.toFixed(2)}</span>
-                          <span className="text-xs text-gray-400">{trade.quantity}× = <span className="text-gray-300 font-medium">${trade.cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span></span>
+                        <div className="flex items-baseline gap-2 sm:gap-3 flex-wrap">
+                          <span className="text-base sm:text-lg font-bold font-mono text-white">${trade.price.toFixed(2)}</span>
+                          <span className="text-[11px] sm:text-xs text-gray-400">{trade.quantity}× = <span className="text-gray-300 font-medium">${trade.cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span></span>
                           {trade.side === 'short' && <span className="text-[10px] text-orange-400 font-medium">SHORT</span>}
                         </div>
                       </div>
@@ -834,7 +834,7 @@ export function AITraderPage() {
                       {/* SL / TP Bar with % distances and R:R */}
                       {(trade.stopLoss != null || trade.takeProfit != null) && (
                         <div className="px-2.5 pb-1.5">
-                          <div className="flex items-center gap-2 text-xs">
+                          <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-xs">
                             {trade.stopLoss != null && (
                               <div className="flex items-center gap-1">
                                 <span className="text-red-500 font-medium">SL</span>
@@ -869,7 +869,7 @@ export function AITraderPage() {
                       {/* Signal Scores Bar - always visible for buy trades */}
                       {isBuy && (trade.mlScore != null || trade.rlScore != null || trade.sentimentScore != null || trade.technicalScore != null) && (
                         <div className="px-2.5 pb-1.5">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center flex-wrap gap-1 sm:gap-1.5">
                             {[
                               { label: 'ML', value: trade.mlScore },
                               { label: 'RL', value: trade.rlScore },
@@ -910,7 +910,7 @@ export function AITraderPage() {
                       )}
                       
                       {/* Footer: Timestamp + Confidence (for sells) + Agreement */}
-                      <div className="flex items-center justify-between px-2.5 pb-1.5 text-[10px]">
+                      <div className="flex items-center justify-between flex-wrap gap-y-0.5 px-2.5 pb-1.5 text-[10px]">
                         <span className={isRecent ? 'text-gray-300' : 'text-gray-500'}>
                           {new Date(trade.timestamp).toLocaleString('de-DE', { 
                             day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' 
@@ -987,7 +987,7 @@ export function AITraderPage() {
                           
                           {/* Entry→Exit for close trades */}
                           {!isBuy && trade.entryPrice && (
-                            <div className="flex items-center gap-2 bg-slate-800/50 rounded px-2.5 py-1.5">
+                            <div className="flex items-center flex-wrap gap-x-2 gap-y-1 bg-slate-800/50 rounded px-2.5 py-1.5">
                               <div>
                                 <div className="text-[10px] text-gray-500">Einstieg</div>
                                 <div className="text-xs font-mono font-bold">${trade.entryPrice.toFixed(2)}</div>
@@ -1018,7 +1018,7 @@ export function AITraderPage() {
                           
                           {/* Signal Scores for sell trades (not shown in always-visible for sells) */}
                           {!isBuy && (trade.mlScore != null || trade.rlScore != null || trade.sentimentScore != null || trade.technicalScore != null) && (
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center flex-wrap gap-1 sm:gap-1.5">
                               {[
                                 { label: 'ML', value: trade.mlScore },
                                 { label: 'RL', value: trade.rlScore },
@@ -1143,7 +1143,7 @@ export function AITraderPage() {
                           </div>
                           
                           {/* Row 2: Entry, SL/TP distance, Hold time */}
-                          <div className="px-2 pb-1.5 flex items-center gap-2 text-[10px] text-gray-500 cursor-pointer" onClick={() => setExpandedPositionId(isExpanded ? null : position.id)}>
+                          <div className="px-2 pb-1.5 flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-gray-500 cursor-pointer" onClick={() => setExpandedPositionId(isExpanded ? null : position.id)}>
                             <span>Einstieg ${position.entryPrice?.toFixed(2)}</span>
                             {breakEvenPrice && (
                               <span className="text-yellow-400/50">BE ${breakEvenPrice.toFixed(2)}</span>
@@ -1171,7 +1171,7 @@ export function AITraderPage() {
                           {isExpanded && (
                             <div className="px-2 pb-2 pt-1 border-t border-slate-700/50 space-y-1.5 text-[10px]">
                               {/* Price Details */}
-                              <div className="grid grid-cols-3 gap-x-3 gap-y-1">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1">
                                 <div>
                                   <span className="text-gray-500">Einstieg</span>
                                   <div className="text-gray-300">${position.entryPrice?.toFixed(2)}</div>
@@ -1189,7 +1189,7 @@ export function AITraderPage() {
                               </div>
                               
                               {/* Value & P&L */}
-                              <div className="grid grid-cols-3 gap-x-3 gap-y-1">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1">
                                 <div>
                                   <span className="text-gray-500">Investiert</span>
                                   <div className="text-gray-300">${investedValue.toFixed(0)}</div>
@@ -1208,7 +1208,7 @@ export function AITraderPage() {
                               
                               {/* Daily P&L */}
                               {dailyPnl != null && (
-                                <div className="grid grid-cols-3 gap-x-3">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1">
                                   <div>
                                     <span className="text-gray-500">Tages-P&L</span>
                                     <div className={dailyPnl >= 0 ? 'text-green-400' : 'text-red-400'}>
@@ -1228,7 +1228,7 @@ export function AITraderPage() {
                               )}
                               
                               {/* Risk */}
-                              <div className="grid grid-cols-3 gap-x-3 gap-y-1">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1">
                                 {position.stopLoss != null && (
                                   <div>
                                     <span className="text-gray-500">Stop-Loss</span>
@@ -1256,7 +1256,7 @@ export function AITraderPage() {
                               </div>
                               
                               {/* Fees & Time */}
-                              <div className="grid grid-cols-3 gap-x-3 gap-y-1">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1">
                                 <div>
                                   <span className="text-gray-500">Gebühren</span>
                                   <div className="text-orange-400/80">🏦 ${totalFeesPaid.toFixed(2)}{openFee > 0 && ` (Open: $${openFee.toFixed(2)})`}</div>
@@ -1295,7 +1295,7 @@ export function AITraderPage() {
                                       Strike ${(position as any).strikePrice?.toFixed(2) || '—'}
                                     </span>
                                   </div>
-                                  <div className="grid grid-cols-3 gap-x-3 text-[10px]">
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 text-[10px]">
                                     {(position as any).greeks && (
                                       <>
                                         <div>

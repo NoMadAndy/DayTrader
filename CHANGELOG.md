@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.37.8] - 2026-02-10
+
+### Fixed
+- **iPhone 15 Pro (393px) Optimierung** - Header-Zeile: Name schmaler (max 72px), Gaps/Buttons/Icons kleiner, Connection-Label nur ab `sm`
+- **SL/TP-Leiste** - `flex-wrap` damit Werte bei engem Platz umbrechen statt abzuschneiden
+- **Signal-Scores** - `flex-wrap` für ML/RL/Sent/Tech/Konf-Badges auf schmalen Displays
+- **Positionen-Details** - Erweiterte Grids von `grid-cols-3` auf `grid-cols-2 sm:grid-cols-3` für bessere Lesbarkeit auf kleinen Screens
+- **Trade-Karten** - P&L-Prozent auf `text-xs` statt `text-sm` mobil, Symbol mit `truncate`, Action-Badge `whitespace-nowrap`
+- **Footer & Positions-Zeile** - `flex-wrap` verhindert Überlauf bei vielen Badges
+
 ## [1.37.7] - 2026-02-10\n\n### Fixed\n- **Mobile Responsiveness < 465px** - Stats-Leiste von `flex overflow-x-auto` auf `grid grid-cols-3 sm:grid-cols-5` umgestellt; Werte mit `truncate` vor Überlauf geschützt\n- **Trades-Zählung** - Offene Positionen werden jetzt als ausgeführte Trades gezählt (nicht erst nach Verkauf); Win Rate basiert weiterhin nur auf geschlossenen Trades\n\n### Changed\n- **Positionen & Entscheidungen** standardmäßig eingeklappt (klickbarer Header zum Aufklappen) — mehr Fokus auf Trades\n- **Trades-Liste** ohne Scrollbalken (kein `max-h` / `overflow-y-auto` mehr) — alle Trades direkt sichtbar\n\n## [1.37.6] - 2026-02-10
 
 ### Fixed
