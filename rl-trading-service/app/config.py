@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     
     # Service info
     service_name: str = "daytrader-rl-trading-service"
-    version: str = os.getenv("BUILD_VERSION", "1.37.8")
+    version: str = os.getenv("BUILD_VERSION", "1.38.0")
     commit: str = os.getenv("BUILD_COMMIT", "unknown")
     build_time: str = os.getenv("BUILD_TIME", "unknown")
     
@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     
     # ML Service URL for getting predictions
     ml_service_url: str = os.getenv("ML_SERVICE_URL", "http://ml-service:8000")
+    ml_model_type: str = os.getenv("ML_MODEL_TYPE", "transformer")  # lstm or transformer
     
     # Backend URL for historical data
     backend_url: str = os.getenv("BACKEND_URL", "http://backend:3001")

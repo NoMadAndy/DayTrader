@@ -49,7 +49,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 FROM base AS production
 
 # Build arguments for version info
-ARG BUILD_VERSION=1.37.8
+ARG BUILD_VERSION=1.38.0
 ARG BUILD_COMMIT=unknown
 ARG BUILD_TIME=unknown
 

@@ -202,7 +202,8 @@ class SignalAggregator:
                 f"{self.ml_service_url}/api/ml/predict",
                 json={
                     'symbol': symbol,
-                    'data': ohlcv_data  # Correct field name for ML service
+                    'data': ohlcv_data,
+                    'model_type': getattr(self.config, 'ml_model_type', None)
                 },
                 timeout=30.0
             )
@@ -331,7 +332,8 @@ class SignalAggregator:
                     'data': ohlcv_data,
                     'epochs': 50,  # Reasonable default
                     'sequence_length': 60,
-                    'forecast_days': 14
+                    'forecast_days': 14,
+                    'model_type': getattr(self.config, 'ml_model_type', None)
                 },
                 timeout=10.0  # Just submit, don't wait for completion
             )

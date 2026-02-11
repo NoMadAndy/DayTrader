@@ -16,6 +16,7 @@ export interface MLSettings {
   learningRate: number;
   useCuda: boolean;
   preloadFinbert: boolean;
+  modelType: 'lstm' | 'transformer';
 }
 
 export const DEFAULT_ML_SETTINGS: MLSettings = {
@@ -25,6 +26,7 @@ export const DEFAULT_ML_SETTINGS: MLSettings = {
   learningRate: 0.001,
   useCuda: true,
   preloadFinbert: false,
+  modelType: 'lstm',
 };
 
 /**

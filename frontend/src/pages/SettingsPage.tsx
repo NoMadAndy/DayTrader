@@ -1100,6 +1100,23 @@ export function SettingsPage() {
               </div>
 
               <div className="space-y-4 pt-4 border-t border-slate-700">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">
+                    Model Type
+                  </label>
+                  <select
+                    value={mlSettings.modelType || 'lstm'}
+                    onChange={(e) => setMlSettings(prev => ({ ...prev, modelType: e.target.value as 'lstm' | 'transformer' }))}
+                    className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="lstm">LSTM (Long Short-Term Memory)</option>
+                    <option value="transformer">Transformer (Multi-Head Attention)</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    LSTM: Bewährt, schnelleres Training. Transformer: Bessere Muster-Erkennung bei langen Sequenzen, mehr GPU-Speicher.
+                  </p>
+                </div>
+
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"

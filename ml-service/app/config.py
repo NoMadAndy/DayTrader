@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     
     # Service info
     service_name: str = "daytrader-ml-service"
-    version: str = os.getenv("BUILD_VERSION", "1.37.8")
+    version: str = os.getenv("BUILD_VERSION", "1.38.0")
     commit: str = os.getenv("BUILD_COMMIT", "unknown")
     build_time: str = os.getenv("BUILD_TIME", "unknown")
     
@@ -28,6 +28,16 @@ class Settings(BaseSettings):
     epochs: int = int(os.getenv("EPOCHS", "100"))
     batch_size: int = int(os.getenv("BATCH_SIZE", "32"))
     learning_rate: float = float(os.getenv("LEARNING_RATE", "0.001"))
+    
+    # Default model type for new training ('lstm' or 'transformer')
+    default_model_type: str = os.getenv("ML_DEFAULT_MODEL_TYPE", "lstm")
+    
+    # Transformer architecture defaults
+    transformer_d_model: int = int(os.getenv("ML_TRANSFORMER_D_MODEL", "128"))
+    transformer_n_heads: int = int(os.getenv("ML_TRANSFORMER_N_HEADS", "4"))
+    transformer_n_layers: int = int(os.getenv("ML_TRANSFORMER_N_LAYERS", "3"))
+    transformer_d_ff: int = int(os.getenv("ML_TRANSFORMER_D_FF", "256"))
+    transformer_dropout: float = float(os.getenv("ML_TRANSFORMER_DROPOUT", "0.1"))
     
     # CUDA settings
     use_cuda: bool = os.getenv("USE_CUDA", "true").lower() == "true"

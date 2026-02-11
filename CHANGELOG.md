@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.38.0] - 2026-02-10
+
+### Added
+- **Transformer Price Prediction** - Neues Transformer-Modell (Multi-Head Self-Attention + Multi-Scale CNN) als Alternative zum bestehenden LSTM für Kurs-Vorhersagen
+  - Positional Encoding für temporale Muster
+  - Multi-Scale CNN Feature-Extraktion (Kernel 3/5/7/14)
+  - Konfigurierbare Architektur (d_model, n_heads, n_layers) via Umgebungsvariablen
+  - Drop-in kompatibel: gleiche 23 Features, gleiches API-Format
+- **Model Type Auswahl** - Benutzer können zwischen LSTM und Transformer in den ML-Einstellungen wählen
+- **Dual-Model Koexistenz** - LSTM und Transformer-Modelle können parallel für dasselbe Symbol existieren
+- **RL-Service Transformer-Integration** - Auto-Training nutzt konfigurierbaren Model-Typ (`ML_MODEL_TYPE`)
+- Neue Umgebungsvariablen: `ML_DEFAULT_MODEL_TYPE`, `ML_TRANSFORMER_D_MODEL`, `ML_TRANSFORMER_N_HEADS`, `ML_TRANSFORMER_N_LAYERS`, `ML_TRANSFORMER_D_FF`, `ML_TRANSFORMER_DROPOUT`, `ML_MODEL_TYPE`
+
 ## [1.37.8] - 2026-02-10
 
 ### Fixed

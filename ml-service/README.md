@@ -2,18 +2,22 @@
 
 # DayTrader ML Service
 
-LSTM-based stock price prediction and FinBERT sentiment analysis with CUDA/GPU acceleration.
+LSTM & Transformer-based stock price prediction and FinBERT sentiment analysis with CUDA/GPU acceleration.
 
 ## Features
 
 - **LSTM Neural Network**: Multi-layer LSTM for time series forecasting
+- **Transformer Model**: Multi-Head Self-Attention with Multi-Scale CNN for superior pattern recognition
 - **FinBERT Sentiment**: Transformer-based financial sentiment analysis
 - **Technical Indicators**: Automatically calculates 20+ indicators as features
 - **CUDA Support**: GPU acceleration for fast training and inference
 - **REST API**: FastAPI-based endpoints for training, prediction, and sentiment
 - **Model Persistence**: Save/load trained models
+- **Dual-Model Coexistence**: LSTM and Transformer models can exist side-by-side per symbol
 
 ## Architecture
+
+### LSTM (default)
 
 ```
 Input (60 days of OHLCV + indicators)
@@ -31,6 +35,28 @@ Input (60 days of OHLCV + indicators)
       [Dropout]
           ↓
     [Output Layer] (14 days forecast)
+```
+
+### Transformer
+
+```
+Input (60 days of OHLCV + indicators)
+          ↓
+    [Multi-Scale CNN] (kernels 3,5,7,14)
+          ↓
+    [Linear Projection → d_model=128]
+          ↓
+    [Positional Encoding]
+          ↓
+    [Transformer Encoder × 3 layers]
+      (4 attention heads, d_ff=256)
+          ↓
+    [Multi-Scale Aggregation]
+      (global avg + last step + max pooling)
+          ↓
+    [FC Layers] (256→128→14)
+          ↓
+    [Output] (14 days forecast)
 ```
 
 ## Features Used

@@ -19,10 +19,11 @@ from contextlib import asynccontextmanager
 
 from .config import settings
 from .model import StockPredictor
+from .transformer_model import TransformerStockPredictor
 from . import sentiment as finbert
 
-# Store for active predictors
-predictors: Dict[str, StockPredictor] = {}
+# Store for active predictors (keyed by "SYMBOL" for LSTM, "SYMBOL_transformer" for Transformer)
+predictors: Dict[str, object] = {}  # StockPredictor | TransformerStockPredictor
 training_status: Dict[str, dict] = {}
 
 
@@ -46,7 +47,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="DayTrader ML Service",
-    description="LSTM-based stock price prediction and FinBERT sentiment analysis with CUDA acceleration",
+    description="LSTM & Transformer stock price prediction and FinBERT sentiment analysis with CUDA acceleration",
     version=settings.version,
     lifespan=lifespan
 )
@@ -82,12 +83,14 @@ class TrainRequest(BaseModel):
     sequence_length: Optional[int] = Field(None, description="Sequence length for LSTM input")
     forecast_days: Optional[int] = Field(None, description="Number of days to forecast")
     use_cuda: Optional[bool] = Field(None, description="Force CUDA usage (requires GPU container)")
+    model_type: Optional[str] = Field(None, description="Model type: 'lstm' or 'transformer' (default from config)")
 
 
 class PredictRequest(BaseModel):
     """Request for price prediction"""
     symbol: str = Field(..., description="Stock symbol")
     data: List[OHLCVData] = Field(..., description="Recent OHLCV data")
+    model_type: Optional[str] = Field(None, description="Model type: 'lstm' or 'transformer' (auto-detect if not specified)")
 
 
 class PredictionResult(BaseModel):
@@ -194,39 +197,104 @@ async def get_version():
 
 @app.get("/api/ml/models")
 async def list_models():
-    """List all loaded models"""
-    return {
-        "models": [
-            {
+    """List all loaded models (both LSTM and Transformer)"""
+    models = []
+    seen = set()
+    
+    for key, pred in predictors.items():
+        symbol = pred.symbol.upper()
+        model_type = getattr(pred, 'model_type', 'lstm')
+        entry_id = f"{symbol}_{model_type}"
+        if entry_id not in seen:
+            seen.add(entry_id)
+            models.append({
                 "symbol": symbol,
+                "model_type": model_type,
                 "is_trained": pred.is_trained,
                 "metadata": pred.model_metadata if pred.is_trained else None
-            }
-            for symbol, pred in predictors.items()
-        ]
-    }
+            })
+    
+    return {"models": models}
+
+
+def _get_predictor_key(symbol: str, model_type: str) -> str:
+    """Get cache key for a predictor."""
+    return f"{symbol.upper()}_{model_type}" if model_type == "transformer" else symbol.upper()
+
+
+def _try_load_predictor(symbol: str, model_type: Optional[str] = None):
+    """Try to load a predictor from disk. Returns (predictor, model_type) or (None, None)."""
+    symbol = symbol.upper()
+    
+    # If specific type requested, try that first
+    if model_type == "transformer":
+        pred = TransformerStockPredictor(symbol)
+        if pred.load():
+            return pred, "transformer"
+        return None, None
+    elif model_type == "lstm":
+        pred = StockPredictor(symbol)
+        if pred.load():
+            return pred, "lstm"
+        return None, None
+    
+    # Auto-detect: try transformer first (preferred), then LSTM
+    pred_t = TransformerStockPredictor(symbol)
+    if pred_t.load():
+        return pred_t, "transformer"
+    
+    pred_l = StockPredictor(symbol)
+    if pred_l.load():
+        return pred_l, "lstm"
+    
+    return None, None
 
 
 @app.get("/api/ml/models/{symbol}")
-async def get_model_info(symbol: str):
-    """Get info about a specific model"""
+async def get_model_info(symbol: str, model_type: Optional[str] = None):
+    """Get info about a specific model. Tries transformer first, then LSTM."""
     symbol = symbol.upper()
     
-    if symbol not in predictors:
-        # Try to load from disk
-        predictor = StockPredictor(symbol)
-        if predictor.load():
-            predictors[symbol] = predictor
-        else:
-            raise HTTPException(status_code=404, detail=f"Model not found for {symbol}")
+    # Check cache first
+    if model_type:
+        key = _get_predictor_key(symbol, model_type)
+        if key in predictors:
+            pred = predictors[key]
+            return {
+                "symbol": symbol,
+                "model_type": getattr(pred, 'model_type', 'lstm'),
+                "is_trained": pred.is_trained,
+                "metadata": pred.model_metadata,
+                "device": str(pred.device)
+            }
+    else:
+        # Try transformer key first, then lstm key
+        for mt in ["transformer", "lstm"]:
+            key = _get_predictor_key(symbol, mt)
+            if key in predictors and predictors[key].is_trained:
+                pred = predictors[key]
+                return {
+                    "symbol": symbol,
+                    "model_type": getattr(pred, 'model_type', 'lstm'),
+                    "is_trained": pred.is_trained,
+                    "metadata": pred.model_metadata,
+                    "device": str(pred.device)
+                }
     
-    pred = predictors[symbol]
-    return {
-        "symbol": symbol,
-        "is_trained": pred.is_trained,
-        "metadata": pred.model_metadata,
-        "device": str(pred.device)
-    }
+    # Try to load from disk
+    pred, detected_type = _try_load_predictor(symbol, model_type)
+    if pred:
+        key = _get_predictor_key(symbol, detected_type)
+        predictors[key] = pred
+        return {
+            "symbol": symbol,
+            "model_type": detected_type,
+            "is_trained": pred.is_trained,
+            "metadata": pred.model_metadata,
+            "device": str(pred.device)
+        }
+    
+    raise HTTPException(status_code=404, detail=f"Model not found for {symbol}")
 
 
 async def train_model_background(
@@ -236,24 +304,30 @@ async def train_model_background(
     learning_rate: float,
     sequence_length: int,
     forecast_days: int,
-    use_cuda: Optional[bool] = None
+    use_cuda: Optional[bool] = None,
+    model_type: str = "lstm"
 ):
-    """Background task for model training"""
+    """Background task for model training (LSTM or Transformer)"""
+    status_key = f"{symbol}_{model_type}" if model_type == "transformer" else symbol
     try:
-        training_status[symbol] = {
+        training_status[status_key] = {
             "status": "training",
             "progress": 0,
-            "message": "Initializing training..."
+            "model_type": model_type,
+            "message": f"Initializing {model_type.upper()} training..."
         }
         
-        # Create predictor with optional CUDA override
-        predictor = StockPredictor(symbol, use_cuda=use_cuda)
+        # Create predictor based on model_type
+        if model_type == "transformer":
+            predictor = TransformerStockPredictor(symbol, use_cuda=use_cuda)
+        else:
+            predictor = StockPredictor(symbol, use_cuda=use_cuda)
         
         # Convert data
         ohlcv_data = [d for d in data]
         
-        training_status[symbol]["message"] = f"Preparing data (device: {predictor.device})..."
-        training_status[symbol]["progress"] = 10
+        training_status[status_key]["message"] = f"Preparing data ({model_type.upper()}, device: {predictor.device})..."
+        training_status[status_key]["progress"] = 10
         
         # Train with custom parameters
         result = predictor.train(
@@ -264,26 +338,29 @@ async def train_model_background(
             forecast_days=forecast_days
         )
         
-        training_status[symbol]["progress"] = 90
-        training_status[symbol]["message"] = "Saving model..."
+        training_status[status_key]["progress"] = 90
+        training_status[status_key]["message"] = "Saving model..."
         
         # Save model
         predictor.save()
         
-        # Store predictor
-        predictors[symbol] = predictor
+        # Store predictor with appropriate key
+        cache_key = _get_predictor_key(symbol, model_type)
+        predictors[cache_key] = predictor
         
-        training_status[symbol] = {
+        training_status[status_key] = {
             "status": "completed",
             "progress": 100,
-            "message": "Training completed successfully",
+            "model_type": model_type,
+            "message": f"{model_type.upper()} training completed successfully",
             "result": result
         }
         
     except Exception as e:
-        training_status[symbol] = {
+        training_status[status_key] = {
             "status": "failed",
             "progress": 0,
+            "model_type": model_type,
             "message": str(e),
             "result": None
         }
@@ -298,6 +375,9 @@ async def train_model(request: TrainRequest, background_tasks: BackgroundTasks):
     to check progress.
     """
     symbol = request.symbol.upper()
+    model_type = (request.model_type or settings.default_model_type).lower()
+    if model_type not in ("lstm", "transformer"):
+        raise HTTPException(status_code=400, detail=f"Invalid model_type: {model_type}. Use 'lstm' or 'transformer'.")
     
     # Use request params or fall back to settings defaults
     seq_length = request.sequence_length or settings.sequence_length
@@ -311,11 +391,12 @@ async def train_model(request: TrainRequest, background_tasks: BackgroundTasks):
             detail=f"Need at least {min_data_points} data points for training (sequence_length={seq_length}, forecast_days={fc_days})"
         )
     
-    # Check if already training
-    if symbol in training_status and training_status[symbol].get("status") == "training":
+    # Check if already training (check both symbol-only and symbol_type keys)
+    status_key = f"{symbol}_{model_type}" if model_type == "transformer" else symbol
+    if status_key in training_status and training_status[status_key].get("status") == "training":
         raise HTTPException(
             status_code=409,
-            detail=f"Training already in progress for {symbol}"
+            detail=f"{model_type.upper()} training already in progress for {symbol}"
         )
     
     # Convert to dict format
@@ -334,70 +415,92 @@ async def train_model(request: TrainRequest, background_tasks: BackgroundTasks):
         request.learning_rate or settings.learning_rate,
         seq_length,
         fc_days,
-        use_cuda
+        use_cuda,
+        model_type
     )
     
-    training_status[symbol] = {
+    training_status[status_key] = {
         "status": "starting",
         "progress": 0,
-        "message": f"Training job queued (epochs={request.epochs or settings.epochs}, seq_len={seq_length}, forecast={fc_days}, device={device_info})"
+        "model_type": model_type,
+        "message": f"{model_type.upper()} training job queued (epochs={request.epochs or settings.epochs}, seq_len={seq_length}, forecast={fc_days}, device={device_info})"
     }
     
     return {
-        "message": f"Training started for {symbol}",
-        "status_url": f"/api/ml/train/{symbol}/status"
+        "message": f"{model_type.upper()} training started for {symbol}",
+        "model_type": model_type,
+        "status_url": f"/api/ml/train/{symbol}/status?model_type={model_type}"
     }
 
 
 @app.get("/api/ml/train/{symbol}/status", response_model=TrainStatusResponse)
-async def get_training_status(symbol: str):
+async def get_training_status(symbol: str, model_type: Optional[str] = None):
     """Get training status for a symbol"""
     symbol = symbol.upper()
+    mt = (model_type or settings.default_model_type).lower()
     
-    if symbol not in training_status:
-        raise HTTPException(status_code=404, detail=f"No training job found for {symbol}")
+    # Try specific key first, then fallback to symbol-only key
+    status_key = f"{symbol}_{mt}" if mt == "transformer" else symbol
+    if status_key in training_status:
+        status = training_status[status_key]
+        return {"symbol": symbol, **status}
     
-    status = training_status[symbol]
-    return {
-        "symbol": symbol,
-        **status
-    }
+    # Fallback: try symbol-only key
+    if symbol in training_status:
+        status = training_status[symbol]
+        return {"symbol": symbol, **status}
+    
+    raise HTTPException(status_code=404, detail=f"No training job found for {symbol}")
 
 
 @app.post("/api/ml/predict", response_model=PredictResponse)
 async def predict(request: PredictRequest):
     """
-    Generate price predictions for a symbol
+    Generate price predictions for a symbol.
     
-    Requires a trained model. If model is not in memory, attempts to load from disk.
+    Supports both LSTM and Transformer models.
+    If model_type is not specified, auto-detects (prefers Transformer).
     """
     symbol = request.symbol.upper()
+    model_type = (request.model_type or "").lower() or None  # None = auto-detect
     
     # Get or load predictor
-    if symbol not in predictors:
-        predictor = StockPredictor(symbol)
-        if not predictor.load():
-            raise HTTPException(
-                status_code=404,
-                detail=f"No trained model found for {symbol}. Train a model first using /api/ml/train"
-            )
-        # Verify the loaded model is for the correct symbol
-        if predictor.model_metadata.get('symbol', '').upper() != symbol:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Model mismatch: loaded model is for {predictor.model_metadata.get('symbol')}, not {symbol}"
-            )
-        predictors[symbol] = predictor
+    predictor = None
+    detected_type = model_type
     
-    predictor = predictors[symbol]
+    # Check cache
+    if model_type:
+        key = _get_predictor_key(symbol, model_type)
+        if key in predictors and predictors[key].is_trained:
+            predictor = predictors[key]
+            detected_type = model_type
+    else:
+        # Auto-detect from cache
+        for mt in ["transformer", "lstm"]:
+            key = _get_predictor_key(symbol, mt)
+            if key in predictors and predictors[key].is_trained:
+                predictor = predictors[key]
+                detected_type = mt
+                break
     
-    # Double-check symbol matches (in case of cached predictor with wrong symbol)
-    if predictor.symbol.upper() != symbol:
-        # Remove invalid cached predictor and try again
-        del predictors[symbol]
+    # If not cached, try loading from disk
+    if not predictor:
+        predictor, detected_type = _try_load_predictor(symbol, model_type)
+        if predictor:
+            key = _get_predictor_key(symbol, detected_type)
+            predictors[key] = predictor
+    
+    if not predictor:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No trained model found for {symbol}. Train a model first using /api/ml/train"
+        )
+    
+    # Verify the loaded model is for the correct symbol
+    if predictor.model_metadata.get('symbol', '').upper() != symbol:
         raise HTTPException(
             status_code=400,
-            detail=f"Cached model mismatch. Please try again."
+            detail=f"Model mismatch: loaded model is for {predictor.model_metadata.get('symbol')}, not {symbol}"
         )
     
     # Validate data
@@ -413,25 +516,42 @@ async def predict(request: PredictRequest):
     
     try:
         result = predictor.predict(data)
+        result["model_type"] = detected_type
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.delete("/api/ml/models/{symbol}")
-async def delete_model(symbol: str):
-    """Delete a model"""
+async def delete_model(symbol: str, model_type: Optional[str] = None):
+    """Delete a model (LSTM, Transformer, or both)"""
     symbol = symbol.upper()
     
     import os
-    model_path = os.path.join(settings.model_dir, f"{symbol}_model.pt")
+    deleted = []
     
-    if symbol in predictors:
-        del predictors[symbol]
+    types_to_delete = [model_type] if model_type else ["lstm", "transformer"]
     
-    if os.path.exists(model_path):
-        os.remove(model_path)
-        return {"message": f"Model deleted for {symbol}"}
+    for mt in types_to_delete:
+        # Determine file path
+        if mt == "transformer":
+            model_path = os.path.join(settings.model_dir, f"{symbol}_transformer.pt")
+        else:
+            model_path = os.path.join(settings.model_dir, f"{symbol}_model.pt")
+        
+        # Remove from cache
+        key = _get_predictor_key(symbol, mt)
+        if key in predictors:
+            del predictors[key]
+            deleted.append(f"{mt} (cache)")
+        
+        # Remove file
+        if os.path.exists(model_path):
+            os.remove(model_path)
+            deleted.append(f"{mt} (file)")
+    
+    if deleted:
+        return {"message": f"Deleted for {symbol}: {', '.join(deleted)}"}
     
     raise HTTPException(status_code=404, detail=f"Model not found for {symbol}")
 

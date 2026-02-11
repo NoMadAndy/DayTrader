@@ -41,6 +41,7 @@ export interface MLTrainStatus {
   status: 'starting' | 'training' | 'completed' | 'failed';
   progress: number;
   message: string;
+  model_type?: 'lstm' | 'transformer';
   result?: {
     success: boolean;
     metadata: Record<string, unknown>;
@@ -50,6 +51,7 @@ export interface MLTrainStatus {
 
 export interface MLModelInfo {
   symbol: string;
+  model_type?: 'lstm' | 'transformer';
   is_trained: boolean;
   metadata?: Record<string, unknown>;
   device?: string;
@@ -143,6 +145,7 @@ class MLServiceClient {
       sequenceLength?: number;
       forecastDays?: number;
       useCuda?: boolean;
+      modelType?: 'lstm' | 'transformer';
     }
   ): Promise<{ success: boolean; message: string; statusUrl?: string }> {
     try {
@@ -163,7 +166,8 @@ class MLServiceClient {
           learning_rate: options?.learningRate,
           sequence_length: options?.sequenceLength,
           forecast_days: options?.forecastDays,
-          use_cuda: options?.useCuda
+          use_cuda: options?.useCuda,
+          model_type: options?.modelType
         })
       });
 
@@ -193,9 +197,10 @@ class MLServiceClient {
   /**
    * Get training status for a symbol
    */
-  async getTrainingStatus(symbol: string): Promise<MLTrainStatus | null> {
+  async getTrainingStatus(symbol: string, modelType?: string): Promise<MLTrainStatus | null> {
     try {
-      const response = await fetch(`${ML_API_BASE}/train/${symbol}/status`);
+      const params = modelType ? `?model_type=${modelType}` : '';
+      const response = await fetch(`${ML_API_BASE}/train/${symbol}/status${params}`);
       if (!response.ok) return null;
       return await response.json();
     } catch (error) {
@@ -208,7 +213,7 @@ class MLServiceClient {
    * Get price predictions for a symbol
    * Requires a trained model
    */
-  async predict(symbol: string, data: OHLCV[]): Promise<MLPredictResponse | null> {
+  async predict(symbol: string, data: OHLCV[], modelType?: 'lstm' | 'transformer'): Promise<MLPredictResponse | null> {
     try {
       const response = await fetch(`${ML_API_BASE}/predict`, {
         method: 'POST',
@@ -222,7 +227,8 @@ class MLServiceClient {
             low: d.low,
             close: d.close,
             volume: d.volume
-          }))
+          })),
+          model_type: modelType
         })
       });
 
@@ -242,9 +248,10 @@ class MLServiceClient {
   /**
    * Delete a trained model
    */
-  async deleteModel(symbol: string): Promise<boolean> {
+  async deleteModel(symbol: string, modelType?: string): Promise<boolean> {
     try {
-      const response = await fetch(`${ML_API_BASE}/models/${symbol}`, {
+      const params = modelType ? `?model_type=${modelType}` : '';
+      const response = await fetch(`${ML_API_BASE}/models/${symbol}${params}`, {
         method: 'DELETE'
       });
       return response.ok;

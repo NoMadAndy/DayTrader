@@ -157,7 +157,7 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
       }
     }
     
-    const result = await mlService.predict(symbol, dataToUse);
+    const result = await mlService.predict(symbol, dataToUse, getMLSettings().modelType);
     
     if (result) {
       // Validate that the prediction is for the correct symbol
@@ -245,6 +245,7 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
       sequenceLength: mlSettings.sequenceLength,
       forecastDays: mlSettings.forecastDays,
       useCuda: mlSettings.useCuda,
+      modelType: mlSettings.modelType,
     });
     
     if (!result.success) {
@@ -254,7 +255,7 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
   };
 
   const deleteModel = async () => {
-    const success = await mlService.deleteModel(symbol);
+    const success = await mlService.deleteModel(symbol, getMLSettings().modelType);
     if (success) {
       setHasModel(false);
       setPrediction(null);
@@ -302,6 +303,9 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
               GPU: {health.device_info.cuda_device_name?.split(' ')[0] || 'CUDA'}
             </span>
           )}
+          <span className="text-xs bg-purple-600/20 text-purple-300 px-2 py-0.5 rounded-full uppercase">
+            {getMLSettings().modelType || 'lstm'}
+          </span>
         </h3>
         
         {/* Actions */}

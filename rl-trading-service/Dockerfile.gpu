@@ -4,7 +4,7 @@
 FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 
 # Build arguments
-ARG BUILD_VERSION=1.37.8
+ARG BUILD_VERSION=1.38.0
 ARG BUILD_COMMIT=dev
 ARG BUILD_TIME=unknown
 
