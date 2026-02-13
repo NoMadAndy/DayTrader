@@ -62,6 +62,138 @@ def sanitize_float(value: Optional[float]) -> Optional[float]:
     return value
 
 
+def cosine_lr_schedule(initial_lr: float):
+    """
+    Cosine annealing learning rate schedule.
+    
+    Starts at initial_lr, decays following a cosine curve to 10% of initial_lr.
+    This helps convergence by reducing LR as training progresses.
+    
+    Args:
+        initial_lr: Starting learning rate
+        
+    Returns:
+        Callable that takes progress_remaining (1.0 → 0.0) and returns LR
+    """
+    min_lr_ratio = 0.1  # Decay to 10% of initial LR
+    
+    def schedule(progress_remaining: float) -> float:
+        # progress_remaining goes from 1.0 (start) to 0.0 (end)
+        cosine_decay = 0.5 * (1.0 + np.cos(np.pi * (1.0 - progress_remaining)))
+        return initial_lr * (min_lr_ratio + (1.0 - min_lr_ratio) * cosine_decay)
+    
+    return schedule
+
+
+class CurriculumCallback(BaseCallback):
+    """
+    Curriculum Learning callback — progressively increases training difficulty.
+    
+    Phases:
+    - Phase 1 (0-40%):  Easy — low drawdown penalty, high holding bonus,
+                        no opportunity cost. Agent learns basic buy/sell timing.
+    - Phase 2 (40-70%): Medium — moderate penalties, fee awareness kicks in.
+    - Phase 3 (70-100%): Full — all reward components at configured strength.
+                         Agent learns to handle real-world complexity.
+    """
+    
+    def __init__(self, log_callback: Optional[callable] = None, verbose: int = 0):
+        super().__init__(verbose)
+        self.log_callback = log_callback
+        self.current_phase = 0
+        self._phase_boundaries = [0.4, 0.7, 1.0]
+        self._phase_names = ["Easy (basic patterns)", "Medium (fee awareness)", "Full (all penalties)"]
+        # Multipliers for each phase: [drawdown_penalty, fee_penalty, opportunity_cost, churning]
+        self._phase_multipliers = [
+            {"drawdown_penalty_scale": 0.3, "step_fee_penalty_scale": 0.2,
+             "opportunity_cost_scale": 0.0, "churning_penalty": 0.5,
+             "holding_in_range_bonus": 0.3, "holding_too_long_penalty": 0.1},
+            {"drawdown_penalty_scale": 0.7, "step_fee_penalty_scale": 0.6,
+             "opportunity_cost_scale": 0.5, "churning_penalty": 1.0,
+             "holding_in_range_bonus": 0.2, "holding_too_long_penalty": 0.15},
+            {"drawdown_penalty_scale": 1.0, "step_fee_penalty_scale": 1.0,
+             "opportunity_cost_scale": 1.0, "churning_penalty": 1.0,
+             "holding_in_range_bonus": 0.1, "holding_too_long_penalty": 0.2},
+        ]
+        # Store original reward weights from first env
+        self._original_weights = None
+    
+    def _log(self, message: str, level: str = "info"):
+        if self.log_callback:
+            self.log_callback(message, level)
+    
+    def _on_training_start(self) -> None:
+        # Capture original reward weights from the environments
+        try:
+            venv = self.training_env
+            if hasattr(venv, 'venv'):
+                venv = venv.venv  # Unwrap VecNormalize
+            base_env = venv.envs[0]
+            while hasattr(base_env, 'env'):
+                base_env = base_env.env  # Unwrap Monitor
+            self._original_weights = base_env.reward_weights.copy()
+            self._apply_phase(0)
+        except Exception as e:
+            self._log(f"⚠️ Curriculum init error: {e}", "warning")
+    
+    def _apply_phase(self, phase: int):
+        """Apply reward weight multipliers for a curriculum phase."""
+        if self._original_weights is None:
+            return
+        
+        multipliers = self._phase_multipliers[phase]
+        
+        try:
+            venv = self.training_env
+            if hasattr(venv, 'venv'):
+                venv = venv.venv
+            
+            for env_wrapper in venv.envs:
+                env = env_wrapper
+                while hasattr(env, 'env'):
+                    env = env.env
+                
+                for key, mult in multipliers.items():
+                    if key in self._original_weights:
+                        env.reward_weights[key] = self._original_weights[key] * mult
+        except Exception as e:
+            self._log(f"⚠️ Phase apply error: {e}", "warning")
+    
+    def _on_step(self) -> bool:
+        # Calculate which phase we should be in
+        progress = 1.0 - self.locals.get("self", self.model)._current_progress_remaining
+        
+        new_phase = 0
+        for i, boundary in enumerate(self._phase_boundaries):
+            if progress < boundary:
+                new_phase = i
+                break
+        else:
+            new_phase = len(self._phase_boundaries) - 1
+        
+        if new_phase != self.current_phase:
+            self.current_phase = new_phase
+            self._apply_phase(new_phase)
+            self._log(f"📚 Curriculum → Phase {new_phase + 1}/3: {self._phase_names[new_phase]}")
+        
+        return True
+    
+    def _on_training_end(self) -> None:
+        # Restore original weights
+        if self._original_weights:
+            try:
+                venv = self.training_env
+                if hasattr(venv, 'venv'):
+                    venv = venv.venv
+                for env_wrapper in venv.envs:
+                    env = env_wrapper
+                    while hasattr(env, 'env'):
+                        env = env.env
+                    env.reward_weights = self._original_weights.copy()
+            except Exception:
+                pass
+
+
 class TrainingProgressCallback(BaseCallback):
     """Callback to track training progress and emit updates with detailed logs"""
     
@@ -534,8 +666,8 @@ class TradingAgentTrainer:
                         env=vec_env,
                         device=self.device,
                         tensorboard_log=str(self.checkpoint_dir / "tensorboard"),
-                        # Use effective_config learning rate (preserved from saved model)
-                        learning_rate=effective_config.learning_rate,
+                        # Use cosine LR schedule for better convergence
+                        learning_rate=cosine_lr_schedule(effective_config.learning_rate),
                     )
                     
                     log(f"   ✅ Model loaded successfully!")
@@ -568,7 +700,7 @@ class TradingAgentTrainer:
                         model = PPO(
                             policy="MlpPolicy",
                             env=vec_env,
-                            learning_rate=effective_config.learning_rate,
+                            learning_rate=cosine_lr_schedule(effective_config.learning_rate),
                             n_steps=settings.default_n_steps,
                             batch_size=settings.default_batch_size,
                             n_epochs=10,
@@ -584,7 +716,7 @@ class TradingAgentTrainer:
                     model = PPO(
                         policy="MlpPolicy",
                         env=vec_env,
-                        learning_rate=effective_config.learning_rate,
+                        learning_rate=cosine_lr_schedule(effective_config.learning_rate),
                         n_steps=settings.default_n_steps,
                         batch_size=settings.default_batch_size,
                         n_epochs=10,
@@ -614,16 +746,23 @@ class TradingAgentTrainer:
                 name_prefix="checkpoint",
             )
             
+            # Curriculum Learning callback
+            curriculum_cb = CurriculumCallback(
+                log_callback=log_callback,
+            )
+            
             # Train
             training_mode = "Continue Training" if will_continue else "Fresh Training"
             log(f"🎯 Starting {training_mode} for {total_timesteps:,} timesteps...")
+            log(f"   📚 Curriculum Learning: 3 phases (Easy → Medium → Full)")
+            log(f"   📉 LR Schedule: Cosine annealing {effective_config.learning_rate} → {effective_config.learning_rate * 0.1:.6f}")
             if will_continue:
                 log(f"   📊 Model will have {cumulative_timesteps + total_timesteps:,} total timesteps after this session")
             
             start_time = datetime.now()
             model.learn(
                 total_timesteps=total_timesteps,
-                callback=[progress_cb, checkpoint_cb],
+                callback=[progress_cb, checkpoint_cb, curriculum_cb],
                 progress_bar=False,  # Disabled in container, use callback for progress
                 reset_num_timesteps=not will_continue,  # Don't reset timestep counter if continuing
             )

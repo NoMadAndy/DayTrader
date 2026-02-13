@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.43.0] - 2026-02-13
+
+### Added
+- **Curriculum Learning** — Training startet mit reduzierten Strafen (Phase 1: Easy), steigert progressiv (Phase 2: Medium, Phase 3: Full) für stabileres Lernen der Grundmuster
+- **Cosine LR Scheduling** — Learning Rate folgt Cosine-Annealing statt konstantem Wert (Initial → 10% am Ende), verbessert Konvergenz und finale Modell-Qualität
+- **Consistency Reward** — Belohnung für gleichmäßig positive Returns (≥60% positive Tage) und niedrige Return-Varianz, bestraft sporadische große Gewinne/Verluste via `consistency_bonus_scale`
+- **Signal Recency Weighting** — Exponentiell gewichteter Trend-Indikator (10. Indikator), jüngere Returns stärker gewichtet; Momentum-Gewichtung: 5d=50%, 10d=30%, 20d=20% (vorher 60/40)
+- **Drawdown Position Scaling** — Positionsgrößen werden ab 25% des Max-Drawdowns linear reduziert (bis 25% bei 100% Drawdown), verhindert tiefere Verluste in Verlustphasen
+- **ATR-Inverse Position Sizing** — Volatility-Modus nutzt jetzt echten ATR: kleinere Positionen in volatilen Märkten, größere in ruhigen; Target 1% Portfolio-Risiko pro Trade
+- **Graduated Risk Checks** — Abgestufte Drawdown-Warnstufen: 25%→75% Sizing, 50%→50%, 75%→30%; `position_scale_factor` in `RiskCheckResult` für automatische Anpassung
+- **Win/Loss Streak Tracking** — Engine trackt Gewinn/Verlust-Serien: 3+ Verluste → Position um 15%/Stufe reduziert (min 30%), 5+ Gewinne → leicht erhöhter Threshold gegen Overtrading
+
 ## [1.42.0] - 2026-02-13
 
 ### Added

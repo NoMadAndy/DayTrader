@@ -37,6 +37,7 @@ class RiskCheckResult:
     checks: List[Dict[str, Any]]
     warnings: List[str]
     blockers: List[str]
+    position_scale_factor: float = 1.0  # 1.0 = full size, <1.0 = scaled down
 
 
 class RiskManager:
@@ -106,6 +107,11 @@ class RiskManager:
         checks.append(self._check_cooldown())
         checks.append(await self._check_vix())
         
+        # Graduated drawdown check (returns scale factor)
+        dd_check, position_scale = self._check_drawdown_graduated(current_portfolio)
+        
+        checks.append(dd_check)
+        
         # Aggregate results
         blockers = []
         warnings = []
@@ -128,7 +134,8 @@ class RiskManager:
             total_count=len(checks),
             checks=[self._check_to_dict(c) for c in checks],
             warnings=warnings,
-            blockers=blockers
+            blockers=blockers,
+            position_scale_factor=position_scale
         )
     
     def _check_to_dict(self, check: RiskCheck) -> Dict[str, Any]:
@@ -352,6 +359,62 @@ class RiskManager:
                 description=f"Error checking trading hours: {e}",
                 severity='warning'
             )
+    
+    def _check_drawdown_graduated(self, current_portfolio: Dict) -> tuple:
+        """
+        Graduated drawdown risk check with position scaling.
+        
+        Returns scaled position size recommendations:
+        - 0-25% of max drawdown: No scaling (1.0x)
+        - 25-50%: Warning, 75% position size
+        - 50-75%: Warning, 50% position size
+        - 75-100%: Severe warning, 30% position size
+        - 100%+: Blocker (handled by _check_max_drawdown)
+        
+        Args:
+            current_portfolio: Current portfolio state
+            
+        Returns:
+            Tuple of (RiskCheck, scale_factor)
+        """
+        max_value = current_portfolio.get('max_value') or self._initial_budget
+        current_value = current_portfolio.get('total_value') or self._initial_budget
+        
+        drawdown = (max_value - current_value) / max_value if max_value > 0 else 0
+        dd_ratio = drawdown / self._max_drawdown if self._max_drawdown > 0 else 0
+        
+        if dd_ratio < 0.25:
+            scale = 1.0
+            severity = 'info'
+            description = f"Drawdown {drawdown*100:.1f}% — minimal, full position sizing"
+            passed = True
+        elif dd_ratio < 0.50:
+            scale = 0.75
+            severity = 'warning'
+            description = f"Drawdown {drawdown*100:.1f}% — moderate, reducing positions to 75%"
+            passed = True
+        elif dd_ratio < 0.75:
+            scale = 0.50
+            severity = 'warning'
+            description = f"Drawdown {drawdown*100:.1f}% — elevated, reducing positions to 50%"
+            passed = True
+        else:
+            scale = 0.30
+            severity = 'warning'
+            description = f"Drawdown {drawdown*100:.1f}% — severe, reducing positions to 30%"
+            passed = True  # Not a blocker (that's _check_max_drawdown's job)
+        
+        check = RiskCheck(
+            name="Drawdown Scaling",
+            category="risk_scaling",
+            passed=passed,
+            value=f"{drawdown*100:.1f}% ({dd_ratio*100:.0f}% of limit)",
+            limit=f"{self._max_drawdown*100:.1f}%",
+            description=description,
+            severity=severity
+        )
+        
+        return check, scale
     
     def _check_cooldown(self) -> RiskCheck:
         """Check if in cooldown period after consecutive losses"""

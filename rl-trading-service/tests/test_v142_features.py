@@ -131,8 +131,8 @@ class TestNewRewardWeights:
         assert DEFAULT_REWARD_WEIGHTS["opportunity_cost_scale"] == 30.0
 
     def test_total_reward_weight_count(self):
-        """Ensure we have exactly 19 reward weights now."""
-        assert len(DEFAULT_REWARD_WEIGHTS) == 19
+        """Ensure we have exactly 20 reward weights now (added consistency_bonus_scale in v1.43)."""
+        assert len(DEFAULT_REWARD_WEIGHTS) == 20
 
     def test_new_weights_propagated_to_env(self):
         env = TradingEnvironment(df=make_df(), config=AgentConfig(name="test"))

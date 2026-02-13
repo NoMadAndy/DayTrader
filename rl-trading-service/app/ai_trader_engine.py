@@ -166,6 +166,8 @@ class AITraderEngine:
         self.risk_manager = RiskManager(config)
         self.http_client = httpx.AsyncClient(timeout=30.0)
         self.consecutive_losses = 0
+        self.consecutive_wins = 0
+        self._trade_history: list = []  # Recent trade outcomes for streak tracking
     
     async def analyze_symbol(
         self,
@@ -216,13 +218,14 @@ class AITraderEngine:
             symbol
         )
         
-        # 4. Calculate position size
+        # 4. Calculate position size (with drawdown scaling)
         current_price = market_data.get('current_price', 0)
         position_size, quantity = self._calculate_position_size(
             decision_type,
             current_price,
             aggregated.confidence,
-            portfolio_state
+            portfolio_state,
+            market_data=market_data
         )
         
         # 5. Calculate stop-loss and take-profit (dynamic ATR or fixed %)
@@ -240,6 +243,13 @@ class AITraderEngine:
             quantity=quantity,
             current_portfolio=portfolio_state
         )
+        
+        # 6b. Apply risk-based position scaling
+        if risk_result.position_scale_factor < 1.0 and quantity != 0:
+            position_size = position_size * risk_result.position_scale_factor
+            quantity = int(quantity * risk_result.position_scale_factor)
+            if abs(quantity) < 1:
+                quantity = 1 if quantity > 0 else -1 if quantity < 0 else 0
         
         # 7. Build reasoning
         reasoning = self._build_reasoning(
@@ -285,6 +295,24 @@ class AITraderEngine:
         
         return decision
     
+    def record_trade_outcome(self, profit: float):
+        """
+        Record a trade outcome for win/loss streak tracking.
+        
+        Args:
+            profit: Trade profit (positive = win, negative = loss)
+        """
+        self._trade_history.append(profit)
+        if len(self._trade_history) > 100:
+            self._trade_history = self._trade_history[-100:]
+        
+        if profit > 0:
+            self.consecutive_wins += 1
+            self.consecutive_losses = 0
+        elif profit < 0:
+            self.consecutive_losses += 1
+            self.consecutive_wins = 0
+    
     def _calculate_adaptive_threshold(
         self,
         aggregated,
@@ -323,6 +351,21 @@ class AITraderEngine:
         # Adjust based on consecutive losses
         if self.consecutive_losses >= 3:
             threshold += 0.05 * (self.consecutive_losses - 2)
+        
+        # Adjust based on consecutive wins (prevent overconfidence)
+        if self.consecutive_wins >= 5:
+            threshold += 0.03 * (self.consecutive_wins - 4)  # Slight increase
+        
+        # Adjust based on drawdown level (graduated)
+        max_value = portfolio_state.get('max_value') or self.config.initial_budget
+        current_value = portfolio_state.get('total_value') or self.config.initial_budget
+        if max_value > 0:
+            drawdown = (max_value - current_value) / max_value
+            max_dd = self.config.max_drawdown if self.config.max_drawdown else 0.15
+            dd_ratio = drawdown / max_dd
+            if dd_ratio > 0.5:
+                # At 50%+ of max drawdown, raise threshold
+                threshold += 0.05 * (dd_ratio - 0.5) * 2  # Up to +0.05 at 100%
         
         # Adjust based on VIX (if available in market context)
         # This would be fetched in real implementation
@@ -543,16 +586,20 @@ class AITraderEngine:
         decision_type: str,
         current_price: float,
         confidence: float,
-        portfolio_state: Dict
+        portfolio_state: Dict,
+        market_data: Optional[Dict] = None
     ) -> tuple:
         """
         Calculate position size and quantity.
+        
+        Includes drawdown-based scaling and ATR-based volatility sizing.
         
         Args:
             decision_type: Type of decision
             current_price: Current stock price
             confidence: Signal confidence
             portfolio_state: Current portfolio state
+            market_data: Market data (for ATR-based sizing)
             
         Returns:
             Tuple of (position_size_dollars, quantity_shares)
@@ -589,14 +636,46 @@ class AITraderEngine:
             position_size = initial_budget * kelly_pct
         
         elif self.config.position_sizing == 'volatility':
-            # Volatility-based sizing (simplified)
-            # Use confidence as inverse volatility proxy
-            vol_factor = confidence
-            base_size = initial_budget * fixed_position_percent
-            position_size = base_size * vol_factor
+            # ATR-inverse sizing: trade smaller in volatile markets, larger in calm ones
+            # Target a fixed risk amount per trade relative to portfolio
+            prices = (market_data or {}).get('prices', [])
+            atr = self._calculate_atr(prices, self.config.atr_period) if prices else None
+            
+            if atr and atr > 0 and current_price > 0:
+                atr_pct = atr / current_price
+                # Target risk: 1% of portfolio per trade
+                target_risk_pct = 0.01 * confidence  # Scale with confidence
+                # Position = (portfolio * target_risk) / ATR%
+                position_size = min(
+                    initial_budget * target_risk_pct / max(atr_pct, 0.005),
+                    initial_budget * fixed_position_percent * 2  # Cap at 2x base
+                )
+            else:
+                # Fallback: confidence-scaled fixed
+                position_size = initial_budget * fixed_position_percent * confidence
         
         else:
             position_size = initial_budget * fixed_position_percent
+        
+        # === Drawdown-Based Position Scaling ===
+        # Reduce position sizes proportionally when portfolio is in drawdown
+        max_value = portfolio_state.get('max_value') or initial_budget
+        current_value = portfolio_state.get('total_value') or initial_budget
+        if max_value > 0 and current_value < max_value:
+            drawdown = (max_value - current_value) / max_value
+            max_dd = self.config.max_drawdown if self.config.max_drawdown else 0.15
+            dd_ratio = drawdown / max_dd  # 0.0 = no drawdown, 1.0 = at max drawdown
+            
+            if dd_ratio > 0.25:  # Start scaling down at 25% of max drawdown
+                # Linear scale: at 25% dd_ratio = 1.0x, at 100% dd_ratio = 0.25x
+                drawdown_scale = max(0.25, 1.0 - (dd_ratio - 0.25) * 1.0)
+                position_size *= drawdown_scale
+        
+        # === Loss Streak Scaling ===
+        # Reduce positions after consecutive losses
+        if self.consecutive_losses >= 3:
+            streak_scale = max(0.30, 1.0 - (self.consecutive_losses - 2) * 0.15)
+            position_size *= streak_scale
         
         # For short positions, use a smaller position size (more conservative)
         if decision_type == 'short':

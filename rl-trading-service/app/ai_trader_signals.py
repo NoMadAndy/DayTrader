@@ -812,14 +812,28 @@ class SignalAggregator:
                     scores.append(mfi_score)
                     indicator_details['mfi'] = mfi
             
-            # 9. Momentum scoring (5/10/20 period returns)
+            # 9. Momentum scoring (5/10/20 period returns) — recency-weighted
+            #    Recent momentum is more informative than older momentum
             mom_5 = (current_price / closes[-6] - 1) if len(closes) > 5 else 0
+            mom_10 = (current_price / closes[-11] - 1) if len(closes) > 10 else 0
             mom_20 = (current_price / closes[-21] - 1) if len(closes) > 20 else 0
-            # Positive momentum = bullish
-            mom_score = np.clip((mom_5 * 0.6 + mom_20 * 0.4) * 5, -0.6, 0.6)
+            # Recency weights: 5d=50%, 10d=30%, 20d=20%
+            mom_score = np.clip((mom_5 * 0.50 + mom_10 * 0.30 + mom_20 * 0.20) * 5, -0.6, 0.6)
             scores.append(mom_score)
             indicator_details['momentum_5d'] = mom_5
+            indicator_details['momentum_10d'] = mom_10
             indicator_details['momentum_20d'] = mom_20
+            
+            # 10. Recency-weighted price trend (exponentially weighted returns)
+            if len(closes) >= 20:
+                recent_returns = np.diff(closes[-20:]) / closes[-20:-1]
+                # Exponential weights: most recent return = highest weight
+                weights = np.exp(np.linspace(-2, 0, len(recent_returns)))
+                weights /= weights.sum()
+                ew_trend = np.sum(recent_returns * weights)
+                trend_score = np.clip(ew_trend * 10, -0.5, 0.5)
+                scores.append(trend_score)
+                indicator_details['ew_trend'] = float(ew_trend)
             
             # Aggregate technical score
             tech_score = np.mean(scores)

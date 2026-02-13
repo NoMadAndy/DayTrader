@@ -51,6 +51,7 @@ class TestConstants:
             "risk_adjusted_scale", "win_rate_bonus_scale",
             "use_sharpe_reward", "sharpe_scale", "sortino_scale",
             "step_fee_penalty_scale", "opportunity_cost_scale",
+            "consistency_bonus_scale",
         }
         assert set(DEFAULT_REWARD_WEIGHTS.keys()) == expected_keys
 

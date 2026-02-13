@@ -119,6 +119,8 @@ DEFAULT_REWARD_WEIGHTS = {
     "step_fee_penalty_scale": 50.0,
     # Opportunity-cost penalty (cash sitting idle while market trends up)
     "opportunity_cost_scale": 30.0,
+    # Consistency bonus — reward steady positive returns over sporadic big wins
+    "consistency_bonus_scale": 5.0,
 }
 
 
@@ -716,6 +718,20 @@ class TradingEnvironment(gym.Env):
                     # Agent is missing gains by sitting in cash
                     missed_gain = recent_market * (cash_ratio - 0.5)
                     reward -= missed_gain * rw.get("opportunity_cost_scale", 30.0)
+
+        # Consistency bonus — reward streaks of positive returns
+        if len(self._daily_returns) >= 10:
+            recent_10 = self._daily_returns[-10:]
+            positive_ratio = sum(1 for r in recent_10 if r > 0) / len(recent_10)
+            if positive_ratio >= 0.6:
+                # Extra reward for consistent positive performance
+                reward += (positive_ratio - 0.5) * rw.get("consistency_bonus_scale", 5.0)
+            
+            # Also penalize high variance (erratic returns)
+            recent_std = np.std(recent_10)
+            if recent_std < 0.005 and np.mean(recent_10) > 0:
+                # Low variance + positive returns = ideal → small bonus
+                reward += 0.05 * rw.get("consistency_bonus_scale", 5.0)
 
         return reward
 
