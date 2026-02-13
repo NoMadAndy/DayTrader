@@ -73,6 +73,9 @@ class SignalAggregator:
         sentiment_result = await self._get_sentiment_signal(symbol)
         technical_result = self._calculate_technical_signal(market_data)
         
+        # Detect market regime from technical indicators
+        market_regime = self._detect_market_regime(market_data, technical_result)
+        
         # Extract scores
         ml_score = ml_result.get('score', 0.0)
         rl_score = rl_result.get('score', 0.0)
@@ -97,6 +100,23 @@ class SignalAggregator:
         effective_rl_weight = rl_weight * (rl_conf if rl_conf > 0.1 else 0.1)
         effective_sentiment_weight = sentiment_weight * (sentiment_conf if sentiment_conf > 0.1 else 0.1)
         effective_technical_weight = technical_weight * (technical_conf if technical_conf > 0.1 else 0.1)
+        
+        # Adjust weights based on market regime
+        regime = market_regime.get('regime', 'range')
+        if regime == 'crash':
+            # In crash: boost sentiment (panic detection) and technical (mean reversion)
+            effective_sentiment_weight *= 1.5
+            effective_technical_weight *= 1.3
+            effective_ml_weight *= 0.7  # ML predictions less reliable in crashes
+        elif regime == 'volatile':
+            # Volatile: boost technical (breakout/breakdown), reduce ML
+            effective_technical_weight *= 1.3
+            effective_ml_weight *= 0.8
+        elif regime == 'trend':
+            # Trending: boost RL (momentum following) and ML
+            effective_rl_weight *= 1.3
+            effective_ml_weight *= 1.2
+            effective_technical_weight *= 0.9  # Mean-reversion signals less useful
         
         # Normalize weights
         total_weight = effective_ml_weight + effective_rl_weight + effective_sentiment_weight + effective_technical_weight
@@ -142,7 +162,8 @@ class SignalAggregator:
             'symbol': symbol,
             'current_price': market_data.get('current_price', 0),
             'volume': market_data.get('volume', 0),
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
+            'market_regime': market_regime
         }
         
         return AggregatedSignal(
@@ -222,9 +243,17 @@ class SignalAggregator:
                     confidence = first_pred.get('confidence', 0.5)
                     change_pct = first_pred.get('change_pct', 0)
                     
-                    # Normalize change_pct to -1 to +1 range
-                    # change_pct is already a percentage, normalize assuming +/-10% is strong signal
-                    score = np.clip(change_pct / 10.0, -1.0, 1.0)
+                    # Normalize change_pct relative to symbol's historical volatility
+                    # instead of fixed /10.0 — adapts to each stock's range
+                    prices_list = market_data.get('prices', [])
+                    if len(prices_list) >= 20:
+                        hist_closes = np.array([p.get('close', 0) for p in prices_list[-60:]])
+                        hist_returns = np.diff(hist_closes) / hist_closes[:-1]
+                        hist_vol = np.std(hist_returns) * 100  # Daily vol as percentage
+                        normalizer = max(hist_vol * 3, 1.0)  # 3-sigma range
+                    else:
+                        normalizer = 10.0  # Fallback
+                    score = np.clip(change_pct / normalizer, -1.0, 1.0)
                     
                     return {
                         'score': score,
@@ -444,17 +473,49 @@ class SignalAggregator:
             
             signal_result = trainer.get_trading_signal(agent_name, df)
             
-            # Convert signal to score
+            # Convert signal to continuous score using action probabilities
+            # instead of stepped 0.5/0.75/1.0 values
+            action_probs = signal_result.get('action_probabilities', {})
             signal_type = signal_result.get('signal', 'hold')
             strength = signal_result.get('strength', 'weak')
             
-            # Map to -1 to +1 score
-            if signal_type == 'buy':
-                base_score = 0.5 if strength == 'weak' else 0.75 if strength == 'moderate' else 1.0
-            elif signal_type == 'sell':
-                base_score = -0.5 if strength == 'weak' else -0.75 if strength == 'moderate' else -1.0
-            else:  # hold
-                base_score = 0.0
+            if action_probs:
+                # Weighted continuous score from action probability distribution
+                # Buy actions contribute positively, sell actions negatively
+                buy_weight = (
+                    action_probs.get('buy_small', 0) * 0.33 +
+                    action_probs.get('buy_medium', 0) * 0.67 +
+                    action_probs.get('buy_large', 0) * 1.0
+                )
+                sell_weight = (
+                    action_probs.get('sell_small', 0) * 0.33 +
+                    action_probs.get('sell_medium', 0) * 0.67 +
+                    action_probs.get('sell_all', 0) * 1.0
+                )
+                # Short actions if present
+                short_weight = (
+                    action_probs.get('short_small', 0) * 0.33 +
+                    action_probs.get('short_medium', 0) * 0.67 +
+                    action_probs.get('short_large', 0) * 1.0
+                )
+                cover_weight = (
+                    action_probs.get('cover_small', 0) * 0.33 +
+                    action_probs.get('cover_medium', 0) * 0.67 +
+                    action_probs.get('cover_all', 0) * 1.0
+                )
+                # Net bullish minus bearish probability mass
+                base_score = np.clip(
+                    (buy_weight + cover_weight) - (sell_weight + short_weight),
+                    -1.0, 1.0
+                )
+            else:
+                # Fallback to stepped mapping if no action probabilities
+                if signal_type == 'buy':
+                    base_score = 0.5 if strength == 'weak' else 0.75 if strength == 'moderate' else 1.0
+                elif signal_type == 'sell':
+                    base_score = -0.5 if strength == 'weak' else -0.75 if strength == 'moderate' else -1.0
+                else:
+                    base_score = 0.0
             
             return {
                 'score': base_score,
@@ -539,15 +600,81 @@ class SignalAggregator:
                 'error': str(e)
             }
     
+    def _detect_market_regime(self, market_data: Dict, technical_result: Dict) -> Dict:
+        """
+        Detect current market regime from price data and technical indicators.
+        
+        Regimes: trend, range, volatile, crash
+        """
+        try:
+            prices = market_data.get('prices', [])
+            if len(prices) < 30:
+                return {'regime': 'range', 'confidence': 0.3}
+            
+            closes = np.array([p.get('close', 0) for p in prices])
+            returns = np.diff(closes[-30:]) / closes[-31:-1]
+            
+            # Volatility metrics
+            vol_20 = np.std(returns[-20:]) if len(returns) >= 20 else np.std(returns)
+            vol_5 = np.std(returns[-5:]) if len(returns) >= 5 else vol_20
+            avg_return = np.mean(returns[-20:])
+            
+            # ADX from technical result (if available)
+            adx = technical_result.get('adx', 20)
+            
+            # Regime classification
+            # Crash: high vol + strong negative returns
+            if vol_5 > vol_20 * 1.5 and avg_return < -0.01:
+                return {
+                    'regime': 'crash',
+                    'confidence': min(0.9, vol_5 / vol_20 * 0.3 + 0.3),
+                    'volatility': float(vol_20),
+                    'recent_volatility': float(vol_5),
+                    'avg_return': float(avg_return)
+                }
+            
+            # Volatile: vol spike without clear direction
+            if vol_5 > vol_20 * 1.5:
+                return {
+                    'regime': 'volatile',
+                    'confidence': min(0.85, vol_5 / vol_20 * 0.3),
+                    'volatility': float(vol_20),
+                    'recent_volatility': float(vol_5),
+                    'avg_return': float(avg_return)
+                }
+            
+            # Trend: ADX > 25 or consistent directional returns
+            consecutive_positive = sum(1 for r in returns[-10:] if r > 0)
+            consecutive_negative = sum(1 for r in returns[-10:] if r < 0)
+            directional = max(consecutive_positive, consecutive_negative) / 10
+            
+            if adx > 25 or directional > 0.7:
+                return {
+                    'regime': 'trend',
+                    'confidence': min(0.85, directional * 0.5 + (adx - 15) / 50),
+                    'direction': 'up' if avg_return > 0 else 'down',
+                    'adx': float(adx),
+                    'volatility': float(vol_20),
+                    'avg_return': float(avg_return)
+                }
+            
+            # Default: range-bound
+            return {
+                'regime': 'range',
+                'confidence': 0.6,
+                'volatility': float(vol_20),
+                'avg_return': float(avg_return)
+            }
+            
+        except Exception as e:
+            return {'regime': 'range', 'confidence': 0.3, 'error': str(e)}
+    
     def _calculate_technical_signal(self, market_data: Dict) -> Dict:
         """
-        Calculate technical analysis signal.
+        Calculate technical analysis signal using comprehensive indicator suite.
         
-        Args:
-            market_data: Market data with OHLCV
-            
-        Returns:
-            Dict with score, confidence, and indicator details
+        Uses RSI, MACD, Moving Averages, Bollinger Bands, ADX, Stochastic,
+        ATR-based volatility, CCI, and MFI for a robust composite score.
         """
         try:
             prices = market_data.get('prices', [])
@@ -558,23 +685,24 @@ class SignalAggregator:
                     'error': 'Insufficient data (need 60+ points)'
                 }
             
-            # Extract close prices for calculations
+            # Extract price arrays
             closes = np.array([p.get('close', 0) for p in prices])
             highs = np.array([p.get('high', 0) for p in prices])
             lows = np.array([p.get('low', 0) for p in prices])
             volumes = np.array([p.get('volume', 0) for p in prices])
             
-            # Calculate indicators
+            current_price = closes[-1]
+            
+            # Calculate all indicators
             rsi = self._calculate_rsi(closes)
             macd, macd_signal, macd_hist = self._calculate_macd(closes)
             sma_20 = np.mean(closes[-20:]) if len(closes) >= 20 else closes[-1]
             sma_50 = np.mean(closes[-50:]) if len(closes) >= 50 else closes[-1]
-            current_price = closes[-1]
             
-            # Score each indicator
             scores = []
+            indicator_details = {}
             
-            # RSI scoring
+            # 1. RSI scoring (weight: momentum)
             if rsi < 30:
                 rsi_score = 0.8  # Oversold - bullish
             elif rsi < 40:
@@ -584,19 +712,21 @@ class SignalAggregator:
             elif rsi > 60:
                 rsi_score = -0.4
             else:
-                rsi_score = 0.0  # Neutral
+                rsi_score = 0.0
             scores.append(rsi_score)
+            indicator_details['rsi'] = rsi
+            indicator_details['rsi_signal'] = 'oversold' if rsi < 30 else 'overbought' if rsi > 70 else 'neutral'
             
-            # MACD scoring
+            # 2. MACD scoring (weight: trend)
             if macd_hist > 0:
-                macd_score = 0.5  # Bullish
+                macd_score = min(0.8, macd_hist / (abs(macd) + 1e-8))  # Proportional to histogram strength
             elif macd_hist < 0:
-                macd_score = -0.5  # Bearish
+                macd_score = max(-0.8, macd_hist / (abs(macd) + 1e-8))
             else:
                 macd_score = 0.0
             scores.append(macd_score)
             
-            # Moving Average scoring
+            # 3. Moving Average scoring (weight: trend)
             if current_price > sma_20 > sma_50:
                 ma_score = 0.7  # Strong uptrend
             elif current_price > sma_20:
@@ -609,25 +739,110 @@ class SignalAggregator:
                 ma_score = 0.0
             scores.append(ma_score)
             
+            # 4. Bollinger Bands scoring (mean reversion + volatility)
+            if len(closes) >= 20:
+                bb_middle = sma_20
+                bb_std = np.std(closes[-20:])
+                bb_upper = bb_middle + 2 * bb_std
+                bb_lower = bb_middle - 2 * bb_std
+                bb_width = (bb_upper - bb_lower) / bb_middle if bb_middle > 0 else 0
+                
+                if bb_upper > bb_lower:
+                    bb_pct = (current_price - bb_lower) / (bb_upper - bb_lower)
+                else:
+                    bb_pct = 0.5
+                
+                # Near lower band = oversold (+), near upper = overbought (-)
+                bb_score = np.clip(1.0 - 2.0 * bb_pct, -0.7, 0.7)
+                scores.append(bb_score)
+                indicator_details['bb_pct'] = bb_pct
+                indicator_details['bb_width'] = bb_width
+            
+            # 5. ADX scoring (trend strength, direction from DI+/DI-)
+            if len(closes) >= 28:
+                adx = self._calculate_adx(highs, lows, closes)
+                if adx is not None:
+                    # ADX > 25 = trending, < 20 = ranging
+                    if adx > 25:
+                        # Determine direction from price vs SMA
+                        direction = 1.0 if current_price > sma_20 else -1.0
+                        adx_score = direction * min(0.6, (adx - 25) / 50)
+                    else:
+                        adx_score = 0.0  # No clear trend
+                    scores.append(adx_score)
+                    indicator_details['adx'] = adx
+            
+            # 6. Stochastic Oscillator scoring
+            if len(closes) >= 14:
+                stoch_k = self._calculate_stochastic(highs, lows, closes)
+                if stoch_k is not None:
+                    if stoch_k < 20:
+                        stoch_score = 0.6  # Oversold
+                    elif stoch_k > 80:
+                        stoch_score = -0.6  # Overbought
+                    else:
+                        stoch_score = (50 - stoch_k) / 100  # Slight directional bias
+                    scores.append(stoch_score)
+                    indicator_details['stoch_k'] = stoch_k
+            
+            # 7. CCI scoring (Commodity Channel Index)
+            if len(closes) >= 20:
+                cci = self._calculate_cci(highs, lows, closes)
+                if cci is not None:
+                    if cci < -100:
+                        cci_score = 0.5  # Oversold
+                    elif cci > 100:
+                        cci_score = -0.5  # Overbought
+                    else:
+                        cci_score = -cci / 200  # Linear scaling
+                    scores.append(cci_score)
+                    indicator_details['cci'] = cci
+            
+            # 8. MFI scoring (Money Flow Index — volume-weighted RSI)
+            if len(closes) >= 14 and np.any(volumes > 0):
+                mfi = self._calculate_mfi(highs, lows, closes, volumes)
+                if mfi is not None:
+                    if mfi < 20:
+                        mfi_score = 0.5  # Money flowing in
+                    elif mfi > 80:
+                        mfi_score = -0.5  # Money flowing out
+                    else:
+                        mfi_score = (50 - mfi) / 100
+                    scores.append(mfi_score)
+                    indicator_details['mfi'] = mfi
+            
+            # 9. Momentum scoring (5/10/20 period returns)
+            mom_5 = (current_price / closes[-6] - 1) if len(closes) > 5 else 0
+            mom_20 = (current_price / closes[-21] - 1) if len(closes) > 20 else 0
+            # Positive momentum = bullish
+            mom_score = np.clip((mom_5 * 0.6 + mom_20 * 0.4) * 5, -0.6, 0.6)
+            scores.append(mom_score)
+            indicator_details['momentum_5d'] = mom_5
+            indicator_details['momentum_20d'] = mom_20
+            
             # Aggregate technical score
             tech_score = np.mean(scores)
             
-            # Confidence based on indicator agreement
+            # Confidence: based on indicator agreement (lower std = higher confidence)
             score_std = np.std(scores)
-            confidence = max(0.3, 1.0 - score_std)  # Lower std = higher confidence
+            n_indicators = len(scores)
+            # More indicators agreeing = higher confidence
+            confidence = max(0.3, min(0.95, 1.0 - score_std + (n_indicators - 3) * 0.03))
             
             return {
                 'score': tech_score,
                 'confidence': confidence,
                 'rsi': rsi,
-                'rsi_signal': 'oversold' if rsi < 30 else 'overbought' if rsi > 70 else 'neutral',
+                'rsi_signal': indicator_details.get('rsi_signal', 'neutral'),
                 'macd': macd,
                 'macd_signal': macd_signal,
                 'macd_hist': macd_hist,
                 'sma_20': sma_20,
                 'sma_50': sma_50,
                 'current_price': current_price,
-                'trend': 'bullish' if ma_score > 0.3 else 'bearish' if ma_score < -0.3 else 'neutral'
+                'trend': 'bullish' if ma_score > 0.3 else 'bearish' if ma_score < -0.3 else 'neutral',
+                'n_indicators': n_indicators,
+                **{k: v for k, v in indicator_details.items() if k not in ('rsi_signal',)}
             }
             
         except Exception as e:
@@ -738,6 +953,106 @@ class SignalAggregator:
             ema = (value - ema) * multiplier + ema
         
         return ema
+    
+    def _calculate_adx(self, highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
+        """Calculate Average Directional Index (ADX)."""
+        try:
+            n = len(closes)
+            if n < period * 2:
+                return None
+            
+            tr_list = []
+            plus_dm_list = []
+            minus_dm_list = []
+            
+            for i in range(1, n):
+                high_diff = highs[i] - highs[i-1]
+                low_diff = lows[i-1] - lows[i]
+                
+                tr = max(highs[i] - lows[i], abs(highs[i] - closes[i-1]), abs(lows[i] - closes[i-1]))
+                tr_list.append(tr)
+                
+                plus_dm = high_diff if high_diff > low_diff and high_diff > 0 else 0
+                minus_dm = low_diff if low_diff > high_diff and low_diff > 0 else 0
+                plus_dm_list.append(plus_dm)
+                minus_dm_list.append(minus_dm)
+            
+            # Smoothed averages (Wilder's smoothing)
+            atr = np.mean(tr_list[:period])
+            plus_di_smooth = np.mean(plus_dm_list[:period])
+            minus_di_smooth = np.mean(minus_dm_list[:period])
+            
+            dx_list = []
+            for i in range(period, len(tr_list)):
+                atr = atr - (atr / period) + tr_list[i]
+                plus_di_smooth = plus_di_smooth - (plus_di_smooth / period) + plus_dm_list[i]
+                minus_di_smooth = minus_di_smooth - (minus_di_smooth / period) + minus_dm_list[i]
+                
+                plus_di = 100 * plus_di_smooth / atr if atr > 0 else 0
+                minus_di = 100 * minus_di_smooth / atr if atr > 0 else 0
+                
+                di_sum = plus_di + minus_di
+                dx = 100 * abs(plus_di - minus_di) / di_sum if di_sum > 0 else 0
+                dx_list.append(dx)
+            
+            if len(dx_list) < period:
+                return np.mean(dx_list) if dx_list else None
+            
+            adx = np.mean(dx_list[:period])
+            for i in range(period, len(dx_list)):
+                adx = (adx * (period - 1) + dx_list[i]) / period
+            
+            return adx
+        except Exception:
+            return None
+    
+    def _calculate_stochastic(self, highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
+        """Calculate Stochastic Oscillator %K."""
+        try:
+            if len(closes) < period:
+                return None
+            highest = np.max(highs[-period:])
+            lowest = np.min(lows[-period:])
+            if highest == lowest:
+                return 50.0
+            return 100 * (closes[-1] - lowest) / (highest - lowest)
+        except Exception:
+            return None
+    
+    def _calculate_cci(self, highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 20) -> float:
+        """Calculate Commodity Channel Index (CCI)."""
+        try:
+            if len(closes) < period:
+                return None
+            tp = (highs[-period:] + lows[-period:] + closes[-period:]) / 3
+            tp_mean = np.mean(tp)
+            mean_dev = np.mean(np.abs(tp - tp_mean))
+            if mean_dev == 0:
+                return 0.0
+            return (tp[-1] - tp_mean) / (0.015 * mean_dev)
+        except Exception:
+            return None
+    
+    def _calculate_mfi(self, highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, volumes: np.ndarray, period: int = 14) -> float:
+        """Calculate Money Flow Index (MFI)."""
+        try:
+            if len(closes) < period + 1:
+                return None
+            tp = (highs + lows + closes) / 3
+            pos_flow = 0.0
+            neg_flow = 0.0
+            for i in range(-period, 0):
+                money_flow = tp[i] * volumes[i]
+                if tp[i] > tp[i-1]:
+                    pos_flow += money_flow
+                else:
+                    neg_flow += money_flow
+            if neg_flow == 0:
+                return 100.0
+            ratio = pos_flow / neg_flow
+            return 100 - (100 / (1 + ratio))
+        except Exception:
+            return None
     
     def _calculate_agreement(self, scores: List[float]) -> str:
         """

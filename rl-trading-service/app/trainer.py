@@ -425,13 +425,13 @@ class TradingAgentTrainer:
                 env = Monitor(env)
                 envs.append(env)
             
-            # Create vectorized environment
-            def make_env_fn(idx):
-                def _init():
-                    return envs[idx % len(envs)]
-                return _init
-            
-            vec_env = DummyVecEnv([make_env_fn(0)])
+            # Create vectorized environment — use ALL symbols for generalized training
+            n_envs = len(envs)
+            if n_envs > 1:
+                log(f"🔀 Multi-symbol training: {n_envs} environments ({', '.join(train_data_split.keys())})")
+                vec_env = DummyVecEnv([lambda i=i: envs[i] for i in range(n_envs)])
+            else:
+                vec_env = DummyVecEnv([lambda: envs[0]])
             
             # Normalize observations
             vec_env = VecNormalize(

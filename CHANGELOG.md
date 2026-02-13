@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.42.0] - 2026-02-13
+
+### Added
+- **Erweiterte Technical Signals** — Signal-Aggregation nutzt jetzt 9 Indikatoren statt 3: ADX (Trendstärke), Stochastic Oscillator, CCI, MFI (Volume-gewichteter RSI), Bollinger Bands, Momentum (5d/20d) zusätzlich zu RSI, MACD, MA
+- **Market Regime Detection** — Automatische Erkennung von 4 Marktphasen (Trend, Range, Volatile, Crash), passt Signal-Gewichtung dynamisch an: Crash → mehr Sentiment/Technical, Trend → mehr RL/ML
+- **Fee-Penalty im Step-Reward** — Sofortige Bestrafung von Transaktionskosten bei jedem Trade-Step (nicht erst am Episode-Ende), konfigurierbar via `step_fee_penalty_scale`
+- **Opportunity-Cost Reward** — Bestrafung wenn Cash-Ratio > 50% während Markt steigt, verhindert übermäßiges Warten, konfigurierbar via `opportunity_cost_scale`
+- **Momentum-Features im Observation Space** — 5 neue Features: `momentum_5`, `momentum_10`, `momentum_20`, `volume_ratio`, `gap` für reichhaltigere Marktwahrnehmung
+
+### Fixed
+- **Multi-Symbol Training Bug** — `DummyVecEnv` nutzte nur 1 Environment statt alle vorbereiteten Symbole; Agent trainiert jetzt über alle Symbole gleichzeitig für bessere Generalisierung
+- **ML-Score Volatilitäts-Normalisierung** — ML-Predictions werden jetzt relativ zur historischen Volatilität des Symbols normalisiert (3σ-Range) statt fixem /10.0, reagiert adaptiv auf volatile vs. stabile Aktien
+- **RL-Score kontinuierlich** — RL-Signal nutzt jetzt gewichtete Action-Wahrscheinlichkeiten für kontinuierlichen Score statt diskreten 3-Stufen-Mapping (0.5/0.75/1.0)
+
 ## [1.41.0] - 2026-02-13
 
 ### Added

@@ -115,6 +115,10 @@ DEFAULT_REWARD_WEIGHTS = {
     "use_sharpe_reward": True,
     "sharpe_scale": 5.0,
     "sortino_scale": 3.0,
+    # Per-step fee penalty
+    "step_fee_penalty_scale": 50.0,
+    # Opportunity-cost penalty (cash sitting idle while market trends up)
+    "opportunity_cost_scale": 30.0,
 }
 
 
@@ -248,6 +252,12 @@ class TradingEnvironment(gym.Env):
             'mfi',
             'volatility',
             'trend_strength',
+            # Momentum features (previously calculated but not observed)
+            'momentum_5', 'momentum_10', 'momentum_20',
+            # Volume dynamics
+            'volume_ratio',
+            # Gap detection
+            'gap',
         ]
         for col in indicator_cols:
             if col in self.df.columns:
@@ -313,6 +323,7 @@ class TradingEnvironment(gym.Env):
         self._daily_returns: List[float] = []
         self._portfolio_values: List[float] = [self.initial_balance]
         self._trade_profits: List[float] = []
+        self._fees_this_step: float = 0.0
 
         self.trade_history = []
 
@@ -475,6 +486,7 @@ class TradingEnvironment(gym.Env):
         spread_cost = trade_value * self.spread_pct
         total_cost = commission + spread_cost
         self.total_fees_paid += total_cost
+        self._fees_this_step += total_cost
         return total_cost
 
     def _record_trade(self, action_type, shares, price, profit, holding_time):
@@ -537,6 +549,7 @@ class TradingEnvironment(gym.Env):
         prev_pv = self._get_portfolio_value(current_price)
         reward = 0.0
         rw = self.reward_weights
+        self._fees_this_step = 0.0  # Reset per-step fee tracker
 
         # ---- Execute action ----
         if action == Actions.HOLD:
@@ -688,6 +701,21 @@ class TradingEnvironment(gym.Env):
         # Drawdown penalty
         if current_drawdown > rw["drawdown_penalty_threshold"]:
             reward -= current_drawdown * rw["drawdown_penalty_scale"]
+
+        # Immediate fee penalty — penalize each trade's fee impact per step
+        if self._fees_this_step > 0 and portfolio_value > 0:
+            fee_impact = self._fees_this_step / portfolio_value
+            reward -= fee_impact * rw.get("step_fee_penalty_scale", 50.0)
+
+        # Opportunity-cost penalty — penalize high cash ratio while market trends up
+        if portfolio_value > 0:
+            cash_ratio = self.cash / portfolio_value
+            if cash_ratio > 0.5 and len(self._daily_returns) >= 5:
+                recent_market = np.mean(self._daily_returns[-5:])
+                if recent_market > 0:
+                    # Agent is missing gains by sitting in cash
+                    missed_gain = recent_market * (cash_ratio - 0.5)
+                    reward -= missed_gain * rw.get("opportunity_cost_scale", 30.0)
 
         return reward
 
