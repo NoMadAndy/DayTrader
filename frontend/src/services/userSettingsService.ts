@@ -36,7 +36,7 @@ export interface SignalSourceSettings {
   // Enable/disable individual signal sources
   enableSentiment: boolean;      // News sentiment analysis
   enableTechnical: boolean;      // Technical indicators (RSI, MACD, etc.)
-  enableMLPrediction: boolean;   // LSTM price predictions
+  enableMLPrediction: boolean;   // ML price predictions (LSTM / Transformer)
   enableRLAgents: boolean;       // Reinforcement learning agents
   
   // Selected RL agents for signal generation

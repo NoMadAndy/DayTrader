@@ -113,7 +113,7 @@ export function AIModelsHubPage() {
         // Map API response to MLModel interface
         const mappedModels: MLModel[] = (data.models || []).map((m: Record<string, unknown>) => ({
           symbol: m.symbol as string,
-          modelType: 'LSTM',
+          modelType: ((m.metadata as Record<string, unknown>)?.model_type as string || 'LSTM').toUpperCase(),
           trainedAt: (m.metadata as Record<string, unknown>)?.trained_at as string | undefined,
           accuracy: (m.metadata as Record<string, unknown>)?.accuracy as number | undefined,
           mse: (m.metadata as Record<string, unknown>)?.final_val_loss as number | undefined,

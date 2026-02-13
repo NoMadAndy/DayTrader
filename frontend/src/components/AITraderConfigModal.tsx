@@ -1270,7 +1270,7 @@ export function AITraderConfigModal({ trader, isOpen, onClose, onSaved }: AITrad
                 <Toggle checked={autoTrainML} onChange={setAutoTrainML} color="purple" />
                 <div>
                   <span className="text-sm text-gray-300">ML-Modelle auto-trainieren</span>
-                  <p className="text-[10px] text-gray-500">LSTM-Modelle für Symbole ohne trainiertes Modell</p>
+                  <p className="text-[10px] text-gray-500">ML-Modelle für Symbole ohne trainiertes Modell</p>
                 </div>
               </div>
 

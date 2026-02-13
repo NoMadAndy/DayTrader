@@ -7,7 +7,7 @@
  * Data Sources:
  * - News Sentiment (keyword + optional FinBERT)
  * - Technical Indicators (RSI, MACD, Bollinger, Stochastic, SMA/EMA)
- * - ML Price Predictions (LSTM)
+ * - ML Price Predictions (LSTM / Transformer)
  */
 
 import type { SentimentResult } from './sentimentAnalysis';
@@ -407,7 +407,7 @@ export function calculateTradingSignals(
  * Combines:
  * - News Sentiment (time-weighted)
  * - Technical Indicators (RSI, MACD, Bollinger, etc.)
- * - ML Price Predictions (LSTM)
+ * - ML Price Predictions (LSTM / Transformer)
  * - RL Agent Signals (reinforcement learning)
  */
 export function calculateCombinedTradingSignals(

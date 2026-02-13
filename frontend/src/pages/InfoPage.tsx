@@ -288,9 +288,9 @@ export function InfoPage() {
                 <div className="flex items-start gap-3 bg-slate-900/50 rounded-lg p-3">
                   <span className="text-2xl">🤖</span>
                   <div>
-                    <div className="font-medium text-purple-400">ML-Vorhersage (LSTM)</div>
+                    <div className="font-medium text-purple-400">ML-Vorhersage (LSTM / Transformer)</div>
                     <p className="text-xs text-gray-400 mt-1">
-                      Ein neuronales Netzwerk lernt Muster aus historischen Kursen und prognostiziert zukünftige Preise.
+                      Ein neuronales Netzwerk (LSTM oder Transformer) lernt Muster aus historischen Kursen und prognostiziert zukünftige Preise.
                       Steigt die Prognose → bullish, fällt sie → bearish.
                     </p>
                   </div>
@@ -456,14 +456,14 @@ export function InfoPage() {
         </Section>
 
         {/* ML Prediction */}
-        <Section title="ML-Vorhersage (LSTM)" icon="🤖" color="purple">
+        <Section title="ML-Vorhersage (LSTM / Transformer)" icon="🤖" color="purple">
           <div className="space-y-4">
             <p className="text-gray-300 text-sm">
-              Ein neuronales Netzwerk analysiert historische Kursmuster und prognostiziert zukünftige Preise.
+              Ein neuronales Netzwerk (wahlweise LSTM oder Transformer) analysiert historische Kursmuster und prognostiziert zukünftige Preise.
             </p>
             
             <div className="bg-slate-900/50 rounded-lg p-4">
-              <h3 className="text-white font-medium mb-3">Wie funktioniert das LSTM-Modell?</h3>
+              <h3 className="text-white font-medium mb-3">Wie funktioniert das ML-Modell?</h3>
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-blue-500/30 rounded-full flex items-center justify-center text-sm">1</div>
