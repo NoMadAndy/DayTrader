@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.39.0] - 2026-02-13
+
+### Added
+- **Walk-Forward Backtesting mit 80/20 Train/Test-Split** — Chronologische Aufteilung der Trainingsdaten: 80% Training, 20% Out-of-Sample-Evaluation mit automatischer Overfitting-Erkennung
+- **Erweiterte Performance-Metriken** — Sharpe Ratio, Sortino Ratio, Calmar Ratio, Profit Factor, Alpha vs. Buy-and-Hold Benchmark, durchschnittliche Gewinn/Verlust-Quote
+- **Agent-Backtesting API-Endpoint** — `POST /backtest` Endpoint zum Backtesting trainierter Agents auf historischen Daten mit detaillierten Equity-Kurven und Trade-Historien
+- **Short Selling** — Optionale Short-Positionen im Trading-Environment (13 Aktionen: 7 Long + 6 Short), konfigurierbar über `enable_short_selling` in AgentConfig
+- **Slippage-Modellierung** — 4 realistische Slippage-Modelle: `none`, `fixed`, `proportional` (mit Random-Jitter), `volume` (Sqrt-Market-Impact)
+- **Konfigurierbares Reward-System** — 18 individuell anpassbare Reward-Gewichte (Sharpe-basiert, Drawdown-Penalty, Alpha-Bonus, Haltedauer-Alignment)
+
+### Changed
+- **Trading Environment v2** — Komplett neu geschriebenes Gymnasium-Environment mit Benchmark-Tracking, SL/TP für Long und Short, erweiterte Portfolio-Features (7 statt 5)
+- **Out-of-Sample Evaluation** — Nach jedem Training automatische OOS-Bewertung auf den letzten 20% der Daten mit Overfitting-Warnung
+- **Reward-Funktion** — Sharpe-basierte Step-Rewards statt reiner Return-Rewards, Episode-End-Reward mit Alpha-Bonus gegenüber Buy-and-Hold
+
 ## [1.38.2] - 2026-02-13
 
 ### Changed

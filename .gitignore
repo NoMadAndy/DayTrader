@@ -43,3 +43,4 @@ coverage/
 # Temporary files
 tmp/
 temp/
+rl-trading-service/app/trading_env.py.bak

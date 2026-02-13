@@ -33,9 +33,9 @@ class TransformerFeaturesExtractor(BaseFeaturesExtractor):
         n_layers: Number of transformer blocks
         d_ff: Feedforward dimension
         dropout: Dropout probability
-        n_portfolio_features: Number of portfolio state features (default: 5)
+        n_portfolio_features: Number of portfolio state features (default: 7)
             Portfolio features include: cash_ratio, position_ratio, unrealized_pnl,
-            holding_ratio, current_drawdown
+            holding_ratio, current_drawdown, short_position_ratio, is_short
     """
     
     def __init__(
@@ -47,7 +47,7 @@ class TransformerFeaturesExtractor(BaseFeaturesExtractor):
         n_layers: int = 4,
         d_ff: int = 512,
         dropout: float = 0.1,
-        n_portfolio_features: int = 5,
+        n_portfolio_features: int = 7,
     ):
         # Output features dimension (after aggregation + portfolio features)
         features_dim = d_model * 3 + d_model  # 768 + 256 = 1024 for d_model=256
@@ -60,7 +60,7 @@ class TransformerFeaturesExtractor(BaseFeaturesExtractor):
         self.seq_len = seq_len
         
         # Temporal features: obs_shape - portfolio_features
-        temporal_size = obs_shape - n_portfolio_features  # 2105 - 5 = 2100
+        temporal_size = obs_shape - n_portfolio_features  # 2107 - 7 = 2100
         self.input_dim = temporal_size // seq_len  # 2100 // 60 = 35
         
         # Validate

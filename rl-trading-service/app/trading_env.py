@@ -1,12 +1,14 @@
 """
-Trading Environment for Reinforcement Learning
+Trading Environment for Reinforcement Learning (v2)
 
 Implements a Gymnasium-compatible environment that simulates
 stock trading with realistic constraints:
-- Transaction costs (broker fees)
-- Position sizing
-- Risk management (stop loss, take profit)
+- Transaction costs (broker fees) with configurable slippage
+- Position sizing (long AND short positions)
+- Risk management (stop loss, take profit, trailing stop)
 - Multiple technical indicators as observations
+- Extended metrics tracking (Sharpe, Sortino, Calmar, Profit Factor)
+- Configurable reward function (risk-adjusted returns)
 """
 
 import gymnasium as gym
@@ -23,14 +25,21 @@ logger = logging.getLogger(__name__)
 
 
 class Actions(IntEnum):
-    """Discrete action space for the trading agent"""
-    HOLD = 0       # Do nothing
-    BUY_SMALL = 1  # Buy 10% of available capital
-    BUY_MEDIUM = 2  # Buy 25% of available capital
-    BUY_LARGE = 3  # Buy 50% of available capital
-    SELL_SMALL = 4  # Sell 25% of position
-    SELL_MEDIUM = 5  # Sell 50% of position
-    SELL_ALL = 6    # Close entire position
+    """Discrete action space for the trading agent (long + short)"""
+    HOLD = 0           # Do nothing
+    BUY_SMALL = 1      # Buy 10% of available capital
+    BUY_MEDIUM = 2     # Buy 25% of available capital
+    BUY_LARGE = 3      # Buy 50% of available capital
+    SELL_SMALL = 4      # Sell 25% of position
+    SELL_MEDIUM = 5     # Sell 50% of position
+    SELL_ALL = 6        # Close entire position
+    # Short selling actions (optional, controlled by config)
+    SHORT_SMALL = 7     # Short sell 10% of capital
+    SHORT_MEDIUM = 8    # Short sell 25% of capital
+    SHORT_LARGE = 9     # Short sell 50% of capital
+    COVER_SMALL = 10    # Cover 25% of short position
+    COVER_MEDIUM = 11   # Cover 50% of short position
+    COVER_ALL = 12      # Cover entire short position
 
 
 # Broker fee configurations (matching backend BROKER_PROFILES)
@@ -86,57 +95,91 @@ BROKER_FEES = {
 }
 
 
+# Default reward weights (can be overridden via RewardConfig)
+DEFAULT_REWARD_WEIGHTS = {
+    "portfolio_return_scale": 100.0,
+    "holding_in_range_bonus": 0.1,
+    "holding_too_long_penalty": 0.2,
+    "drawdown_penalty_threshold": 0.10,
+    "drawdown_penalty_scale": 2.0,
+    "stop_loss_penalty": 1.0,
+    "take_profit_bonus": 2.0,
+    "trailing_stop_penalty": 0.5,
+    "episode_return_scale": 50.0,
+    "fee_ratio_penalty_threshold": 0.5,
+    "fee_ratio_penalty_scale": 10.0,
+    "churning_penalty": 2.0,
+    "risk_adjusted_scale": 10.0,
+    "win_rate_bonus_scale": 20.0,
+    # Sharpe-based reward (replaces simple portfolio return when enabled)
+    "use_sharpe_reward": True,
+    "sharpe_scale": 5.0,
+    "sortino_scale": 3.0,
+}
+
+
 class TradingEnvironment(gym.Env):
     """
-    A Gymnasium environment for stock trading simulation.
-    
+    A Gymnasium environment for stock trading simulation (v2).
+
+    Improvements over v1:
+    - Short selling support (configurable)
+    - Slippage modeling (volume-dependent market impact)
+    - Extended metrics (Sharpe, Sortino, Calmar, Profit Factor)
+    - Configurable reward weights
+    - Risk-adjusted reward function (Sharpe/Sortino-based)
+
     Observation Space:
     - Historical price data (OHLCV)
     - Technical indicators (SMA, EMA, RSI, MACD, Bollinger Bands, etc.)
-    - Portfolio state (cash, position, unrealized P&L)
-    - Market conditions (volatility, trend strength)
-    
+    - Portfolio state (cash, long position, short position, unrealized P&L, drawdown, short flag)
+
     Action Space:
-    - Discrete: HOLD, BUY (small/medium/large), SELL (small/medium/all)
-    
+    - Without shorts: 7 actions (HOLD, BUY x3, SELL x3)
+    - With shorts: 13 actions (+ SHORT x3, COVER x3)
+
     Reward:
-    - Realized profit/loss on closed positions
-    - Penalty for holding periods outside target
-    - Risk-adjusted returns (Sharpe-like)
+    - Risk-adjusted returns (Sharpe/Sortino-based)
+    - Holding period alignment
+    - Drawdown penalty
+    - Fee-impact awareness
     """
-    
+
     metadata = {"render_modes": ["human", "ansi"]}
-    
+
     # Number of portfolio state features included in observations
-    # [cash_ratio, position_ratio, unrealized_pnl_ratio, holding_time_ratio, current_drawdown]
-    N_PORTFOLIO_FEATURES = 5
-    
+    # v2: [cash_ratio, long_position_ratio, short_position_ratio,
+    #      unrealized_pnl_ratio, holding_time_ratio, current_drawdown, is_short]
+    N_PORTFOLIO_FEATURES = 7
+
     def __init__(
         self,
         df: pd.DataFrame,
         config: AgentConfig,
         render_mode: Optional[str] = None,
         inference_mode: bool = False,
+        reward_weights: Optional[Dict[str, float]] = None,
+        enable_short_selling: bool = False,
+        slippage_model: str = "proportional",  # "none", "fixed", "proportional", "volume"
+        slippage_bps: float = 5.0,  # Base slippage in basis points (0.05%)
     ):
-        """
-        Initialize the trading environment.
-        
-        Args:
-            df: DataFrame with OHLCV data and technical indicators
-            config: Agent configuration
-            render_mode: How to render the environment
-            inference_mode: If True, start at end of data for signal inference (no random start)
-        """
         super().__init__()
-        
+
         self.df = df.copy()
         self.config = config
         self.render_mode = render_mode
         self.inference_mode = inference_mode
-        
-        # Validate DataFrame columns
+        self.enable_short_selling = enable_short_selling
+        self.slippage_model = slippage_model
+        self.slippage_bps = slippage_bps
+
+        # Reward weights (merge defaults with overrides)
+        self.reward_weights = {**DEFAULT_REWARD_WEIGHTS}
+        if reward_weights:
+            self.reward_weights.update(reward_weights)
+
         self._validate_dataframe()
-        
+
         # Environment parameters
         self.initial_balance = config.initial_balance
         self.max_position_size = config.max_position_size
@@ -144,8 +187,8 @@ class TradingEnvironment(gym.Env):
         self.take_profit_pct = config.take_profit_percent or 0.10
         self.trailing_stop = config.trailing_stop
         self.trailing_distance = config.trailing_stop_distance
-        
-        # Broker fees (matching backend calculateFees formula)
+
+        # Broker fees
         broker = BROKER_FEES.get(config.broker_profile, BROKER_FEES["standard"])
         self.flat_fee = broker["flat_fee"]
         self.percentage_fee = broker["percentage_fee"] / 100
@@ -153,53 +196,42 @@ class TradingEnvironment(gym.Env):
         self.max_fee = broker.get("max_fee", 100.0)
         self.exchange_fee = broker.get("exchange_fee", 0.0)
         self.spread_pct = broker["spread_percent"] / 100
-        
-        # Holding period targets (in steps)
+
         self.target_holding_period = self._get_holding_period_steps()
-        
-        # Risk profile multipliers
         self.risk_multiplier = self._get_risk_multiplier()
-        
-        # Window size for observation
-        self.window_size = 60  # Look back 60 periods
-        
-        # Feature columns (technical indicators)
+
+        # Window size for observation (configurable)
+        self.window_size = getattr(config, 'lookback_window', None) or 60
+
         self.feature_columns = self._get_feature_columns()
         self.n_features = len(self.feature_columns)
-        
-        # Define action and observation spaces
-        self.action_space = spaces.Discrete(len(Actions))
-        
+
+        # Action space (with or without short selling)
+        if self.enable_short_selling:
+            self.action_space = spaces.Discrete(13)
+        else:
+            self.action_space = spaces.Discrete(7)
+
         # Observation: window of features + portfolio state
-        # Portfolio state: [cash_ratio, position_ratio, unrealized_pnl_ratio, 
-        #                   holding_time_ratio, current_drawdown]
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
             shape=(self.window_size * self.n_features + self.N_PORTFOLIO_FEATURES,),
             dtype=np.float32
         )
-        
-        # Trading state (reset on each episode)
+
         self.reset()
-        
+
     def _validate_dataframe(self):
-        """Ensure required columns exist"""
         required = ['open', 'high', 'low', 'close', 'volume']
         for col in required:
             if col not in self.df.columns:
                 raise ValueError(f"DataFrame missing required column: {col}")
-        
-        # Ensure we have enough data
         if len(self.df) < 100:
             raise ValueError("DataFrame must have at least 100 rows")
-    
+
     def _get_feature_columns(self) -> List[str]:
-        """Get list of feature columns from DataFrame"""
-        # Base features
         features = ['open', 'high', 'low', 'close', 'volume']
-        
-        # Technical indicators (if present)
         indicator_cols = [
             'returns', 'log_returns',
             'sma_20', 'sma_50', 'sma_200',
@@ -216,406 +248,514 @@ class TradingEnvironment(gym.Env):
             'volatility',
             'trend_strength',
         ]
-        
         for col in indicator_cols:
             if col in self.df.columns:
                 features.append(col)
-        
         return features
-    
+
     def _get_holding_period_steps(self) -> int:
-        """Convert holding period to number of steps"""
         period_map = {
-            "scalping": 4,        # ~4 hours (if intraday data)
-            "intraday": 8,        # ~1 day
-            "swing_short": 3,     # 1-3 days
-            "swing_medium": 5,    # 3-7 days
-            "position_short": 10, # 1-2 weeks
-            "position_medium": 20, # 2-4 weeks
-            "position_long": 60,  # 1-3 months
-            "investor": 120,      # 3+ months
+            "scalping": 4, "intraday": 8, "swing_short": 3,
+            "swing_medium": 5, "position_short": 10, "position_medium": 20,
+            "position_long": 60, "investor": 120,
         }
         return period_map.get(self.config.holding_period, 5)
-    
+
     def _get_risk_multiplier(self) -> float:
-        """Get risk multiplier based on risk profile"""
         risk_map = {
-            "conservative": 0.5,
-            "moderate": 1.0,
-            "aggressive": 1.5,
-            "very_aggressive": 2.0,
+            "conservative": 0.5, "moderate": 1.0,
+            "aggressive": 1.5, "very_aggressive": 2.0,
         }
         return risk_map.get(self.config.risk_profile, 1.0)
-    
-    def reset(
-        self,
-        seed: Optional[int] = None,
-        options: Optional[Dict[str, Any]] = None
-    ) -> Tuple[np.ndarray, Dict[str, Any]]:
-        """Reset the environment for a new episode"""
+
+    def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        
-        # Determine start position
+
         min_start = self.window_size
-        max_start = len(self.df) - self.window_size - 100  # Leave room for at least 100 steps
-        
-        # Inference mode: always start at the end of data for current signal
+        max_start = len(self.df) - self.window_size - 100
+
         if self.inference_mode:
-            # Start at the last valid position to get signal for current market state
             self.current_step = len(self.df) - 1
         else:
-            # Check if random start should be used (default: True for training)
             use_random_start = True
             if options is not None and 'random_start' in options:
                 use_random_start = options.get('random_start', True)
-            
             if use_random_start and max_start > min_start:
-                # Random start position for varied training/evaluation
-                # np.random.seed is set externally in trainer for reproducibility
                 self.current_step = np.random.randint(min_start, max_start)
             else:
-                # Fixed start (for reproducibility when needed)
                 self.current_step = min_start
-        
-        # Portfolio state
+
+        # Long positions
         self.cash = self.initial_balance
         self.shares_held = 0
         self.entry_price = 0.0
         self.highest_price_since_entry = 0.0
         self.holding_time = 0
+
+        # Short positions
+        self.shares_shorted = 0
+        self.short_entry_price = 0.0
+        self.lowest_price_since_short = 0.0
+        self.short_holding_time = 0
+        self.short_collateral = 0.0
+
+        # Trade tracking
         self.total_trades = 0
         self.winning_trades = 0
+        self.losing_trades = 0
         self.total_profit = 0.0
-        self.total_fees_paid = 0.0  # Track cumulative fees for fee-impact metric
+        self.total_fees_paid = 0.0
         self.max_drawdown = 0.0
         self.peak_value = self.initial_balance
-        
-        # Trade history for this episode
+
+        # Extended metrics
+        self._daily_returns: List[float] = []
+        self._portfolio_values: List[float] = [self.initial_balance]
+        self._trade_profits: List[float] = []
+
         self.trade_history = []
-        
+
+        # Benchmark
+        self._benchmark_start_price = self.df.iloc[self.current_step]['close']
+        self._start_step = self.current_step
+
         return self._get_observation(), self._get_info()
-    
+
+    # ========== Slippage ==========
+
+    def _calculate_slippage(self, trade_value: float, is_buy: bool) -> float:
+        if self.slippage_model == "none":
+            return 0.0
+        if self.slippage_model == "fixed":
+            return trade_value * (self.slippage_bps / 10000)
+        if self.slippage_model == "proportional":
+            base = self.slippage_bps / 10000
+            jitter = 1.0 + (np.random.random() - 0.5) * 0.6
+            return trade_value * base * jitter
+        if self.slippage_model == "volume":
+            vol = self.df.iloc[self.current_step]['volume']
+            price = self.df.iloc[self.current_step]['close']
+            if vol > 0 and price > 0:
+                shares = trade_value / price
+                vfrac = shares / vol
+                impact = self.slippage_bps * (1 + 10 * np.sqrt(vfrac))
+            else:
+                impact = self.slippage_bps * 2
+            return trade_value * (impact / 10000)
+        return 0.0
+
+    def _calculate_execution_price(self, base_price: float, trade_value: float, is_buy: bool) -> float:
+        slip_cost = self._calculate_slippage(trade_value, is_buy)
+        slip_per_share = slip_cost / max(trade_value / base_price, 1)
+        return base_price + slip_per_share if is_buy else base_price - slip_per_share
+
+    # ========== Observations & Info ==========
+
     def _get_observation(self) -> np.ndarray:
-        """Construct the observation vector"""
-        # Get window of features
         start_idx = self.current_step - self.window_size
         end_idx = self.current_step
-        
         window_data = self.df.iloc[start_idx:end_idx][self.feature_columns].values
-        
-        # Normalize each feature column
+
         normalized = np.zeros_like(window_data)
         for i in range(window_data.shape[1]):
             col = window_data[:, i]
-            col_min, col_max = col.min(), col.max()
-            if col_max - col_min > 1e-8:
-                normalized[:, i] = (col - col_min) / (col_max - col_min)
+            cmin, cmax = col.min(), col.max()
+            if cmax - cmin > 1e-8:
+                normalized[:, i] = (col - cmin) / (cmax - cmin)
             else:
                 normalized[:, i] = 0.5
-        
-        # Flatten window features
+
         flat_features = normalized.flatten().astype(np.float32)
-        
-        # Portfolio state features
+
         current_price = self.df.iloc[self.current_step]['close']
-        portfolio_value = self.cash + self.shares_held * current_price
-        
+        pv = self._get_portfolio_value(current_price)
+
         cash_ratio = self.cash / self.initial_balance
-        position_ratio = (self.shares_held * current_price) / portfolio_value if portfolio_value > 0 else 0
-        
+        long_ratio = (self.shares_held * current_price) / pv if pv > 0 else 0
+        short_ratio = (self.shares_shorted * current_price) / pv if pv > 0 else 0
+
         unrealized_pnl = 0.0
         if self.shares_held > 0:
-            unrealized_pnl = (current_price - self.entry_price) / self.entry_price
-        
-        holding_ratio = min(self.holding_time / self.target_holding_period, 2.0) if self.shares_held > 0 else 0
-        
-        current_drawdown = (self.peak_value - portfolio_value) / self.peak_value if self.peak_value > 0 else 0
-        
+            unrealized_pnl += (current_price - self.entry_price) / self.entry_price
+        if self.shares_shorted > 0:
+            unrealized_pnl += (self.short_entry_price - current_price) / self.short_entry_price
+
+        ht = max(self.holding_time, self.short_holding_time)
+        holding_ratio = min(ht / self.target_holding_period, 2.0) if (self.shares_held > 0 or self.shares_shorted > 0) else 0
+        dd = (self.peak_value - pv) / self.peak_value if self.peak_value > 0 else 0
+        is_short = 1.0 if self.shares_shorted > 0 else 0.0
+
         portfolio_features = np.array([
-            cash_ratio,
-            position_ratio,
-            unrealized_pnl,
-            holding_ratio,
-            current_drawdown
+            cash_ratio, long_ratio, short_ratio,
+            unrealized_pnl, holding_ratio, dd, is_short
         ], dtype=np.float32)
-        
+
         return np.concatenate([flat_features, portfolio_features])
-    
+
+    def _get_portfolio_value(self, current_price: float) -> float:
+        long_val = self.shares_held * current_price
+        short_pnl = 0.0
+        if self.shares_shorted > 0:
+            short_pnl = (self.short_entry_price - current_price) * self.shares_shorted
+        return self.cash + long_val + self.short_collateral + short_pnl
+
     def _get_info(self) -> Dict[str, Any]:
-        """Get info dict for current state"""
         current_price = self.df.iloc[self.current_step]['close']
-        portfolio_value = self.cash + self.shares_held * current_price
-        
+        pv = self._get_portfolio_value(current_price)
+        metrics = self._calculate_metrics(pv)
         return {
             "step": self.current_step,
             "cash": self.cash,
             "shares_held": self.shares_held,
-            "portfolio_value": portfolio_value,
+            "shares_shorted": self.shares_shorted,
+            "portfolio_value": pv,
             "total_trades": self.total_trades,
             "winning_trades": self.winning_trades,
+            "losing_trades": self.losing_trades,
             "win_rate": self.winning_trades / max(self.total_trades, 1),
             "total_profit": self.total_profit,
             "total_fees_paid": self.total_fees_paid,
             "fee_impact_pct": (self.total_fees_paid / self.initial_balance * 100) if self.initial_balance > 0 else 0,
             "max_drawdown": self.max_drawdown,
-            "return_pct": (portfolio_value - self.initial_balance) / self.initial_balance * 100,
+            "return_pct": (pv - self.initial_balance) / self.initial_balance * 100,
+            **metrics,
         }
-    
+
+    # ========== Extended Metrics ==========
+
+    def _calculate_metrics(self, portfolio_value: float) -> Dict[str, float]:
+        m = {}
+        if len(self._daily_returns) > 5:
+            arr = np.array(self._daily_returns)
+            mean_r = np.mean(arr)
+            std_r = np.std(arr)
+            m["sharpe_ratio"] = float((mean_r / std_r) * np.sqrt(252)) if std_r > 1e-8 else 0.0
+            down = arr[arr < 0]
+            if len(down) > 0:
+                ds = np.std(down)
+                m["sortino_ratio"] = float((mean_r / ds) * np.sqrt(252)) if ds > 1e-8 else m["sharpe_ratio"] * 1.5
+            else:
+                m["sortino_ratio"] = m["sharpe_ratio"] * 2.0
+        else:
+            m["sharpe_ratio"] = 0.0
+            m["sortino_ratio"] = 0.0
+
+        total_return = (portfolio_value - self.initial_balance) / self.initial_balance
+        steps = len(self._daily_returns) if self._daily_returns else 1
+        ann_ret = total_return * (252 / max(steps, 1))
+        m["calmar_ratio"] = float(ann_ret / self.max_drawdown) if self.max_drawdown > 1e-8 else 0.0
+
+        wins = sum(p for p in self._trade_profits if p > 0)
+        losses = abs(sum(p for p in self._trade_profits if p < 0))
+        if losses > 0:
+            m["profit_factor"] = float(wins / losses)
+        elif wins > 0:
+            m["profit_factor"] = 999.0
+        else:
+            m["profit_factor"] = 0.0
+
+        w = [p for p in self._trade_profits if p > 0]
+        l = [p for p in self._trade_profits if p < 0]
+        m["avg_win"] = float(np.mean(w)) if w else 0.0
+        m["avg_loss"] = float(np.mean(l)) if l else 0.0
+
+        cp = self.df.iloc[self.current_step]['close']
+        m["benchmark_return_pct"] = float((cp - self._benchmark_start_price) / self._benchmark_start_price * 100) if self._benchmark_start_price > 0 else 0.0
+        m["alpha_pct"] = float(total_return * 100 - m["benchmark_return_pct"])
+
+        return m
+
+    # ========== Transaction Costs ==========
+
     def _calculate_transaction_cost(self, trade_value: float) -> float:
-        """Calculate total transaction cost including spread (matches backend calculateFees)"""
-        # Formula: max(min_fee, min(max_fee, flat_fee + percentage_part)) + exchange_fee
         percentage_part = trade_value * self.percentage_fee
         commission = max(self.min_fee, min(self.max_fee, self.flat_fee + percentage_part))
         commission += self.exchange_fee
         spread_cost = trade_value * self.spread_pct
         total_cost = commission + spread_cost
-        self.total_fees_paid += total_cost  # Track cumulative fees
+        self.total_fees_paid += total_cost
         return total_cost
-    
-    def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
-        """
-        Execute one step in the environment.
-        
-        Returns:
-            observation, reward, terminated, truncated, info
-        """
+
+    def _record_trade(self, action_type, shares, price, profit, holding_time):
+        self.trade_history.append({
+            "step": self.current_step, "action": action_type,
+            "shares": shares, "price": price,
+            "profit": profit, "holding_time": holding_time,
+        })
+        self._trade_profits.append(profit)
+        self.total_profit += profit
+        self.total_trades += 1
+        if profit > 0:
+            self.winning_trades += 1
+        elif profit < 0:
+            self.losing_trades += 1
+
+    # ========== Position Management ==========
+
+    def _close_long_position(self, shares_to_sell, current_price):
+        if shares_to_sell <= 0 or self.shares_held <= 0:
+            return
+        shares_to_sell = min(shares_to_sell, self.shares_held)
+        tv = shares_to_sell * current_price
+        ep = self._calculate_execution_price(current_price, tv, is_buy=False)
+        rev = shares_to_sell * ep
+        tc = self._calculate_transaction_cost(rev)
+        profit = rev - tc - (shares_to_sell * self.entry_price)
+        self._record_trade("sell", shares_to_sell, ep, profit, self.holding_time)
+        self.cash += rev - tc
+        self.shares_held -= shares_to_sell
+        if self.shares_held == 0:
+            self.holding_time = 0
+            self.entry_price = 0.0
+
+    def _close_short_position(self, shares_to_cover, current_price):
+        if shares_to_cover <= 0 or self.shares_shorted <= 0:
+            return
+        shares_to_cover = min(shares_to_cover, self.shares_shorted)
+        tv = shares_to_cover * current_price
+        ep = self._calculate_execution_price(current_price, tv, is_buy=True)
+        tc = self._calculate_transaction_cost(shares_to_cover * ep)
+        profit = (self.short_entry_price - ep) * shares_to_cover - tc
+        self._record_trade("cover", shares_to_cover, ep, profit, self.short_holding_time)
+        if self.shares_shorted > 0:
+            coll_ret = self.short_collateral * (shares_to_cover / self.shares_shorted)
+        else:
+            coll_ret = self.short_collateral
+        self.cash += coll_ret + profit
+        self.short_collateral -= coll_ret
+        self.shares_shorted -= shares_to_cover
+        if self.shares_shorted == 0:
+            self.short_holding_time = 0
+            self.short_entry_price = 0.0
+            self.short_collateral = 0.0
+
+    # ========== Main Step ==========
+
+    def step(self, action: int):
         current_price = self.df.iloc[self.current_step]['close']
-        previous_portfolio_value = self.cash + self.shares_held * current_price
-        
+        prev_pv = self._get_portfolio_value(current_price)
         reward = 0.0
-        trade_made = False
-        
-        # Execute action
+        rw = self.reward_weights
+
+        # ---- Execute action ----
         if action == Actions.HOLD:
-            pass  # Do nothing
-            
-        elif action in [Actions.BUY_SMALL, Actions.BUY_MEDIUM, Actions.BUY_LARGE]:
-            # Determine buy fraction
-            buy_fractions = {
-                Actions.BUY_SMALL: 0.10,
-                Actions.BUY_MEDIUM: 0.25,
-                Actions.BUY_LARGE: 0.50,
-            }
-            buy_fraction = buy_fractions[action] * self.risk_multiplier
-            buy_fraction = min(buy_fraction, self.max_position_size)
-            
-            # Calculate buy amount
-            buy_amount = self.cash * buy_fraction
-            if buy_amount > 100:  # Minimum trade size
-                shares_to_buy = int(buy_amount / current_price)
-                if shares_to_buy > 0:
-                    cost = shares_to_buy * current_price
-                    transaction_cost = self._calculate_transaction_cost(cost)
-                    total_cost = cost + transaction_cost
-                    
-                    if total_cost <= self.cash:
-                        self.cash -= total_cost
-                        
-                        # Update average entry price
+            pass
+
+        elif action in (Actions.BUY_SMALL, Actions.BUY_MEDIUM, Actions.BUY_LARGE):
+            fracs = {Actions.BUY_SMALL: 0.10, Actions.BUY_MEDIUM: 0.25, Actions.BUY_LARGE: 0.50}
+            frac = min(fracs[action] * self.risk_multiplier, self.max_position_size)
+            amt = self.cash * frac
+            if amt > 100:
+                ep = self._calculate_execution_price(current_price, amt, is_buy=True)
+                stb = int(amt / ep)
+                if stb > 0:
+                    cost = stb * ep
+                    tc = self._calculate_transaction_cost(cost)
+                    if cost + tc <= self.cash:
+                        self.cash -= cost + tc
                         if self.shares_held == 0:
-                            self.entry_price = current_price
+                            self.entry_price = ep
                             self.highest_price_since_entry = current_price
                         else:
-                            total_shares = self.shares_held + shares_to_buy
-                            self.entry_price = (
-                                self.entry_price * self.shares_held + 
-                                current_price * shares_to_buy
-                            ) / total_shares
-                        
-                        self.shares_held += shares_to_buy
+                            ts = self.shares_held + stb
+                            self.entry_price = (self.entry_price * self.shares_held + ep * stb) / ts
+                        self.shares_held += stb
                         self.holding_time = 0
-                        trade_made = True
-                        
-        elif action in [Actions.SELL_SMALL, Actions.SELL_MEDIUM, Actions.SELL_ALL]:
+
+        elif action in (Actions.SELL_SMALL, Actions.SELL_MEDIUM, Actions.SELL_ALL):
             if self.shares_held > 0:
-                # Determine sell fraction
-                sell_fractions = {
-                    Actions.SELL_SMALL: 0.25,
-                    Actions.SELL_MEDIUM: 0.50,
-                    Actions.SELL_ALL: 1.0,
-                }
-                sell_fraction = sell_fractions[action]
-                
-                shares_to_sell = int(self.shares_held * sell_fraction)
-                if sell_fraction == 1.0:
-                    shares_to_sell = self.shares_held  # Ensure complete sell
-                
-                if shares_to_sell > 0:
-                    revenue = shares_to_sell * current_price
-                    transaction_cost = self._calculate_transaction_cost(revenue)
-                    net_revenue = revenue - transaction_cost
-                    
-                    # Calculate profit for this trade
-                    trade_profit = net_revenue - (shares_to_sell * self.entry_price)
-                    self.total_profit += trade_profit
-                    
-                    if trade_profit > 0:
-                        self.winning_trades += 1
-                    
-                    self.total_trades += 1
-                    self.cash += net_revenue
-                    self.shares_held -= shares_to_sell
-                    trade_made = True
-                    
-                    # Record trade
-                    self.trade_history.append({
-                        "step": self.current_step,
-                        "action": "sell",
-                        "shares": shares_to_sell,
-                        "price": current_price,
-                        "profit": trade_profit,
-                        "holding_time": self.holding_time,
-                    })
-                    
-                    if self.shares_held == 0:
-                        self.holding_time = 0
-                        self.entry_price = 0.0
-        
-        # Update holding time
+                fracs = {Actions.SELL_SMALL: 0.25, Actions.SELL_MEDIUM: 0.50, Actions.SELL_ALL: 1.0}
+                sf = fracs[action]
+                sts = int(self.shares_held * sf)
+                if sf == 1.0:
+                    sts = self.shares_held
+                self._close_long_position(sts, current_price)
+
+        elif self.enable_short_selling and action in (Actions.SHORT_SMALL, Actions.SHORT_MEDIUM, Actions.SHORT_LARGE):
+            fracs = {Actions.SHORT_SMALL: 0.10, Actions.SHORT_MEDIUM: 0.25, Actions.SHORT_LARGE: 0.50}
+            frac = min(fracs[action] * self.risk_multiplier, self.max_position_size)
+            amt = self.cash * frac
+            if amt > 100:
+                ep = self._calculate_execution_price(current_price, amt, is_buy=False)
+                sts = int(amt / ep)
+                if sts > 0:
+                    coll = sts * ep
+                    tc = self._calculate_transaction_cost(coll)
+                    if coll + tc <= self.cash:
+                        self.cash -= coll + tc
+                        self.short_collateral += coll
+                        if self.shares_shorted == 0:
+                            self.short_entry_price = ep
+                            self.lowest_price_since_short = current_price
+                        else:
+                            ts = self.shares_shorted + sts
+                            self.short_entry_price = (self.short_entry_price * self.shares_shorted + ep * sts) / ts
+                        self.shares_shorted += sts
+                        self.short_holding_time = 0
+
+        elif self.enable_short_selling and action in (Actions.COVER_SMALL, Actions.COVER_MEDIUM, Actions.COVER_ALL):
+            if self.shares_shorted > 0:
+                fracs = {Actions.COVER_SMALL: 0.25, Actions.COVER_MEDIUM: 0.50, Actions.COVER_ALL: 1.0}
+                cf = fracs[action]
+                stc = int(self.shares_shorted * cf)
+                if cf == 1.0:
+                    stc = self.shares_shorted
+                self._close_short_position(stc, current_price)
+
+        # Update holding / tracking
         if self.shares_held > 0:
             self.holding_time += 1
-            self.highest_price_since_entry = max(
-                self.highest_price_since_entry, current_price
-            )
-        
-        # Check stop loss and take profit
+            self.highest_price_since_entry = max(self.highest_price_since_entry, current_price)
+        if self.shares_shorted > 0:
+            self.short_holding_time += 1
+            self.lowest_price_since_short = min(self.lowest_price_since_short, current_price)
+
+        # ---- SL/TP for LONG ----
         if self.shares_held > 0:
-            unrealized_return = (current_price - self.entry_price) / self.entry_price
-            
-            # Trailing stop check
+            ur = (current_price - self.entry_price) / self.entry_price
             if self.trailing_stop:
-                trailing_return = (current_price - self.highest_price_since_entry) / self.highest_price_since_entry
-                if trailing_return < -self.trailing_distance:
-                    # Force close position
-                    revenue = self.shares_held * current_price
-                    transaction_cost = self._calculate_transaction_cost(revenue)
-                    trade_profit = revenue - transaction_cost - (self.shares_held * self.entry_price)
-                    self.cash += revenue - transaction_cost
-                    self.total_profit += trade_profit
-                    if trade_profit > 0:
-                        self.winning_trades += 1
-                    self.total_trades += 1
-                    self.shares_held = 0
-                    self.holding_time = 0
-                    reward -= 0.5  # Small penalty for being stopped out
-            
-            # Regular stop loss
-            elif unrealized_return <= -self.stop_loss_pct:
-                revenue = self.shares_held * current_price
-                transaction_cost = self._calculate_transaction_cost(revenue)
-                trade_profit = revenue - transaction_cost - (self.shares_held * self.entry_price)
-                self.cash += revenue - transaction_cost
-                self.total_profit += trade_profit
-                if trade_profit > 0:
-                    self.winning_trades += 1
-                self.total_trades += 1
-                self.shares_held = 0
-                self.holding_time = 0
-                reward -= 1.0  # Penalty for stop loss
-            
-            # Take profit
-            elif unrealized_return >= self.take_profit_pct:
-                revenue = self.shares_held * current_price
-                transaction_cost = self._calculate_transaction_cost(revenue)
-                trade_profit = revenue - transaction_cost - (self.shares_held * self.entry_price)
-                self.cash += revenue - transaction_cost
-                self.total_profit += trade_profit
-                self.winning_trades += 1
-                self.total_trades += 1
-                self.shares_held = 0
-                self.holding_time = 0
-                reward += 2.0  # Bonus for hitting take profit
-        
-        # Move to next step
+                tr = (current_price - self.highest_price_since_entry) / self.highest_price_since_entry
+                if tr < -self.trailing_distance:
+                    self._close_long_position(self.shares_held, current_price)
+                    reward -= rw["trailing_stop_penalty"]
+            elif ur <= -self.stop_loss_pct:
+                self._close_long_position(self.shares_held, current_price)
+                reward -= rw["stop_loss_penalty"]
+            elif ur >= self.take_profit_pct:
+                self._close_long_position(self.shares_held, current_price)
+                reward += rw["take_profit_bonus"]
+
+        # ---- SL/TP for SHORT ----
+        if self.shares_shorted > 0:
+            sr = (self.short_entry_price - current_price) / self.short_entry_price
+            if sr <= -self.stop_loss_pct:
+                self._close_short_position(self.shares_shorted, current_price)
+                reward -= rw["stop_loss_penalty"]
+            elif sr >= self.take_profit_pct:
+                self._close_short_position(self.shares_shorted, current_price)
+                reward += rw["take_profit_bonus"]
+
+        # Next step
         self.current_step += 1
-        
-        # Calculate portfolio value
         new_price = self.df.iloc[min(self.current_step, len(self.df) - 1)]['close']
-        portfolio_value = self.cash + self.shares_held * new_price
-        
-        # Update peak and drawdown
-        if portfolio_value > self.peak_value:
-            self.peak_value = portfolio_value
-        current_drawdown = (self.peak_value - portfolio_value) / self.peak_value
-        self.max_drawdown = max(self.max_drawdown, current_drawdown)
-        
-        # Calculate reward
-        # 1. Portfolio return component
-        returns = (portfolio_value - previous_portfolio_value) / previous_portfolio_value
-        reward += returns * 100 * self.risk_multiplier
-        
-        # 2. Holding period alignment bonus/penalty
-        if self.shares_held > 0 and self.holding_time > 0:
-            holding_ratio = self.holding_time / self.target_holding_period
-            if 0.5 <= holding_ratio <= 2.0:
-                reward += 0.1  # In target range
-            elif holding_ratio > 3.0:
-                reward -= 0.2  # Holding too long
-        
-        # 3. Drawdown penalty
-        if current_drawdown > 0.1:
-            reward -= current_drawdown * 2
-        
-        # Check if episode is done
+        pv = self._get_portfolio_value(new_price)
+
+        dr = (pv - prev_pv) / prev_pv
+        self._daily_returns.append(dr)
+        self._portfolio_values.append(pv)
+
+        if pv > self.peak_value:
+            self.peak_value = pv
+        dd = (self.peak_value - pv) / self.peak_value
+        self.max_drawdown = max(self.max_drawdown, dd)
+
+        reward += self._calculate_step_reward(dr, dd, pv)
+
         terminated = self.current_step >= len(self.df) - 1
         truncated = False
-        
-        # Final reward adjustment at end of episode
+
         if terminated:
-            # Close any remaining position
-            if self.shares_held > 0:
-                final_price = self.df.iloc[-1]['close']
-                revenue = self.shares_held * final_price
-                transaction_cost = self._calculate_transaction_cost(revenue)
-                trade_profit = revenue - transaction_cost - (self.shares_held * self.entry_price)
-                self.cash += revenue - transaction_cost
-                self.total_profit += trade_profit
-                if trade_profit > 0:
-                    self.winning_trades += 1
-                self.total_trades += 1
-                self.shares_held = 0
-            
-            # Final portfolio value
-            final_value = self.cash
-            total_return = (final_value - self.initial_balance) / self.initial_balance
-            
-            # Reward based on total return
-            reward += total_return * 50
-            
-            # Fee-impact penalty: penalize if fees are a large portion of gross profit
-            # This encourages the agent to make fewer but more profitable trades
-            gross_profit = self.total_profit + self.total_fees_paid  # Profit before fees
-            if gross_profit > 0:
-                fee_ratio = self.total_fees_paid / gross_profit  # 0-1 proportion
-                if fee_ratio > 0.5:
-                    reward -= (fee_ratio - 0.5) * 10  # Penalize if fees eat >50% of gross
-            elif self.total_trades > 0:
-                # Negative profit: penalize excessive trading (churning)
-                avg_fee_per_trade = self.total_fees_paid / self.total_trades if self.total_trades > 0 else 0
-                if avg_fee_per_trade > self.initial_balance * 0.001:  # >0.1% per trade
-                    reward -= 2.0
-            
-            # Sharpe-like risk adjustment
-            if self.max_drawdown > 0:
-                risk_adjusted = total_return / (self.max_drawdown + 0.01)
-                reward += risk_adjusted * 10
-            
-            # Win rate bonus
-            if self.total_trades > 0:
-                win_rate = self.winning_trades / self.total_trades
-                if win_rate > 0.5:
-                    reward += (win_rate - 0.5) * 20
-        
+            reward += self._calculate_episode_end_reward(pv, new_price)
+
         return self._get_observation(), reward, terminated, truncated, self._get_info()
-    
+
+    # ========== Reward Functions ==========
+
+    def _calculate_step_reward(self, daily_return, current_drawdown, portfolio_value):
+        rw = self.reward_weights
+        reward = 0.0
+
+        # Sharpe-based step reward
+        if rw.get("use_sharpe_reward") and len(self._daily_returns) > 10:
+            rs = np.std(self._daily_returns[-20:])
+            if rs > 1e-8:
+                reward += (daily_return / rs) * rw["sharpe_scale"]
+            else:
+                reward += daily_return * rw["portfolio_return_scale"] * self.risk_multiplier
+        else:
+            reward += daily_return * rw["portfolio_return_scale"] * self.risk_multiplier
+
+        # Holding period
+        ht = max(self.holding_time, self.short_holding_time)
+        if ht > 0:
+            hr = ht / self.target_holding_period
+            if 0.5 <= hr <= 2.0:
+                reward += rw["holding_in_range_bonus"]
+            elif hr > 3.0:
+                reward -= rw["holding_too_long_penalty"]
+
+        # Drawdown penalty
+        if current_drawdown > rw["drawdown_penalty_threshold"]:
+            reward -= current_drawdown * rw["drawdown_penalty_scale"]
+
+        return reward
+
+    def _calculate_episode_end_reward(self, portfolio_value, final_price):
+        rw = self.reward_weights
+        reward = 0.0
+
+        # Close remaining positions
+        if self.shares_held > 0:
+            self._close_long_position(self.shares_held, final_price)
+        if self.shares_shorted > 0:
+            self._close_short_position(self.shares_shorted, final_price)
+
+        final_value = self.cash
+        total_return = (final_value - self.initial_balance) / self.initial_balance
+
+        # 1. Total return
+        reward += total_return * rw["episode_return_scale"]
+
+        # 2. Fee-impact penalty
+        gp = self.total_profit + self.total_fees_paid
+        if gp > 0:
+            fr = self.total_fees_paid / gp
+            if fr > rw["fee_ratio_penalty_threshold"]:
+                reward -= (fr - rw["fee_ratio_penalty_threshold"]) * rw["fee_ratio_penalty_scale"]
+        elif self.total_trades > 0:
+            if (self.total_fees_paid / self.total_trades) > self.initial_balance * 0.001:
+                reward -= rw["churning_penalty"]
+
+        # 3. Risk-adjusted (Sharpe/Sortino)
+        if len(self._daily_returns) > 10:
+            arr = np.array(self._daily_returns)
+            std_r = np.std(arr)
+            if std_r > 1e-8:
+                sharpe = (np.mean(arr) / std_r) * np.sqrt(252)
+                reward += sharpe * rw["risk_adjusted_scale"]
+                down = arr[arr < 0]
+                if len(down) > 0:
+                    ds = np.std(down)
+                    if ds > 1e-8:
+                        sortino = (np.mean(arr) / ds) * np.sqrt(252)
+                        reward += max(0, sortino - sharpe) * rw["sortino_scale"]
+            elif self.max_drawdown > 0:
+                reward += (total_return / (self.max_drawdown + 0.01)) * rw["risk_adjusted_scale"]
+        elif self.max_drawdown > 0:
+            reward += (total_return / (self.max_drawdown + 0.01)) * rw["risk_adjusted_scale"]
+
+        # 4. Win rate bonus
+        if self.total_trades > 0:
+            wr = self.winning_trades / self.total_trades
+            if wr > 0.5:
+                reward += (wr - 0.5) * rw["win_rate_bonus_scale"]
+
+        # 5. Alpha bonus (vs B&H)
+        if self._benchmark_start_price > 0:
+            bm_ret = (final_price - self._benchmark_start_price) / self._benchmark_start_price
+            alpha = total_return - bm_ret
+            reward += alpha * 20 if alpha > 0 else alpha * 10
+
+        return reward
+
     def render(self):
-        """Render the environment"""
         if self.render_mode == "human":
             info = self._get_info()
+            si = f", Short: {info['shares_shorted']}" if self.enable_short_selling else ""
             print(f"Step {info['step']}: Portfolio ${info['portfolio_value']:.2f}, "
                   f"Return: {info['return_pct']:.2f}%, "
-                  f"Trades: {info['total_trades']}, Win Rate: {info['win_rate']:.2%}")
-    
+                  f"Trades: {info['total_trades']}, Win Rate: {info['win_rate']:.2%}"
+                  f"{si}, Sharpe: {info.get('sharpe_ratio', 0):.2f}")
+
     def close(self):
-        """Clean up resources"""
         pass

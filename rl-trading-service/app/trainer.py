@@ -239,7 +239,14 @@ class TradingAgentTrainer:
             config: Agent configuration
             inference_mode: If True, environment starts at end of data for signal inference
         """
-        return TradingEnvironment(df=df, config=config, inference_mode=inference_mode)
+        return TradingEnvironment(
+            df=df,
+            config=config,
+            inference_mode=inference_mode,
+            enable_short_selling=getattr(config, 'enable_short_selling', False),
+            slippage_model=getattr(config, 'slippage_model', 'proportional'),
+            slippage_bps=getattr(config, 'slippage_bps', 5.0),
+        )
     
     def prepare_training_data(
         self,
@@ -381,31 +388,52 @@ class TradingAgentTrainer:
         try:
             log(f"📦 Preparing training data for {len(training_data)} symbol(s)...")
             
-            # Create environments for each symbol
-            envs = []
+            # === Walk-Forward Train/Test Split (80/20) ===
+            # Split each symbol's data chronologically: first 80% for training, last 20% for OOS evaluation
+            train_data_split = {}
+            test_data_split = {}
+            
             for symbol, df in training_data.items():
                 if len(df) < 200:
                     log(f"⚠️ Skipping {symbol}: insufficient data ({len(df)} rows)", "warning")
                     continue
                 
-                log(f"   ✓ {symbol}: {len(df)} data points")
+                split_idx = int(len(df) * 0.8)
+                train_df = df.iloc[:split_idx].copy()
+                test_df = df.iloc[split_idx:].copy()
+                
+                # Ensure both splits have enough data
+                if len(train_df) < 150:
+                    log(f"⚠️ Skipping {symbol}: train split too small ({len(train_df)} rows)", "warning")
+                    continue
+                if len(test_df) < 100:
+                    # Not enough for OOS test, use all data for training
+                    log(f"   ⚠️ {symbol}: test split too small ({len(test_df)}), using full data for training", "warning")
+                    train_data_split[symbol] = df
+                else:
+                    train_data_split[symbol] = train_df
+                    test_data_split[symbol] = test_df
+                    log(f"   ✓ {symbol}: {len(df)} total → Train: {len(train_df)}, Test: {len(test_df)} (Walk-Forward 80/20)")
+            
+            if not train_data_split:
+                raise ValueError("No valid training data provided")
+            
+            # Create training environments
+            envs = []
+            for symbol, df in train_data_split.items():
                 env = self.create_environment(df, effective_config)
                 env = Monitor(env)
                 envs.append(env)
             
-            if not envs:
-                raise ValueError("No valid training data provided")
-            
-            # Create vectorized environment (round-robin across symbols)
+            # Create vectorized environment
             def make_env_fn(idx):
                 def _init():
                     return envs[idx % len(envs)]
                 return _init
             
-            # Use first env for now (TODO: implement multi-symbol training)
             vec_env = DummyVecEnv([make_env_fn(0)])
             
-            # Optionally normalize observations
+            # Normalize observations
             vec_env = VecNormalize(
                 vec_env,
                 norm_obs=True,
@@ -609,12 +637,55 @@ class TradingAgentTrainer:
             model.save(str(model_path / "model"))
             vec_env.save(str(model_path / "vec_normalize.pkl"))
             
-            # Evaluate model
-            log(f"📈 Evaluating model performance...")
+            # Evaluate model — In-Sample (training data)
+            log(f"📈 Evaluating model performance (In-Sample)...")
             eval_results = self._evaluate_model(model, vec_env, n_episodes=10)
             log(f"   Mean return: {eval_results['mean_return_pct']:.2f}%")
             log(f"   Max return: {eval_results['max_return_pct']:.2f}%")
             log(f"   Min return: {eval_results['min_return_pct']:.2f}%")
+            if 'mean_sharpe_ratio' in eval_results:
+                log(f"   Sharpe: {eval_results['mean_sharpe_ratio']:.2f}, Sortino: {eval_results.get('mean_sortino_ratio', 0):.2f}")
+            if 'mean_alpha_pct' in eval_results:
+                log(f"   Alpha vs B&H: {eval_results['mean_alpha_pct']:.2f}%")
+            
+            # === Out-of-Sample Evaluation (Walk-Forward Test) ===
+            oos_results = None
+            if test_data_split:
+                log(f"📊 Out-of-Sample Evaluation (Walk-Forward Test on {len(test_data_split)} symbol(s))...")
+                try:
+                    # Create test environment with first test symbol
+                    test_symbol = list(test_data_split.keys())[0]
+                    test_df = test_data_split[test_symbol]
+                    
+                    test_env = self.create_environment(test_df, effective_config)
+                    test_env = Monitor(test_env)
+                    test_vec_env = DummyVecEnv([lambda: test_env])
+                    
+                    # Apply trained normalization stats
+                    test_vec_env = VecNormalize.load(str(model_path / "vec_normalize.pkl"), test_vec_env)
+                    test_vec_env.training = False
+                    test_vec_env.norm_reward = False
+                    
+                    oos_results = self._evaluate_model(model, test_vec_env, n_episodes=5)
+                    
+                    log(f"   📊 OOS Results ({test_symbol}):")
+                    log(f"   Mean return: {oos_results['mean_return_pct']:.2f}%")
+                    if 'mean_sharpe_ratio' in oos_results:
+                        log(f"   Sharpe: {oos_results['mean_sharpe_ratio']:.2f}")
+                    if 'mean_alpha_pct' in oos_results:
+                        log(f"   Alpha vs B&H: {oos_results['mean_alpha_pct']:.2f}%")
+                    
+                    # Overfitting detection
+                    is_return = eval_results['mean_return_pct']
+                    oos_return = oos_results['mean_return_pct']
+                    if is_return > 0 and oos_return < -abs(is_return) * 0.5:
+                        log(f"   ⚠️ OVERFITTING WARNING: In-Sample {is_return:.2f}% vs OOS {oos_return:.2f}%", "warning")
+                    elif is_return > 0 and oos_return > 0:
+                        log(f"   ✅ Model generalizes well: IS {is_return:.2f}% → OOS {oos_return:.2f}%")
+                    
+                except Exception as e:
+                    log(f"   ⚠️ OOS evaluation failed: {e}", "warning")
+                    oos_results = None
             
             # Calculate cumulative values
             new_cumulative_timesteps = cumulative_timesteps + total_timesteps
@@ -640,6 +711,8 @@ class TradingAgentTrainer:
                 "best_reward": progress_cb.best_reward,
                 "device": self.device,
                 "performance_metrics": eval_results,
+                "oos_performance_metrics": oos_results,
+                "walk_forward_split": {"train_pct": 80, "test_pct": 20},
                 "symbols_trained": list(training_data.keys()),
             }
             
@@ -697,13 +770,18 @@ class TradingAgentTrainer:
         env: VecNormalize,
         n_episodes: int = 10,
     ) -> Dict[str, Any]:
-        """Evaluate a trained model with varied starting points"""
+        """Evaluate a trained model with varied starting points and extended metrics"""
         episode_rewards = []
         episode_lengths = []
         episode_returns = []
+        episode_sharpe = []
+        episode_sortino = []
+        episode_max_dd = []
+        episode_win_rate = []
+        episode_profit_factor = []
+        episode_alpha = []
         
         for i in range(n_episodes):
-            # Set random seed before reset to get varied start positions
             np.random.seed(42 + i)
             obs = env.reset()
             done = False
@@ -717,20 +795,184 @@ class TradingAgentTrainer:
                 length += 1
                 
                 if done[0]:
-                    if 'return_pct' in info[0]:
-                        episode_returns.append(info[0]['return_pct'])
+                    ep_info = info[0]
+                    if 'return_pct' in ep_info:
+                        episode_returns.append(ep_info['return_pct'])
+                    if 'sharpe_ratio' in ep_info:
+                        episode_sharpe.append(ep_info['sharpe_ratio'])
+                    if 'sortino_ratio' in ep_info:
+                        episode_sortino.append(ep_info['sortino_ratio'])
+                    if 'max_drawdown' in ep_info:
+                        episode_max_dd.append(ep_info['max_drawdown'])
+                    if 'win_rate' in ep_info:
+                        episode_win_rate.append(ep_info['win_rate'])
+                    if 'profit_factor' in ep_info:
+                        episode_profit_factor.append(ep_info['profit_factor'])
+                    if 'alpha_pct' in ep_info:
+                        episode_alpha.append(ep_info['alpha_pct'])
                     break
             
             episode_rewards.append(total_reward)
             episode_lengths.append(length)
         
-        return {
+        result = {
             "mean_reward": float(np.mean(episode_rewards)),
             "std_reward": float(np.std(episode_rewards)),
             "mean_length": float(np.mean(episode_lengths)),
             "mean_return_pct": float(np.mean(episode_returns)) if episode_returns else 0,
             "max_return_pct": float(np.max(episode_returns)) if episode_returns else 0,
             "min_return_pct": float(np.min(episode_returns)) if episode_returns else 0,
+        }
+        
+        # Extended metrics (v2)
+        if episode_sharpe:
+            result["mean_sharpe_ratio"] = float(np.mean(episode_sharpe))
+        if episode_sortino:
+            result["mean_sortino_ratio"] = float(np.mean(episode_sortino))
+        if episode_max_dd:
+            result["mean_max_drawdown"] = float(np.mean(episode_max_dd))
+            result["worst_max_drawdown"] = float(np.max(episode_max_dd))
+        if episode_win_rate:
+            result["mean_win_rate"] = float(np.mean(episode_win_rate))
+        if episode_profit_factor:
+            pf = [x for x in episode_profit_factor if x < 900]  # Exclude inf-like
+            result["mean_profit_factor"] = float(np.mean(pf)) if pf else 0.0
+        if episode_alpha:
+            result["mean_alpha_pct"] = float(np.mean(episode_alpha))
+        
+        return result
+    
+    def backtest_agent(
+        self,
+        agent_name: str,
+        df: pd.DataFrame,
+        config: Optional[AgentConfig] = None,
+        enable_short_selling: bool = False,
+        slippage_model: str = "proportional",
+        slippage_bps: float = 5.0,
+    ) -> Dict[str, Any]:
+        """
+        Run a full backtest of a trained agent over historical data.
+        
+        Unlike _evaluate_model (which uses random starts), this runs
+        the agent from start to end of the data sequentially, producing
+        a complete equity curve and detailed trade history.
+        
+        Args:
+            agent_name: Name of the trained agent
+            df: DataFrame with OHLCV + indicators (full backtest period)
+            config: Agent config (uses saved if not provided)
+            enable_short_selling: Allow short selling
+            slippage_model: Slippage model type
+            slippage_bps: Base slippage in basis points
+            
+        Returns:
+            Detailed backtest results with equity curve, trades, and metrics
+        """
+        model = self.load_agent(agent_name)
+        if model is None:
+            raise ValueError(f"Agent not found: {agent_name}")
+        
+        if config is None:
+            config = self._configs.get(agent_name)
+            if config is None:
+                config = AgentConfig(name=agent_name)
+        
+        # Create environment for sequential backtest (no random start)
+        env = TradingEnvironment(
+            df=df,
+            config=config,
+            enable_short_selling=enable_short_selling,
+            slippage_model=slippage_model,
+            slippage_bps=slippage_bps,
+        )
+        
+        vec_env = DummyVecEnv([lambda: env])
+        
+        # Load normalization stats
+        norm_path = self.model_dir / agent_name / "vec_normalize.pkl"
+        if norm_path.exists():
+            vec_env = VecNormalize.load(str(norm_path), vec_env)
+            vec_env.training = False
+            vec_env.norm_reward = False
+        
+        # Run backtest from start (no random start)
+        obs = vec_env.reset()
+        done = False
+        total_reward = 0
+        equity_curve = []
+        actions_taken = []
+        step = 0
+        
+        while not done:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, done, info = vec_env.step(action)
+            total_reward += reward[0]
+            step += 1
+            
+            ep_info = info[0]
+            equity_curve.append({
+                "step": step,
+                "portfolio_value": ep_info.get("portfolio_value", 0),
+                "cash": ep_info.get("cash", 0),
+                "return_pct": ep_info.get("return_pct", 0),
+            })
+            
+            action_names = ['hold', 'buy_small', 'buy_medium', 'buy_large',
+                           'sell_small', 'sell_medium', 'sell_all',
+                           'short_small', 'short_medium', 'short_large',
+                           'cover_small', 'cover_medium', 'cover_all']
+            action_idx = int(action[0])
+            if action_idx != 0:  # Don't record holds
+                actions_taken.append({
+                    "step": step,
+                    "action": action_names[action_idx] if action_idx < len(action_names) else "unknown",
+                    "portfolio_value": ep_info.get("portfolio_value", 0),
+                })
+            
+            if done[0]:
+                break
+        
+        # Final info contains all metrics
+        final_info = info[0]
+        
+        # Get trade history from the underlying environment
+        underlying_env = vec_env.envs[0] if hasattr(vec_env, 'envs') else env
+        if hasattr(underlying_env, 'env'):
+            underlying_env = underlying_env.env  # unwrap Monitor
+        trade_history = getattr(underlying_env, 'trade_history', [])
+        
+        return {
+            "agent_name": agent_name,
+            "total_steps": step,
+            "total_reward": float(total_reward),
+            "final_portfolio_value": final_info.get("portfolio_value", 0),
+            "return_pct": final_info.get("return_pct", 0),
+            "total_trades": final_info.get("total_trades", 0),
+            "winning_trades": final_info.get("winning_trades", 0),
+            "losing_trades": final_info.get("losing_trades", 0),
+            "win_rate": final_info.get("win_rate", 0),
+            "max_drawdown": final_info.get("max_drawdown", 0),
+            "sharpe_ratio": final_info.get("sharpe_ratio", 0),
+            "sortino_ratio": final_info.get("sortino_ratio", 0),
+            "calmar_ratio": final_info.get("calmar_ratio", 0),
+            "profit_factor": final_info.get("profit_factor", 0),
+            "avg_win": final_info.get("avg_win", 0),
+            "avg_loss": final_info.get("avg_loss", 0),
+            "total_fees_paid": final_info.get("total_fees_paid", 0),
+            "fee_impact_pct": final_info.get("fee_impact_pct", 0),
+            "benchmark_return_pct": final_info.get("benchmark_return_pct", 0),
+            "alpha_pct": final_info.get("alpha_pct", 0),
+            "slippage_model": slippage_model,
+            "slippage_bps": slippage_bps,
+            "short_selling_enabled": enable_short_selling,
+            "equity_curve": equity_curve[-100:] if len(equity_curve) > 100 else equity_curve,  # Last 100 for API
+            "equity_curve_full_length": len(equity_curve),
+            "trade_history": trade_history[-50:] if len(trade_history) > 50 else trade_history,
+            "actions_summary": {
+                "total_actions": len(actions_taken),
+                "sample": actions_taken[-20:] if len(actions_taken) > 20 else actions_taken,
+            },
         }
     
     def load_agent(self, agent_name: str) -> Optional[PPO]:

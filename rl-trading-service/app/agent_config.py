@@ -137,6 +137,22 @@ class AgentConfig(BaseModel):
         description="Use daily candles (vs intraday)"
     )
     
+    # Short selling & slippage
+    enable_short_selling: bool = Field(
+        default=False,
+        description="Allow short selling in the environment"
+    )
+    slippage_model: str = Field(
+        default="proportional",
+        description="Slippage model: none, fixed, proportional, volume"
+    )
+    slippage_bps: float = Field(
+        default=5.0,
+        ge=0.0,
+        le=50.0,
+        description="Base slippage in basis points"
+    )
+
     # Symbols to train on
     symbols: List[str] = Field(
         default=["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"],

@@ -897,6 +897,114 @@ async def get_quick_signal(agent_name: str, symbol: str = "AAPL"):
         raise HTTPException(status_code=502, detail=f"Backend connection error: {e}")
 
 
+# ============== Backtesting Endpoint ==============
+
+class BacktestRequest(BaseModel):
+    """Request to backtest a trained agent"""
+    agent_name: str = Field(..., description="Name of the trained agent")
+    data: Optional[List[OHLCVData]] = Field(
+        None,
+        description="OHLCV data for backtesting (optional, fetches from backend if not provided)"
+    )
+    symbol: Optional[str] = Field(
+        default="AAPL",
+        description="Symbol to backtest (used when fetching from backend)"
+    )
+    days: Optional[int] = Field(
+        default=365,
+        ge=30,
+        le=3650,
+        description="Days of historical data for backtesting"
+    )
+    enable_short_selling: bool = Field(default=False, description="Allow short selling")
+    slippage_model: str = Field(
+        default="proportional",
+        description="Slippage model: none, fixed, proportional, volume"
+    )
+    slippage_bps: float = Field(
+        default=5.0,
+        ge=0.0,
+        le=50.0,
+        description="Base slippage in basis points"
+    )
+
+
+@app.post("/backtest")
+async def backtest_agent(request: BacktestRequest):
+    """
+    Run a full backtest of a trained agent on historical data.
+    
+    Returns detailed performance metrics including:
+    - Equity curve, trade history
+    - Sharpe/Sortino/Calmar ratios
+    - Profit factor, win rate, max drawdown
+    - Alpha vs buy-and-hold benchmark
+    - Fee impact analysis
+    """
+    agent_name = request.agent_name
+    
+    # Check if agent exists
+    status = trainer.get_agent_status(agent_name)
+    if status is None or not status.is_trained:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Trained agent not found: {agent_name}"
+        )
+    
+    try:
+        # Get data: from request or fetch from backend
+        if request.data and len(request.data) >= 100:
+            df_data = [d.model_dump() for d in request.data]
+            df = prepare_data_for_training(df_data)
+        else:
+            # Fetch from backend
+            from datetime import timedelta
+            end_date = datetime.now().strftime("%Y-%m-%d")
+            start_date = (datetime.now() - timedelta(days=request.days)).strftime("%Y-%m-%d")
+            
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.get(
+                    f"{settings.backend_url}/api/historical-prices/{request.symbol}",
+                    params={"startDate": start_date, "endDate": end_date}
+                )
+                
+                if response.status_code != 200:
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"Failed to fetch data for {request.symbol}"
+                    )
+                
+                data = response.json()
+                if not data.get("prices") or len(data["prices"]) < 100:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Insufficient data for {request.symbol}"
+                    )
+                
+                df = prepare_data_for_training(data["prices"])
+        
+        # Run backtest
+        result = trainer.backtest_agent(
+            agent_name=agent_name,
+            df=df,
+            enable_short_selling=request.enable_short_selling,
+            slippage_model=request.slippage_model,
+            slippage_bps=request.slippage_bps,
+        )
+        
+        return {
+            "symbol": request.symbol,
+            "days": request.days,
+            **result,
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Backtest failed for {agent_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Backtest failed: {str(e)}")
+
+
 # ============== Configuration Options ==============
 
 @app.get("/options/holding-periods")
