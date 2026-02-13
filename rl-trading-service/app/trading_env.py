@@ -159,9 +159,9 @@ class TradingEnvironment(gym.Env):
         render_mode: Optional[str] = None,
         inference_mode: bool = False,
         reward_weights: Optional[Dict[str, float]] = None,
-        enable_short_selling: bool = False,
-        slippage_model: str = "proportional",  # "none", "fixed", "proportional", "volume"
-        slippage_bps: float = 5.0,  # Base slippage in basis points (0.05%)
+        enable_short_selling: Optional[bool] = None,
+        slippage_model: Optional[str] = None,
+        slippage_bps: Optional[float] = None,
     ):
         super().__init__()
 
@@ -169,9 +169,10 @@ class TradingEnvironment(gym.Env):
         self.config = config
         self.render_mode = render_mode
         self.inference_mode = inference_mode
-        self.enable_short_selling = enable_short_selling
-        self.slippage_model = slippage_model
-        self.slippage_bps = slippage_bps
+        # Use explicit params if provided, otherwise fall back to config values
+        self.enable_short_selling = enable_short_selling if enable_short_selling is not None else getattr(config, 'enable_short_selling', False)
+        self.slippage_model = slippage_model if slippage_model is not None else getattr(config, 'slippage_model', 'proportional')
+        self.slippage_bps = slippage_bps if slippage_bps is not None else getattr(config, 'slippage_bps', 5.0)
 
         # Reward weights (merge defaults with overrides)
         self.reward_weights = {**DEFAULT_REWARD_WEIGHTS}

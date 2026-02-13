@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.40.0] - 2026-02-13
+
+### Added
+- **Test-Infrastruktur** — Erstmalige Testabdeckung für alle 4 Services:
+  - Frontend: Vitest + Testing Library (ErrorBoundary, Cache-Service Tests)
+  - Backend: Node.js Test Runner (Health-Endpoint, API-Smoke-Tests)
+  - RL-Service: pytest (36 Tests: TradingEnv, AgentConfig, Short Selling, Slippage, Metriken, Reward Weights)
+  - ML-Service: pytest (Config-Defaults, Transformer-Parameter)
+- **CI/CD Pipeline** — GitHub Actions Workflow (`ci.yml`):
+  - Frontend: Lint → Test → Build
+  - Backend: PostgreSQL Service Container → Health-Tests
+  - RL-Service: pytest mit allen Dependencies
+  - ML-Service: pytest mit allen Dependencies
+  - Docker Build (nur auf `main` nach erfolgreichen Tests)
+- **React ErrorBoundary** — Globale Fehlerbehandlung verhindert App-Crash bei unbehandelten Fehlern, mit Recovery-UI ("Erneut versuchen" / "Seite neu laden")
+
+### Fixed
+- **Env-Variable Bug** — `watchlistCacheService.ts` nutzte `VITE_API_BASE` statt `VITE_API_BASE_URL` (inkonsistent mit allen anderen Services)
+- **Config-Propagierung im TradingEnvironment** — `enable_short_selling`, `slippage_model`, `slippage_bps` werden jetzt korrekt aus der AgentConfig gelesen (vorher ignoriert, nur Konstruktor-Defaults verwendet)
+- **`docker-compose.prod.yml` unvollständig** — `rl-trading-service` fehlte komplett, Backend hatte keine `RL_SERVICE_URL` in Produktions-Config
+
+### Changed
+- README aktualisiert mit v1.39.0 RL-Features (Short Selling, Slippage, Walk-Forward, Extended Metrics, Backtest API)
+
 ## [1.39.0] - 2026-02-13
 
 ### Added

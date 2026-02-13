@@ -240,8 +240,13 @@ Train virtual traders using Deep Reinforcement Learning that learn from historic
   - **Risk Profiles**: Conservative, Moderate, Aggressive, Very Aggressive
   - **Trading Styles**: Trend Following, Mean Reversion, Momentum, Breakout, Contrarian
   - **Broker Profiles**: Realistic fee structures matching Paper Trading
+- **Short Selling**: Optional short positions (13 actions: 7 long + 6 short) with collateral tracking
+- **Slippage Modeling**: 4 realistic models (none, fixed, proportional, volume-dependent)
+- **Walk-Forward Backtesting**: 80/20 train/test split with out-of-sample evaluation and overfitting detection
+- **Extended Metrics**: Sharpe Ratio, Sortino Ratio, Calmar Ratio, Profit Factor, Alpha vs. Buy-and-Hold
+- **Backtest API**: `POST /backtest` endpoint for historical agent backtesting with equity curves
+- **Configurable Reward System**: 17 individually adjustable reward weights
 - **Technical Indicator Input**: 20+ indicators as observation features
-- **Backtesting-based Training**: Agents are rewarded for profitable trades
 - **GPU Acceleration**: CUDA support for faster training
 - **Persistent Models**: Trained models saved and available as "advisors"
 

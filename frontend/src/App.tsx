@@ -13,6 +13,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { DataServiceProvider, useServiceWorker } from './hooks';
 import { SettingsProvider, useSettings } from './contexts';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Navigation } from './components/Navigation';
 import { DashboardPage, WatchlistPage, SettingsPage, InfoPage, TradingPortfolioPage, LeaderboardPage, AITraderPage, AITradersPage, AIModelsHubPage } from './pages';
 import { initializeAuth, subscribeToAuth } from './services/authService';
@@ -158,11 +159,13 @@ function AppFooter() {
 
 function App() {
   return (
-    <SettingsProvider>
-      <DataServiceProvider>
-        <AppContent />
-      </DataServiceProvider>
-    </SettingsProvider>
+    <ErrorBoundary>
+      <SettingsProvider>
+        <DataServiceProvider>
+          <AppContent />
+        </DataServiceProvider>
+      </SettingsProvider>
+    </ErrorBoundary>
   );
 }
 

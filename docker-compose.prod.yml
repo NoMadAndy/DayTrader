@@ -29,6 +29,7 @@ services:
       - NODE_ENV=production
       - CORS_ORIGIN=${CORS_ORIGIN:-*}
       - ML_SERVICE_URL=http://ml-service:8000
+      - RL_SERVICE_URL=http://rl-trading-service:8001
 
   ml-service:
     build:
@@ -39,3 +40,15 @@ services:
     restart: unless-stopped
     environment:
       - USE_CUDA=true
+
+  rl-trading-service:
+    build:
+      context: ./rl-trading-service
+      dockerfile: Dockerfile
+    ports:
+      - "${RL_SERVICE_PORT:-8001}:8001"
+    restart: unless-stopped
+    environment:
+      - USE_CUDA=true
+      - BACKEND_URL=http://backend:3001
+      - ML_SERVICE_URL=http://ml-service:8000

@@ -1,12 +1,13 @@
 {
   "name": "daytrader-backend",
-  "version": "1.39.0",
+  "version": "1.40.0",
   "description": "Backend proxy for DayTrader - handles external API calls to avoid CORS issues",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "test": "node --test tests/"
   },
   "dependencies": {
     "compression": "^1.7.4",
