@@ -302,6 +302,8 @@ class AITraderEngine:
         Args:
             profit: Trade profit (positive = win, negative = loss)
         """
+        if profit is None:
+            return
         self._trade_history.append(profit)
         if len(self._trade_history) > 100:
             self._trade_history = self._trade_history[-100:]
@@ -657,19 +659,9 @@ class AITraderEngine:
         else:
             position_size = initial_budget * fixed_position_percent
         
-        # === Drawdown-Based Position Scaling ===
-        # Reduce position sizes proportionally when portfolio is in drawdown
-        max_value = portfolio_state.get('max_value') or initial_budget
-        current_value = portfolio_state.get('total_value') or initial_budget
-        if max_value > 0 and current_value < max_value:
-            drawdown = (max_value - current_value) / max_value
-            max_dd = self.config.max_drawdown if self.config.max_drawdown else 0.15
-            dd_ratio = drawdown / max_dd  # 0.0 = no drawdown, 1.0 = at max drawdown
-            
-            if dd_ratio > 0.25:  # Start scaling down at 25% of max drawdown
-                # Linear scale: at 25% dd_ratio = 1.0x, at 100% dd_ratio = 0.25x
-                drawdown_scale = max(0.25, 1.0 - (dd_ratio - 0.25) * 1.0)
-                position_size *= drawdown_scale
+        # NOTE: Drawdown-based position scaling is handled by RiskManager._check_drawdown_graduated()
+        # which sets risk_result.position_scale_factor. Applied in analyze_symbol() after risk checks.
+        # This avoids double-scaling which would over-reduce positions.
         
         # === Loss Streak Scaling ===
         # Reduce positions after consecutive losses

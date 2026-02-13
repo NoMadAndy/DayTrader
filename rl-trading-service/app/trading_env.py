@@ -681,11 +681,12 @@ class TradingEnvironment(gym.Env):
         rw = self.reward_weights
         reward = 0.0
 
-        # Sharpe-based step reward
+        # Sharpe-based step reward (clipped to prevent explosion with low-variance returns)
         if rw.get("use_sharpe_reward") and len(self._daily_returns) > 10:
             rs = np.std(self._daily_returns[-20:])
-            if rs > 1e-8:
-                reward += (daily_return / rs) * rw["sharpe_scale"]
+            if rs > 0.001:
+                sharpe_ratio = np.clip(daily_return / rs, -5.0, 5.0)
+                reward += sharpe_ratio * rw["sharpe_scale"]
             else:
                 reward += daily_return * rw["portfolio_return_scale"] * self.risk_multiplier
         else:

@@ -349,8 +349,13 @@ class TestDrawdownPositionScaling:
         assert size == pytest.approx(10000, rel=0.01)
         assert qty == 100
 
-    def test_moderate_drawdown_reduced_size(self):
-        """At 50% of max drawdown, position should be reduced."""
+    def test_moderate_drawdown_delegated_to_risk_manager(self):
+        """Position sizing delegates drawdown scaling to RiskManager.
+        
+        _calculate_position_size should NOT scale for drawdown itself.
+        Instead, RiskManager._check_drawdown_graduated provides the scale factor
+        which is applied in analyze_symbol(). This prevents double-scaling.
+        """
         engine = self._make_engine()
         # 7.5% drawdown = 50% of 15% max drawdown
         portfolio = {
@@ -360,23 +365,27 @@ class TestDrawdownPositionScaling:
             "positions": {},
         }
         size, qty = engine._calculate_position_size("buy", 100.0, 0.8, portfolio)
-        # Should be smaller than full $10,000
-        assert size < 10000
-        assert size > 2500  # But not zero
+        # Position size should be FULL (drawdown scaling not applied here)
+        assert size == pytest.approx(10000, rel=0.01)
+        # The RiskManager will scale this down via position_scale_factor
 
-    def test_severe_drawdown_significantly_reduced(self):
-        """Near max drawdown, position should be heavily reduced."""
-        engine = self._make_engine()
-        # 14% drawdown = ~93% of 15% max drawdown
-        portfolio = {
-            "cash": 86000,
-            "total_value": 86000,
-            "max_value": 100000,
-            "positions": {},
-        }
-        size, qty = engine._calculate_position_size("buy", 100.0, 0.8, portfolio)
-        # Should be significantly smaller
-        assert size < 5000
+    def test_drawdown_scaling_via_risk_manager(self):
+        """RiskManager provides graduated drawdown scaling."""
+        config = AITraderConfig(
+            trader_id=1, name="test",
+            initial_budget=100000,
+            max_drawdown=0.15,
+        )
+        rm = RiskManager(config)
+        # 10% drawdown = 67% of 15% max
+        portfolio = {"total_value": 90000, "max_value": 100000}
+        check, scale = rm._check_drawdown_graduated(portfolio)
+        # At 67% of max DD: scale = 0.50
+        assert scale == 0.50
+        # Applied in analyze_symbol: $10,000 * 0.50 = $5,000
+        base_size = 10000
+        scaled = base_size * scale
+        assert scaled == pytest.approx(5000, rel=0.01)
 
 
 # ════════════════════════════════════════════════════════════════════════════
