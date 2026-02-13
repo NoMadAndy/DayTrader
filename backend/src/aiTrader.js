@@ -7,6 +7,7 @@
  */
 
 import { query, getClient } from './db.js';
+import logger from './logger.js';
 
 // ============================================================================
 // Trading Time Helper Functions
@@ -61,7 +62,7 @@ export function isWithinTradingTime(personality) {
     const endTime = scheduleConfig.tradingEnd || '17:30';
     
     if (!/^\d{1,2}:\d{2}$/.test(startTime) || !/^\d{1,2}:\d{2}$/.test(endTime)) {
-      console.error('Invalid time format in schedule config:', { startTime, endTime });
+      logger.error('Invalid time format in schedule config:', { startTime, endTime });
       return false;
     }
     
@@ -72,7 +73,7 @@ export function isWithinTradingTime(personality) {
     if (isNaN(startHour) || isNaN(startMinute) || isNaN(endHour) || isNaN(endMinute) ||
         startHour < 0 || startHour > 23 || endHour < 0 || endHour > 23 ||
         startMinute < 0 || startMinute > 59 || endMinute < 0 || endMinute > 59) {
-      console.error('Invalid time values in schedule config');
+      logger.error('Invalid time values in schedule config');
       return false;
     }
     
@@ -103,7 +104,7 @@ export function isWithinTradingTime(personality) {
     
     return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
   } catch (e) {
-    console.error('Error checking trading time:', e);
+    logger.error('Error checking trading time:', e);
     // On error, default to false for safety
     return false;
   }
@@ -557,10 +558,10 @@ export async function initializeAITraderSchema() {
     `);
 
     await client.query('COMMIT');
-    console.log('AI Trader schema initialized successfully');
+    logger.info('AI Trader schema initialized successfully');
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('AI Trader schema initialization error:', e);
+    logger.error('AI Trader schema initialization error:', e);
     throw e;
   } finally {
     client.release();
@@ -893,7 +894,7 @@ export async function updatePendingOutcomes() {
     }
 
     if (updated > 0) {
-      console.log(`Updated ${updated} decision outcomes`);
+      logger.info(`Updated ${updated} decision outcomes`);
       
       // Re-calculate trader stats for all affected traders
       const traderIds = [...new Set(decisions.map(d => d.ai_trader_id))];
@@ -904,7 +905,7 @@ export async function updatePendingOutcomes() {
 
     return updated;
   } catch (error) {
-    console.error('Error updating pending outcomes:', error);
+    logger.error('Error updating pending outcomes:', error);
     throw error;
   }
 }
@@ -1114,7 +1115,7 @@ export async function updateTraderStats(traderId) {
   const portfolioId = traderResult.rows[0]?.portfolio_id;
   
   if (!portfolioId) {
-    console.log(`[AI Trader] No portfolio for trader ${traderId}, skipping stats update`);
+    logger.info(`[AI Trader] No portfolio for trader ${traderId}, skipping stats update`);
     return;
   }
   
@@ -1231,7 +1232,7 @@ export async function updateTraderStats(traderId) {
      bestTradePnl, worstTradePnl, currentStreak, maxDrawdown, lastTradeAt]
   );
   
-  console.log(`[AI Trader] Updated stats for trader ${traderId}: ${totalPositions} trades (${closedTrades} closed), ${winningTrades}W/${losingTrades}L, ${totalPnl.toFixed(2)}% P&L, streak ${currentStreak}, DD ${maxDrawdown.toFixed(2)}%`);
+  logger.info(`[AI Trader] Updated stats for trader ${traderId}: ${totalPositions} trades (${closedTrades} closed), ${winningTrades}W/${losingTrades}L, ${totalPnl.toFixed(2)}% P&L, streak ${currentStreak}, DD ${maxDrawdown.toFixed(2)}%`);
 }
 
 // ============================================================================

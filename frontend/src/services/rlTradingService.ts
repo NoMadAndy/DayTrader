@@ -10,6 +10,7 @@
 
 import type { OHLCV } from '../types/stock';
 import { getAuthHeaders } from './authService';
+import { log } from '../utils/logger';
 
 // Use backend proxy for RL service
 const RL_API_BASE = '/api/rl';
@@ -283,7 +284,7 @@ class RLTradingService {
       if (!response.ok) return null;
       return await response.json();
     } catch (error) {
-      console.warn('RL Trading Service health check failed:', error);
+      log.warn('RL Trading Service health check failed:', error);
       return null;
     }
   }
@@ -305,7 +306,7 @@ class RLTradingService {
       if (!response.ok) return null;
       return await response.json();
     } catch (error) {
-      console.warn('RL Trading Service info failed:', error);
+      log.warn('RL Trading Service info failed:', error);
       return null;
     }
   }

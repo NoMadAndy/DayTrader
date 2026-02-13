@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.41.0] - 2026-02-13
+
+### Added
+- **Backend Rate Limiting** — `express-rate-limit` schützt API-Endpunkte (100 Req/Min API, 20 Req/15Min Auth), konfigurierbar über `RATE_LIMIT_WINDOW_MS` und `RATE_LIMIT_MAX`
+- **Backend Strukturiertes Logging** — Winston-Logger ersetzt 412× `console.log/warn/error` mit Level-basiertem Logging (JSON in Production, farbiger Console-Output in Development), konfigurierbar über `LOG_LEVEL`
+- **Backend Input-Validierung** — Validierungs-Middleware für Auth-Endpunkte (Email-Format, Passwort-Stärke, Username-Format) mit `validation.js` Utility
+- **Frontend Code Splitting** — React.lazy + Suspense für alle 9 Seiten-Komponenten, reduziert Initial-Bundle-Größe signifikant (jede Seite als separater Chunk)
+- **Frontend Logger-Utility** — 219× `console.log/warn/error` durch zentralen Logger ersetzt, der in Production Info/Debug-Logs unterdrückt
+- **Service Worker Type Declarations** — Globale TypeScript-Typen für `periodicSync` und `sync` APIs (vermeidet `as any` Casts)
+
+### Fixed
+- **45× `as any` Type Casts eliminiert** — `PositionWithPnL` Interface um fehlende Backend-Felder erweitert (hoursHeld, distanceToStopLoss, dailyPnl, marketState, etc.)
+- **CORS Production-Warnung** — Backend loggt Warnung wenn `CORS_ORIGIN=*` in Production verwendet wird
+
+### Changed
+- `.env.example` um Rate-Limiting und Logging-Konfiguration erweitert
+
 ## [1.40.0] - 2026-02-13
 
 ### Added

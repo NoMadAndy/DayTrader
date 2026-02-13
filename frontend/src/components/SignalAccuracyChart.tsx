@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { getSignalAccuracy } from '../services/aiTraderService';
 import type { SignalAccuracyData } from '../types/aiTrader';
+import { log } from '../utils/logger';
 
 interface SignalAccuracyChartProps {
   traderId: number;
@@ -24,7 +25,7 @@ export default function SignalAccuracyChart({ traderId, days = 30 }: SignalAccur
         const data = await getSignalAccuracy(traderId, days);
         setAccuracy(data);
       } catch (error) {
-        console.error('Error fetching signal accuracy:', error);
+        log.error('Error fetching signal accuracy:', error);
       } finally {
         setLoading(false);
       }

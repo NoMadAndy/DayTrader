@@ -7,6 +7,7 @@
 
 import { query, getClient } from './db.js';
 import { calculateSignalAccuracy } from './aiTraderSignalAccuracy.js';
+import logger from './logger.js';
 
 // ============================================================================
 // Adaptive Weight Adjustment
@@ -139,7 +140,7 @@ export async function adjustSignalWeights(traderId) {
 
     await client.query('COMMIT');
     
-    console.log(`Adjusted weights for trader ${traderId}:`, {
+    logger.info(`Adjusted weights for trader ${traderId}:`, {
       old: currentWeights,
       new: newWeights,
     });
@@ -154,7 +155,7 @@ export async function adjustSignalWeights(traderId) {
 
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Error adjusting signal weights:', error);
+    logger.error('Error adjusting signal weights:', error);
     throw error;
   } finally {
     client.release();

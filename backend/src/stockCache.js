@@ -11,6 +11,7 @@
  */
 
 import db from './db.js';
+import logger from './logger.js';
 
 // Cache durations in seconds
 const CACHE_DURATIONS = {
@@ -88,10 +89,10 @@ export async function initializeCacheTable() {
     `);
 
     await client.query('COMMIT');
-    console.log('Cache tables initialized successfully');
+    logger.info('Cache tables initialized successfully');
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('Cache table initialization error:', e);
+    logger.error('Cache table initialization error:', e);
     throw e;
   } finally {
     client.release();
@@ -114,7 +115,7 @@ export async function getCached(cacheKey) {
     );
     
     if (result.rows.length > 0) {
-      console.log(`Cache HIT: ${cacheKey}`);
+      logger.info(`Cache HIT: ${cacheKey}`);
       return {
         data: result.rows[0].data,
         source: result.rows[0].source,
@@ -123,10 +124,10 @@ export async function getCached(cacheKey) {
       };
     }
     
-    console.log(`Cache MISS: ${cacheKey}`);
+    logger.info(`Cache MISS: ${cacheKey}`);
     return null;
   } catch (e) {
-    console.error('Cache get error:', e);
+    logger.error('Cache get error:', e);
     return null;
   }
 }
@@ -154,9 +155,9 @@ export async function setCache(cacheKey, cacheType, symbol, data, source, ttlSec
          hit_count = 0`,
       [cacheKey, cacheType, symbol, JSON.stringify(data), source, ttlSeconds]
     );
-    console.log(`Cache SET: ${cacheKey} (TTL: ${ttlSeconds}s)`);
+    logger.info(`Cache SET: ${cacheKey} (TTL: ${ttlSeconds}s)`);
   } catch (e) {
-    console.error('Cache set error:', e);
+    logger.error('Cache set error:', e);
   }
 }
 
@@ -169,11 +170,11 @@ export async function cleanupExpiredCache() {
       'DELETE FROM stock_data_cache WHERE expires_at < CURRENT_TIMESTAMP'
     );
     if (result.rowCount > 0) {
-      console.log(`Cleaned up ${result.rowCount} expired cache entries`);
+      logger.info(`Cleaned up ${result.rowCount} expired cache entries`);
     }
     return result.rowCount;
   } catch (e) {
-    console.error('Cache cleanup error:', e);
+    logger.error('Cache cleanup error:', e);
     return 0;
   }
 }
@@ -204,18 +205,18 @@ export function canMakeRequest(provider) {
   
   // Check limits
   if (state.requestsToday >= limits.perDay) {
-    console.warn(`${provider}: Daily limit reached (${limits.perDay})`);
+    logger.warn(`${provider}: Daily limit reached (${limits.perDay})`);
     return false;
   }
   
   if (state.requestsThisMinute >= limits.perMinute) {
-    console.warn(`${provider}: Minute limit reached (${limits.perMinute})`);
+    logger.warn(`${provider}: Minute limit reached (${limits.perMinute})`);
     return false;
   }
   
   // Check cooldown
   if (now - state.lastRequest < limits.cooldownMs) {
-    console.warn(`${provider}: Cooldown active`);
+    logger.warn(`${provider}: Cooldown active`);
     return false;
   }
   
@@ -303,7 +304,7 @@ export async function getCacheStats() {
       rateLimits: getRateLimitStatus(),
     };
   } catch (e) {
-    console.error('Cache stats error:', e);
+    logger.error('Cache stats error:', e);
     return { error: e.message };
   }
 }
@@ -318,10 +319,10 @@ export async function invalidateSymbol(symbol) {
       'DELETE FROM stock_data_cache WHERE symbol = $1',
       [symbol.toUpperCase()]
     );
-    console.log(`Invalidated ${result.rowCount} cache entries for ${symbol}`);
+    logger.info(`Invalidated ${result.rowCount} cache entries for ${symbol}`);
     return result.rowCount;
   } catch (e) {
-    console.error('Cache invalidation error:', e);
+    logger.error('Cache invalidation error:', e);
     return 0;
   }
 }

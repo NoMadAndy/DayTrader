@@ -8,6 +8,7 @@
  */
 
 import type { NewsItem } from './types';
+import { log } from '../utils/logger';
 
 // Backend proxy endpoint
 const MARKETAUX_API_BASE = '/api/marketaux';
@@ -48,7 +49,7 @@ export class MarketauxProvider {
       const response = await fetch(url.toString());
       
       if (!response.ok) {
-        console.error(`Marketaux error: ${response.status}`);
+        log.error(`Marketaux error: ${response.status}`);
         return [];
       }
 
@@ -61,7 +62,7 @@ export class MarketauxProvider {
         };
       });
     } catch (error) {
-      console.error('Marketaux fetch error:', error);
+      log.error('Marketaux fetch error:', error);
       return [];
     }
   }
@@ -83,14 +84,14 @@ export class MarketauxProvider {
       const response = await fetch(url.toString());
       
       if (!response.ok) {
-        console.error(`Marketaux error: ${response.status}`);
+        log.error(`Marketaux error: ${response.status}`);
         return [];
       }
 
       const data = await response.json();
       return data.items || [];
     } catch (error) {
-      console.error('Marketaux market news fetch error:', error);
+      log.error('Marketaux market news fetch error:', error);
       return [];
     }
   }

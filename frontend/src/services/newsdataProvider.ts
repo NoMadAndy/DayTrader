@@ -8,6 +8,7 @@
  */
 
 import type { NewsItem } from './types';
+import { log } from '../utils/logger';
 
 // Backend proxy endpoint
 const NEWSDATA_API_BASE = '/api/newsdata';
@@ -42,14 +43,14 @@ export class NewsdataProvider {
       const response = await fetch(url.toString());
       
       if (!response.ok) {
-        console.error(`NewsData.io error: ${response.status}`);
+        log.error(`NewsData.io error: ${response.status}`);
         return [];
       }
 
       const data = await response.json();
       return data.items || [];
     } catch (error) {
-      console.error('NewsData.io fetch error:', error);
+      log.error('NewsData.io fetch error:', error);
       return [];
     }
   }
@@ -72,14 +73,14 @@ export class NewsdataProvider {
       const response = await fetch(url.toString());
       
       if (!response.ok) {
-        console.error(`NewsData.io error: ${response.status}`);
+        log.error(`NewsData.io error: ${response.status}`);
         return [];
       }
 
       const data = await response.json();
       return data.items || [];
     } catch (error) {
-      console.error('NewsData.io market news fetch error:', error);
+      log.error('NewsData.io market news fetch error:', error);
       return [];
     }
   }

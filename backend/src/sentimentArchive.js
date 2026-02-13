@@ -9,6 +9,7 @@
  */
 
 import { query, getClient } from './db.js';
+import logger from './logger.js';
 
 /**
  * Initialize the sentiment archive table
@@ -46,12 +47,12 @@ export async function initializeSentimentArchive() {
     `);
     
     await client.query('COMMIT');
-    console.log('[SentimentArchive] Table initialized successfully');
+    logger.info('[SentimentArchive] Table initialized successfully');
   } catch (e) {
     await client.query('ROLLBACK');
     // Table might already exist, which is fine
     if (!e.message.includes('already exists')) {
-      console.error('[SentimentArchive] Initialization error:', e.message);
+      logger.error('[SentimentArchive] Initialization error:', e.message);
     }
   } finally {
     client.release();
@@ -113,10 +114,10 @@ export async function archiveSentiment(sentimentData) {
       ]
     );
     
-    console.log(`[SentimentArchive] Archived sentiment for ${symbol}: ${sentiment} (${score})`);
+    logger.info(`[SentimentArchive] Archived sentiment for ${symbol}: ${sentiment} (${score})`);
     return true;
   } catch (e) {
-    console.error('[SentimentArchive] Error archiving sentiment:', e.message);
+    logger.error('[SentimentArchive] Error archiving sentiment:', e.message);
     return false;
   }
 }
@@ -152,7 +153,7 @@ export async function getSentimentHistory(symbol, days = 30) {
       sources: row.sources || [],
     }));
   } catch (e) {
-    console.error('[SentimentArchive] Error getting history:', e.message);
+    logger.error('[SentimentArchive] Error getting history:', e.message);
     return [];
   }
 }
@@ -190,7 +191,7 @@ export async function getLatestSentiment(symbol) {
       sources: row.sources || [],
     };
   } catch (e) {
-    console.error('[SentimentArchive] Error getting latest:', e.message);
+    logger.error('[SentimentArchive] Error getting latest:', e.message);
     return null;
   }
 }
@@ -252,7 +253,7 @@ export async function getSentimentTrend(symbol, days = 7) {
       },
     };
   } catch (e) {
-    console.error('[SentimentArchive] Error getting trend:', e.message);
+    logger.error('[SentimentArchive] Error getting trend:', e.message);
     return { symbol: symbol.toUpperCase(), hasData: false, error: e.message };
   }
 }
@@ -283,7 +284,7 @@ export async function getArchivedSymbols() {
       avgScore: parseFloat((parseFloat(row.avg_score) || 0).toFixed(4)),
     }));
   } catch (e) {
-    console.error('[SentimentArchive] Error getting symbols:', e.message);
+    logger.error('[SentimentArchive] Error getting symbols:', e.message);
     return [];
   }
 }
@@ -302,12 +303,12 @@ export async function cleanupOldEntries(daysToKeep = 90) {
     );
     
     if (result.rowCount > 0) {
-      console.log(`[SentimentArchive] Cleaned up ${result.rowCount} old entries`);
+      logger.info(`[SentimentArchive] Cleaned up ${result.rowCount} old entries`);
     }
     
     return result.rowCount;
   } catch (e) {
-    console.error('[SentimentArchive] Cleanup error:', e.message);
+    logger.error('[SentimentArchive] Cleanup error:', e.message);
     return 0;
   }
 }

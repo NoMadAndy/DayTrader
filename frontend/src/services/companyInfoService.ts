@@ -11,6 +11,7 @@
  */
 
 import { formatCurrencyValue as formatFromSettings } from '../contexts';
+import { log } from '../utils/logger';
 
 const API_BASE = '/api';
 
@@ -85,7 +86,7 @@ export async function getEurUsdRate(): Promise<number> {
       return data.rate;
     }
   } catch (error) {
-    console.warn('Failed to fetch EUR/USD rate:', error);
+    log.warn('Failed to fetch EUR/USD rate:', error);
   }
   
   return 0.92; // Fallback
@@ -142,7 +143,7 @@ async function fetchYahooChartData(symbol: string): Promise<Partial<CompanyInfo>
       changeAbsolute: change,
     };
   } catch (error) {
-    console.warn('Yahoo chart fetch error:', error);
+    log.warn('Yahoo chart fetch error:', error);
     return null;
   }
 }
@@ -209,7 +210,7 @@ async function fetchFinnhubProfile(symbol: string, apiKey: string): Promise<Part
       cusip: data.cusip,
     };
   } catch (error) {
-    console.warn('Finnhub profile error:', error);
+    log.warn('Finnhub profile error:', error);
     return null;
   }
 }
@@ -237,7 +238,7 @@ async function fetchFinnhubMetrics(symbol: string, apiKey: string): Promise<Part
       fiftyTwoWeekLow: metrics['52WeekLow'],
     };
   } catch (error) {
-    console.warn('Finnhub metrics error:', error);
+    log.warn('Finnhub metrics error:', error);
     return null;
   }
 }
@@ -261,7 +262,7 @@ async function fetchFinnhubQuote(symbol: string, apiKey: string): Promise<Partia
       changePercent: data.dp,
     };
   } catch (error) {
-    console.warn('Finnhub quote error:', error);
+    log.warn('Finnhub quote error:', error);
     return null;
   }
 }
@@ -296,7 +297,7 @@ async function fetchAlphaVantageOverview(symbol: string, apiKey: string): Promis
       fiftyTwoWeekLow: data['52WeekLow'] ? parseFloat(data['52WeekLow']) : undefined,
     };
   } catch (error) {
-    console.warn('Alpha Vantage overview error:', error);
+    log.warn('Alpha Vantage overview error:', error);
     return null;
   }
 }
@@ -328,7 +329,7 @@ async function fetchTwelveDataQuote(symbol: string, apiKey: string): Promise<Par
       volume: data.volume ? parseInt(data.volume) : undefined,
     };
   } catch (error) {
-    console.warn('Twelve Data quote error:', error);
+    log.warn('Twelve Data quote error:', error);
     return null;
   }
 }
@@ -347,7 +348,7 @@ export async function fetchCompanyInfo(symbol: string): Promise<CompanyInfo | nu
   const dataSources: string[] = [];
   
   // Debug: Log which API keys are available
-  console.log(`[CompanyInfo] Fetching ${symbol}, API keys available:`, {
+  log.info(`[CompanyInfo] Fetching ${symbol}, API keys available:`, {
     finnhub: !!apiKeys.finnhub,
     alphaVantage: !!apiKeys.alphaVantage,
     twelveData: !!apiKeys.twelveData,
@@ -390,9 +391,9 @@ export async function fetchCompanyInfo(symbol: string): Promise<CompanyInfo | nu
   // Debug: Log what each provider returned
   additionalResults.forEach((result, idx) => {
     if (result) {
-      console.log(`[CompanyInfo] ${fetchLabels[idx]} returned:`, result);
+      log.info(`[CompanyInfo] ${fetchLabels[idx]} returned:`, result);
     } else {
-      console.log(`[CompanyInfo] ${fetchLabels[idx]} returned null`);
+      log.info(`[CompanyInfo] ${fetchLabels[idx]} returned null`);
     }
   });
   

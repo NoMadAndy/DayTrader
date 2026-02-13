@@ -6,6 +6,7 @@
  */
 
 import { EventEmitter } from 'events';
+import logger from './logger.js';
 
 class AITraderEventEmitter extends EventEmitter {
   constructor() {
@@ -52,7 +53,7 @@ class AITraderEventEmitter extends EventEmitter {
       lastActivity: Date.now(),
     });
     
-    console.log(`[SSE] Client ${clientId} connected, subscribed to traders: ${traderIds}`);
+    logger.info(`[SSE] Client ${clientId} connected, subscribed to traders: ${traderIds}`);
     
     // Handle client disconnect
     res.on('close', () => {
@@ -69,7 +70,7 @@ class AITraderEventEmitter extends EventEmitter {
    */
   removeClient(clientId) {
     this.clients.delete(clientId);
-    console.log(`[SSE] Client ${clientId} disconnected`);
+    logger.info(`[SSE] Client ${clientId} disconnected`);
   }
 
   /**
@@ -85,7 +86,7 @@ class AITraderEventEmitter extends EventEmitter {
           client.res.write(eventString);
           client.lastActivity = Date.now();
         } catch (e) {
-          console.error(`[SSE] Error sending to client ${clientId}:`, e);
+          logger.error(`[SSE] Error sending to client ${clientId}:`, e);
           this.removeClient(clientId);
         }
       }

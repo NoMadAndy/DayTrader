@@ -8,6 +8,7 @@
  */
 
 import type { NewsItem } from './types';
+import { log } from '../utils/logger';
 
 // Backend proxy endpoint
 const MEDIASTACK_API_BASE = '/api/mediastack';
@@ -42,14 +43,14 @@ export class MediastackProvider {
       const response = await fetch(url.toString());
       
       if (!response.ok) {
-        console.error(`mediastack error: ${response.status}`);
+        log.error(`mediastack error: ${response.status}`);
         return [];
       }
 
       const data = await response.json();
       return data.items || [];
     } catch (error) {
-      console.error('mediastack fetch error:', error);
+      log.error('mediastack fetch error:', error);
       return [];
     }
   }
@@ -72,14 +73,14 @@ export class MediastackProvider {
       const response = await fetch(url.toString());
       
       if (!response.ok) {
-        console.error(`mediastack error: ${response.status}`);
+        log.error(`mediastack error: ${response.status}`);
         return [];
       }
 
       const data = await response.json();
       return data.items || [];
     } catch (error) {
-      console.error('mediastack market news fetch error:', error);
+      log.error('mediastack market news fetch error:', error);
       return [];
     }
   }

@@ -30,6 +30,7 @@ import {
 } from '../services/userSettingsService';
 import { getAuthState, subscribeToAuth, type AuthState } from '../services/authService';
 import TrainingConsole from './TrainingConsole';
+import { log } from '../utils/logger';
 
 interface RLAgentsPanelProps {
   className?: string;
@@ -216,7 +217,7 @@ export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
             loadAgents(); // Refresh agents list
           }
         } catch (err) {
-          console.warn(`Failed to poll status for ${agentName}:`, err);
+          log.warn(`Failed to poll status for ${agentName}:`, err);
         }
       }
     }, 2000);
@@ -242,7 +243,7 @@ export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
       const agentList = await rlTradingService.listAgents();
       setAgents(agentList);
     } catch (err) {
-      console.error('Failed to load agents:', err);
+      log.error('Failed to load agents:', err);
     }
   };
 
@@ -251,7 +252,7 @@ export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
       const presetList = await rlTradingService.listPresets();
       setPresets(presetList);
     } catch (err) {
-      console.error('Failed to load presets:', err);
+      log.error('Failed to load presets:', err);
     }
   };
 
@@ -260,7 +261,7 @@ export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
       const symbols = await getAvailableSymbols();
       setAvailableSymbols(symbols.sort());
     } catch (err) {
-      console.error('Failed to load available symbols:', err);
+      log.error('Failed to load available symbols:', err);
     }
   };
 
@@ -270,7 +271,7 @@ export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
         const symbols = await getCustomSymbols();
         setWatchlistSymbols(symbols);
       } catch (err) {
-        console.error('Failed to load watchlist:', err);
+        log.error('Failed to load watchlist:', err);
       }
     } else {
       setWatchlistSymbols([]);

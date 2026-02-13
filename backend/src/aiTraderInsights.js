@@ -7,6 +7,7 @@
 
 import { query } from './db.js';
 import { calculateSignalAccuracy } from './aiTraderSignalAccuracy.js';
+import logger from './logger.js';
 
 // ============================================================================
 // Insights Generation
@@ -189,7 +190,7 @@ export async function generateInsights(traderId, context = {}) {
     return insights.slice(0, 8);
 
   } catch (error) {
-    console.error('Error generating insights:', error);
+    logger.error('Error generating insights:', error);
     return insights;
   }
 }
@@ -204,7 +205,7 @@ export async function getInsights(traderId) {
     // Always generate fresh insights for real-time accuracy
     return await generateInsights(traderId);
   } catch (error) {
-    console.error('Error getting insights:', error);
+    logger.error('Error getting insights:', error);
     return [];
   }
 }
@@ -268,7 +269,7 @@ export async function createPersistentInsight(
     );
     return result.rows[0];
   } catch (error) {
-    console.error('Error creating persistent insight:', error);
+    logger.error('Error creating persistent insight:', error);
     throw error;
   }
 }
@@ -302,7 +303,7 @@ export async function getPersistentInsights(traderId, activeOnly = true) {
     const result = await query(queryText, params);
     return result.rows;
   } catch (error) {
-    console.error('Error getting persistent insights:', error);
+    logger.error('Error getting persistent insights:', error);
     return [];
   }
 }
@@ -327,7 +328,7 @@ export async function deactivateInsight(insightId) {
     );
     return result.rowCount > 0;
   } catch (error) {
-    console.error('Error deactivating insight:', error);
+    logger.error('Error deactivating insight:', error);
     return false;
   }
 }
@@ -347,7 +348,7 @@ export async function cleanupExpiredInsights() {
     );
     return result.rowCount;
   } catch (error) {
-    console.error('Error cleaning up expired insights:', error);
+    logger.error('Error cleaning up expired insights:', error);
     return 0;
   }
 }

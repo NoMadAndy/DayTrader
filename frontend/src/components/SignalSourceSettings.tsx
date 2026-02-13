@@ -17,6 +17,7 @@ import {
   DEFAULT_WATCHLIST_SETTINGS
 } from '../services/userSettingsService';
 import { rlTradingService, type AgentStatus } from '../services/rlTradingService';
+import { log } from '../utils/logger';
 
 interface SignalSourceSettingsProps {
   onSettingsChange?: (settings: SignalSourceSettings) => void;
@@ -54,7 +55,7 @@ export function SignalSourceSettingsPanel({ onSettingsChange }: SignalSourceSett
           // Only show trained agents
           setAvailableAgents(agents.filter(a => a.is_trained));
         } catch {
-          console.warn('Failed to load RL agents');
+          log.warn('Failed to load RL agents');
         }
       }
       

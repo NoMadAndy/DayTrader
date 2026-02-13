@@ -51,7 +51,7 @@ export async function getCachedSignals(symbol: string): Promise<CachedWatchlistS
     const data = await response.json();
     return data.cache?.data || null;
   } catch (error) {
-    console.warn('Error fetching cached signals:', error);
+    log.warn('Error fetching cached signals:', error);
     return null;
   }
 }
@@ -77,7 +77,7 @@ export async function setCachedSignals(
 
     return response.ok;
   } catch (error) {
-    console.warn('Error caching signals:', error);
+    log.warn('Error caching signals:', error);
     return false;
   }
 }
@@ -117,7 +117,7 @@ export async function getBatchCachedSignals(symbols: string[]): Promise<Map<stri
       }
     }
   } catch (error) {
-    console.warn('Error fetching batch cached signals:', error);
+    log.warn('Error fetching batch cached signals:', error);
   }
 
   return result;
@@ -135,7 +135,7 @@ export async function clearCachedSignals(symbol: string): Promise<boolean> {
 
     return response.ok;
   } catch (error) {
-    console.warn('Error clearing cached signals:', error);
+    log.warn('Error clearing cached signals:', error);
     return false;
   }
 }

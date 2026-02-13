@@ -12,6 +12,7 @@ import { getAITraders, deleteAITrader } from '../services/aiTraderService';
 import { AITraderConfigModal } from '../components/AITraderConfigModal';
 import type { AITrader, AITraderStatus } from '../types/aiTrader';
 import { useSettings } from '../contexts';
+import { log } from '../utils/logger';
 
 const STATUS_STYLES: Record<AITraderStatus, { bg: string; text: string; icon: string }> = {
   running: { bg: 'bg-green-500/20', text: 'text-green-400', icon: '▶️' },
@@ -54,7 +55,7 @@ export default function AITradersPage() {
       const traderList = await getAITraders();
       setTraders(traderList);
     } catch (err) {
-      console.error('Failed to refresh AI traders:', err);
+      log.error('Failed to refresh AI traders:', err);
     }
   };
 
@@ -71,7 +72,7 @@ export default function AITradersPage() {
       const traderList = await getAITraders();
       setTraders(traderList);
     } catch (err) {
-      console.error('Failed to load AI traders:', err);
+      log.error('Failed to load AI traders:', err);
       setError(t('aiTraders.loadError'));
     } finally {
       setLoading(false);
@@ -92,7 +93,7 @@ export default function AITradersPage() {
       setSuccess(t('aiTraders.deleteSuccess').replace('{name}', trader.name));
       loadTraders();
     } catch (err) {
-      console.error('Failed to delete AI trader:', err);
+      log.error('Failed to delete AI trader:', err);
       setError(err instanceof Error ? err.message : t('aiTraders.deleteError'));
     } finally {
       setDeletingId(null);

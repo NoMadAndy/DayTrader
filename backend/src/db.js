@@ -6,6 +6,7 @@
  */
 
 import pg from 'pg';
+import logger from './logger.js';
 const { Pool } = pg;
 
 // Database connection pool
@@ -19,7 +20,7 @@ const pool = new Pool({
 
 // Log pool errors
 pool.on('error', (err) => {
-  console.error('Unexpected database pool error:', err);
+  logger.error('Unexpected database pool error:', err);
 });
 
 /**
@@ -32,7 +33,7 @@ export async function query(text, params) {
   const start = Date.now();
   const result = await pool.query(text, params);
   const duration = Date.now() - start;
-  console.log('Executed query', { text: text.substring(0, 100), duration, rows: result.rowCount });
+  logger.info('Executed query', { text: text.substring(0, 100), duration, rows: result.rowCount });
   return result;
 }
 
@@ -147,10 +148,10 @@ export async function initializeDatabase() {
     `);
 
     await client.query('COMMIT');
-    console.log('Database schema initialized successfully');
+    logger.info('Database schema initialized successfully');
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('Database initialization error:', e);
+    logger.error('Database initialization error:', e);
     throw e;
   } finally {
     client.release();
@@ -166,10 +167,10 @@ export async function cleanupExpiredSessions() {
       'DELETE FROM sessions WHERE expires_at < CURRENT_TIMESTAMP'
     );
     if (result.rowCount > 0) {
-      console.log(`Cleaned up ${result.rowCount} expired sessions`);
+      logger.info(`Cleaned up ${result.rowCount} expired sessions`);
     }
   } catch (e) {
-    console.error('Session cleanup error:', e);
+    logger.error('Session cleanup error:', e);
   }
 }
 
@@ -182,7 +183,7 @@ export async function checkHealth() {
     await query('SELECT 1');
     return true;
   } catch (e) {
-    console.error('Database health check failed:', e);
+    logger.error('Database health check failed:', e);
     return false;
   }
 }

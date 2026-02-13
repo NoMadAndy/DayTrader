@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { log } from '../utils/logger';
 
 interface SelfTrainingStatus {
   trader_id: number;
@@ -69,7 +70,7 @@ export function SelfTrainingIndicator({ traderId, compact = false, onTrainingEve
         setStatus(data);
       }
     } catch (error) {
-      console.error('Failed to fetch self-training status:', error);
+      log.error('Failed to fetch self-training status:', error);
     }
   }, [traderId, onTrainingEvent]);
 

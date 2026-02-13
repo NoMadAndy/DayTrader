@@ -14,6 +14,7 @@ import { getUserSettings, updateUserSettings, DEFAULT_ML_SETTINGS, type MLSettin
 import { LoginForm } from '../components/LoginForm';
 import { RegisterForm } from '../components/RegisterForm';
 import type { DataServiceConfig } from '../services/dataService';
+import { log } from '../utils/logger';
 
 const STORAGE_KEY = 'daytrader_api_config';
 
@@ -65,7 +66,7 @@ function loadStoredConfig(): ApiConfig {
       return { ...defaultConfig, ...parsed };
     }
   } catch {
-    console.warn('Failed to load stored API config');
+    log.warn('Failed to load stored API config');
   }
   return defaultConfig;
 }
@@ -74,7 +75,7 @@ function saveConfig(config: ApiConfig): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
   } catch {
-    console.warn('Failed to save API config');
+    log.warn('Failed to save API config');
   }
 }
 
@@ -312,7 +313,7 @@ export function SettingsPage() {
       
       setLastSystemRefresh(new Date());
     } catch (error) {
-      console.error('Failed to fetch system stats:', error);
+      log.error('Failed to fetch system stats:', error);
     } finally {
       setSystemLoading(false);
     }
@@ -336,7 +337,7 @@ export function SettingsPage() {
         alert('Sitzung abgelaufen. Bitte neu einloggen.');
       }
     } catch (error) {
-      console.error('Failed to trigger quote update:', error);
+      log.error('Failed to trigger quote update:', error);
     }
   };
 
@@ -442,7 +443,7 @@ export function SettingsPage() {
     try {
       localStorage.setItem('daytrader_ml_settings', JSON.stringify(mlSettings));
     } catch {
-      console.warn('Failed to save ML settings locally');
+      log.warn('Failed to save ML settings locally');
     }
     
     if (authState.isAuthenticated) {

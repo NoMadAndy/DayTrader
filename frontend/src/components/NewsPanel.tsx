@@ -9,6 +9,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNews } from '../hooks';
 import { analyzeSentiment, getSentimentLabel, type SentimentResult } from '../utils/sentimentAnalysis';
 import { analyzeBatchWithFallback, checkMLSentimentAvailable, resetMLServiceCache } from '../services/mlSentimentService';
+import { log } from '../utils/logger';
 
 // Export type for parent components
 export interface NewsItemWithSentiment {
@@ -179,7 +180,7 @@ export function NewsPanel({
         setNewsWithSentiment(analyzedNews);
         onSentimentChange?.(analyzedNews);
       } catch (err) {
-        console.error('Sentiment analysis failed:', err);
+        log.error('Sentiment analysis failed:', err);
         // Fallback to local
         const fallbackNews = news.map(item => ({
           ...item,

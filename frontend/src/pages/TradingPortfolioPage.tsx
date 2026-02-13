@@ -52,6 +52,7 @@ import type {
   BrokerProfileId,
 } from '../types/trading';
 import { StockSelector, PendingOrders, EquityChart, OptionChainPanel } from '../components';
+import { log } from '../utils/logger';
 
 type TabType = 'trading' | 'overview' | 'settings';
 type OrderMode = 'stock' | 'warrant';
@@ -150,7 +151,7 @@ export function TradingPortfolioPage() {
         setProductTypes(products);
         setBrokerProfiles(brokers);
       } catch (e) {
-        console.error('Failed to load config:', e);
+        log.error('Failed to load config:', e);
       }
     }
     loadConfig();
@@ -187,7 +188,7 @@ export function TradingPortfolioPage() {
       );
       setOpenPositions(updatedPositions);
     } catch (e) {
-      console.error('Failed to load portfolio:', e);
+      log.error('Failed to load portfolio:', e);
       setError(t('trading.loadError'));
     } finally {
       setLoading(false);
@@ -228,7 +229,7 @@ export function TradingPortfolioPage() {
           priceCache.current[selectedSymbol] = quote.price;
         }
       } catch (e) {
-        console.error('Failed to get quote:', e);
+        log.error('Failed to get quote:', e);
       }
     }
     loadPrice();
@@ -308,7 +309,7 @@ export function TradingPortfolioPage() {
             }
           }
         } catch (e) {
-          console.error('Trigger check failed:', e);
+          log.error('Trigger check failed:', e);
         }
       }
     }
@@ -338,7 +339,7 @@ export function TradingPortfolioPage() {
         });
         setFeePreview(fees);
       } catch (e) {
-        console.error('Fee calculation error:', e);
+        log.error('Fee calculation error:', e);
       }
     }
     

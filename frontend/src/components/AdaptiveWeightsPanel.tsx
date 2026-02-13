@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { getWeightHistory } from '../services/aiTraderService';
 import type { AITrader, WeightHistoryEntry, AITraderSignalWeights } from '../types/aiTrader';
+import { log } from '../utils/logger';
 
 interface AdaptiveWeightsPanelProps {
   trader: AITrader;
@@ -23,7 +24,7 @@ export default function AdaptiveWeightsPanel({ trader }: AdaptiveWeightsPanelPro
         const data = await getWeightHistory(trader.id, 10);
         setHistory(data);
       } catch (error) {
-        console.error('Error fetching weight history:', error);
+        log.error('Error fetching weight history:', error);
       } finally {
         setLoading(false);
       }

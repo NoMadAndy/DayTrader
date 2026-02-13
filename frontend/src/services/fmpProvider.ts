@@ -8,6 +8,7 @@
  */
 
 import type { NewsItem } from './types';
+import { log } from '../utils/logger';
 
 // Backend proxy endpoint
 const FMP_API_BASE = '/api/fmp';
@@ -42,14 +43,14 @@ export class FMPProvider {
       const response = await fetch(url.toString());
       
       if (!response.ok) {
-        console.error(`FMP error: ${response.status}`);
+        log.error(`FMP error: ${response.status}`);
         return [];
       }
 
       const data = await response.json();
       return data.items || [];
     } catch (error) {
-      console.error('FMP stock news fetch error:', error);
+      log.error('FMP stock news fetch error:', error);
       return [];
     }
   }
@@ -70,14 +71,14 @@ export class FMPProvider {
       const response = await fetch(url.toString());
       
       if (!response.ok) {
-        console.error(`FMP error: ${response.status}`);
+        log.error(`FMP error: ${response.status}`);
         return [];
       }
 
       const data = await response.json();
       return data.items || [];
     } catch (error) {
-      console.error('FMP market news fetch error:', error);
+      log.error('FMP market news fetch error:', error);
       return [];
     }
   }

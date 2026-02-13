@@ -11,6 +11,7 @@
 
 import type { OHLCV } from '../types/stock';
 import type { DataProvider, QuoteData, StockSearchResult } from './types';
+import { log } from '../utils/logger';
 
 // Use backend proxy (relative URLs work with nginx/vite proxy)
 const API_BASE_URL = '/api/twelvedata';
@@ -37,7 +38,7 @@ export class TwelveDataProvider implements DataProvider {
       });
       
       if (!response.ok) {
-        console.error(`Twelve Data API error: ${response.status} ${response.statusText}`);
+        log.error(`Twelve Data API error: ${response.status} ${response.statusText}`);
         return null;
       }
 
@@ -45,13 +46,13 @@ export class TwelveDataProvider implements DataProvider {
       
       // Check for error status
       if (data.status === 'error') {
-        console.error('Twelve Data API error:', data.message);
+        log.error('Twelve Data API error:', data.message);
         return null;
       }
 
       return data;
     } catch (error) {
-      console.error('Twelve Data fetch error:', error);
+      log.error('Twelve Data fetch error:', error);
       return null;
     }
   }

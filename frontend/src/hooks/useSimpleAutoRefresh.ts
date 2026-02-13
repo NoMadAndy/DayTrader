@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { log } from '../utils/logger';
 
 interface SimpleAutoRefreshState {
   isRefreshing: boolean;
@@ -130,7 +131,7 @@ export function useSimpleAutoRefresh(
         }));
       }
     } catch (error) {
-      console.error('Manual refresh error:', error);
+      log.error('Manual refresh error:', error);
       if (mountedRef.current) {
         setState(prev => ({ ...prev, isRefreshing: false }));
       }

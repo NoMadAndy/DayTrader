@@ -158,14 +158,14 @@ export async function register(email: string, password: string, username?: strin
     const data = await response.json();
     
     if (!response.ok) {
-      console.error('Registration failed:', response.status, data.error);
+      log.error('Registration failed:', response.status, data.error);
       return { success: false, error: data.error || `Registration failed (${response.status})` };
     }
     
-    console.log('Registration successful');
+    log.info('Registration successful');
     return { success: true, user: data.user };
   } catch (e) {
-    console.error('Registration network error:', e);
+    log.error('Registration network error:', e);
     if (e instanceof TypeError || (e instanceof Error && (e.name === 'NetworkError' || e.name === 'TypeError'))) {
       return { success: false, error: 'Cannot reach server. Please check your connection and try again.' };
     }
@@ -190,7 +190,7 @@ export async function login(email: string, password: string): Promise<AuthResult
     const data = await response.json();
     
     if (!response.ok) {
-      console.error('Login failed:', response.status, data.error);
+      log.error('Login failed:', response.status, data.error);
       return { success: false, error: data.error || `Login failed (${response.status})` };
     }
     
@@ -204,10 +204,10 @@ export async function login(email: string, password: string): Promise<AuthResult
       token: data.token,
     });
     
-    console.log('Login successful');
+    log.info('Login successful');
     return { success: true, user: data.user, token: data.token };
   } catch (e) {
-    console.error('Login network error:', e);
+    log.error('Login network error:', e);
     if (e instanceof TypeError || (e instanceof Error && (e.name === 'NetworkError' || e.name === 'TypeError'))) {
       return { success: false, error: 'Cannot reach server. Please check your connection and try again.' };
     }

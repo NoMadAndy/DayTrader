@@ -12,6 +12,7 @@
 
 import { query } from './db.js';
 import stockCache from './stockCache.js';
+import logger from './logger.js';
 
 // Configuration
 const CONFIG = {
@@ -60,7 +61,7 @@ async function getAllWatchedSymbols() {
     );
     return result.rows.map(row => row.symbol);
   } catch (e) {
-    console.error('[BackgroundJobs] Failed to get watched symbols:', e);
+    logger.error('[BackgroundJobs] Failed to get watched symbols:', e);
     return [];
   }
 }
@@ -87,7 +88,7 @@ async function fetchYahooQuotes(symbols) {
       });
       
       if (!response.ok) {
-        console.error(`[BackgroundJobs] Yahoo quote error for ${symbol}: ${response.status}`);
+        logger.error(`[BackgroundJobs] Yahoo quote error for ${symbol}: ${response.status}`);
         continue;
       }
       
@@ -110,7 +111,7 @@ async function fetchYahooQuotes(symbols) {
       // Small delay between requests
       await new Promise(resolve => setTimeout(resolve, 200));
     } catch (e) {
-      console.error(`[BackgroundJobs] Yahoo fetch error for ${symbol}:`, e.message);
+      logger.error(`[BackgroundJobs] Yahoo fetch error for ${symbol}:`, e.message);
     }
   }
   
@@ -127,7 +128,7 @@ let broadcastCallback = null;
  */
 export function setBroadcastCallback(callback) {
   broadcastCallback = callback;
-  console.log('[BackgroundJobs] SSE broadcast callback registered');
+  logger.info('[BackgroundJobs] SSE broadcast callback registered');
 }
 
 /**
@@ -166,7 +167,7 @@ async function updateQuoteBatch(symbols) {
     updateStats.successfulUpdates++;
   }
   
-  console.log(`[BackgroundJobs] Updated ${data.quoteResponse.result.length} quotes`);
+  logger.info(`[BackgroundJobs] Updated ${data.quoteResponse.result.length} quotes`);
 }
 
 /**
@@ -174,11 +175,11 @@ async function updateQuoteBatch(symbols) {
  */
 async function runQuoteUpdateCycle() {
   if (!process.env.DATABASE_URL) {
-    console.log('[BackgroundJobs] Database not configured, skipping quote update');
+    logger.info('[BackgroundJobs] Database not configured, skipping quote update');
     return;
   }
   
-  console.log('[BackgroundJobs] Starting quote update cycle...');
+  logger.info('[BackgroundJobs] Starting quote update cycle...');
   updateStats.cycleCount++;
   
   try {
@@ -191,7 +192,7 @@ async function runQuoteUpdateCycle() {
     // Limit to max symbols per cycle
     const symbolsToUpdate = allSymbols.slice(0, CONFIG.maxSymbolsPerCycle);
     
-    console.log(`[BackgroundJobs] Updating ${symbolsToUpdate.length} symbols`);
+    logger.info(`[BackgroundJobs] Updating ${symbolsToUpdate.length} symbols`);
     
     // Process in batches
     for (let i = 0; i < symbolsToUpdate.length; i += CONFIG.quoteBatchSize) {
@@ -205,9 +206,9 @@ async function runQuoteUpdateCycle() {
     }
     
     lastQuoteUpdate = new Date();
-    console.log(`[BackgroundJobs] Quote update cycle complete. Success: ${updateStats.successfulUpdates}, Failed: ${updateStats.failedUpdates}`);
+    logger.info(`[BackgroundJobs] Quote update cycle complete. Success: ${updateStats.successfulUpdates}, Failed: ${updateStats.failedUpdates}`);
   } catch (e) {
-    console.error('[BackgroundJobs] Quote update cycle error:', e);
+    logger.error('[BackgroundJobs] Quote update cycle error:', e);
     updateStats.lastError = e.message;
   }
 }
@@ -224,10 +225,10 @@ async function runCacheCleanup() {
     const removed = await stockCache.cleanupExpiredCache();
     lastCacheCleanup = new Date();
     if (removed > 0) {
-      console.log(`[BackgroundJobs] Cache cleanup: removed ${removed} expired entries`);
+      logger.info(`[BackgroundJobs] Cache cleanup: removed ${removed} expired entries`);
     }
   } catch (e) {
-    console.error('[BackgroundJobs] Cache cleanup error:', e);
+    logger.error('[BackgroundJobs] Cache cleanup error:', e);
   }
 }
 
@@ -236,13 +237,13 @@ async function runCacheCleanup() {
  */
 export function startBackgroundJobs() {
   if (isRunning) {
-    console.log('[BackgroundJobs] Already running');
+    logger.info('[BackgroundJobs] Already running');
     return;
   }
   
-  console.log('[BackgroundJobs] Starting background jobs...');
-  console.log(`[BackgroundJobs] Quote update interval: ${CONFIG.quoteUpdateInterval / 1000}s`);
-  console.log(`[BackgroundJobs] Cache cleanup interval: ${CONFIG.cacheCleanupInterval / 1000}s`);
+  logger.info('[BackgroundJobs] Starting background jobs...');
+  logger.info(`[BackgroundJobs] Quote update interval: ${CONFIG.quoteUpdateInterval / 1000}s`);
+  logger.info(`[BackgroundJobs] Cache cleanup interval: ${CONFIG.cacheCleanupInterval / 1000}s`);
   
   isRunning = true;
   
@@ -259,7 +260,7 @@ export function startBackgroundJobs() {
   // Start AI Trader jobs
   scheduleAITraderJobs();
   
-  console.log('[BackgroundJobs] Background jobs started');
+  logger.info('[BackgroundJobs] Background jobs started');
 }
 
 /**
@@ -268,7 +269,7 @@ export function startBackgroundJobs() {
 export function stopBackgroundJobs() {
   if (!isRunning) return;
   
-  console.log('[BackgroundJobs] Stopping background jobs...');
+  logger.info('[BackgroundJobs] Stopping background jobs...');
   
   if (quoteUpdateTimer) {
     clearInterval(quoteUpdateTimer);
@@ -284,7 +285,7 @@ export function stopBackgroundJobs() {
   stopAITraderJobs();
   
   isRunning = false;
-  console.log('[BackgroundJobs] Background jobs stopped');
+  logger.info('[BackgroundJobs] Background jobs stopped');
 }
 
 /**
@@ -314,7 +315,7 @@ export function getJobStatus() {
  * Manually trigger a quote update cycle
  */
 export async function triggerQuoteUpdate() {
-  console.log('[BackgroundJobs] Manual quote update triggered');
+  logger.info('[BackgroundJobs] Manual quote update triggered');
   await runQuoteUpdateCycle();
   return getJobStatus();
 }
@@ -341,7 +342,7 @@ export function updateConfig(newConfig) {
     CONFIG.quoteBatchSize = newConfig.quoteBatchSize;
   }
   
-  console.log('[BackgroundJobs] Configuration updated:', CONFIG);
+  logger.info('[BackgroundJobs] Configuration updated:', CONFIG);
 }
 
 // ============================================================================
@@ -354,7 +355,7 @@ export function updateConfig(newConfig) {
  */
 async function generateDailyReports() {
   try {
-    console.log('[BackgroundJobs] Starting daily report generation...');
+    logger.info('[BackgroundJobs] Starting daily report generation...');
     
     // Import dynamically to avoid circular dependencies
     const { generateDailyReport, getRunningAITraders } = await import('./aiTraderReports.js');
@@ -362,20 +363,20 @@ async function generateDailyReports() {
     const traders = await getRunningAITraders();
     const date = new Date();
     
-    console.log(`[BackgroundJobs] Generating reports for ${traders.length} traders`);
+    logger.info(`[BackgroundJobs] Generating reports for ${traders.length} traders`);
     
     for (const trader of traders) {
       try {
         await generateDailyReport(trader.id, date);
-        console.log(`[BackgroundJobs] Generated daily report for trader ${trader.name}`);
+        logger.info(`[BackgroundJobs] Generated daily report for trader ${trader.name}`);
       } catch (error) {
-        console.error(`[BackgroundJobs] Error generating report for trader ${trader.id}:`, error);
+        logger.error(`[BackgroundJobs] Error generating report for trader ${trader.id}:`, error);
       }
     }
     
-    console.log('[BackgroundJobs] Daily report generation complete');
+    logger.info('[BackgroundJobs] Daily report generation complete');
   } catch (error) {
-    console.error('[BackgroundJobs] Error in daily report generation:', error);
+    logger.error('[BackgroundJobs] Error in daily report generation:', error);
   }
 }
 
@@ -385,7 +386,7 @@ async function generateDailyReports() {
  */
 async function updateOutcomes() {
   try {
-    console.log('[BackgroundJobs] Starting outcome tracking update...');
+    logger.info('[BackgroundJobs] Starting outcome tracking update...');
     
     // Import dynamically to avoid circular dependencies
     const { updatePendingOutcomes } = await import('./aiTrader.js');
@@ -393,10 +394,10 @@ async function updateOutcomes() {
     const updated = await updatePendingOutcomes();
     
     if (updated > 0) {
-      console.log(`[BackgroundJobs] Updated ${updated} decision outcomes`);
+      logger.info(`[BackgroundJobs] Updated ${updated} decision outcomes`);
     }
   } catch (error) {
-    console.error('[BackgroundJobs] Error updating outcomes:', error);
+    logger.error('[BackgroundJobs] Error updating outcomes:', error);
   }
 }
 
@@ -444,23 +445,23 @@ async function adjustAdaptiveWeights(force = false) {
     const outsideHours = isOutsideTradingHours();
     
     if (!force && !outsideHours) {
-      console.log('[BackgroundJobs] Adaptive learning skipped - still within trading hours');
+      logger.info('[BackgroundJobs] Adaptive learning skipped - still within trading hours');
       return { skipped: true, reason: 'Within trading hours' };
     }
     
-    console.log('[BackgroundJobs] ====== ADAPTIVE LEARNING START ======');
-    console.log(`[BackgroundJobs] Time: ${new Date().toISOString()}`);
-    console.log(`[BackgroundJobs] Outside trading hours: ${outsideHours}, Force: ${force}`);
+    logger.info('[BackgroundJobs] ====== ADAPTIVE LEARNING START ======');
+    logger.info(`[BackgroundJobs] Time: ${new Date().toISOString()}`);
+    logger.info(`[BackgroundJobs] Outside trading hours: ${outsideHours}, Force: ${force}`);
     
     // Import dynamically to avoid circular dependencies
     const { getTradersWithLearningEnabled, adjustSignalWeights } = await import('./aiTraderLearning.js');
     
     const traders = await getTradersWithLearningEnabled();
     
-    console.log(`[BackgroundJobs] Found ${traders.length} traders with learning enabled`);
+    logger.info(`[BackgroundJobs] Found ${traders.length} traders with learning enabled`);
     
     if (traders.length === 0) {
-      console.log('[BackgroundJobs] No traders have learning enabled. Enable via Settings -> Learning -> "Lernmodus aktivieren"');
+      logger.info('[BackgroundJobs] No traders have learning enabled. Enable via Settings -> Learning -> "Lernmodus aktivieren"');
       return { adjusted: 0, skipped: 0, reason: 'No traders with learning enabled' };
     }
     
@@ -470,32 +471,32 @@ async function adjustAdaptiveWeights(force = false) {
     
     for (const trader of traders) {
       try {
-        console.log(`[BackgroundJobs] Processing trader: ${trader.name} (ID: ${trader.id})`);
+        logger.info(`[BackgroundJobs] Processing trader: ${trader.name} (ID: ${trader.id})`);
         const result = await adjustSignalWeights(trader.id);
         
         if (result.adjusted) {
           adjustedCount++;
-          console.log(`[BackgroundJobs] ✓ Adjusted weights for trader ${trader.name}:`);
-          console.log(`[BackgroundJobs]   Old: ML=${(result.oldWeights?.ml * 100).toFixed(1)}%, RL=${(result.oldWeights?.rl * 100).toFixed(1)}%, Sentiment=${(result.oldWeights?.sentiment * 100).toFixed(1)}%, Technical=${(result.oldWeights?.technical * 100).toFixed(1)}%`);
-          console.log(`[BackgroundJobs]   New: ML=${(result.newWeights?.ml * 100).toFixed(1)}%, RL=${(result.newWeights?.rl * 100).toFixed(1)}%, Sentiment=${(result.newWeights?.sentiment * 100).toFixed(1)}%, Technical=${(result.newWeights?.technical * 100).toFixed(1)}%`);
+          logger.info(`[BackgroundJobs] ✓ Adjusted weights for trader ${trader.name}:`);
+          logger.info(`[BackgroundJobs]   Old: ML=${(result.oldWeights?.ml * 100).toFixed(1)}%, RL=${(result.oldWeights?.rl * 100).toFixed(1)}%, Sentiment=${(result.oldWeights?.sentiment * 100).toFixed(1)}%, Technical=${(result.oldWeights?.technical * 100).toFixed(1)}%`);
+          logger.info(`[BackgroundJobs]   New: ML=${(result.newWeights?.ml * 100).toFixed(1)}%, RL=${(result.newWeights?.rl * 100).toFixed(1)}%, Sentiment=${(result.newWeights?.sentiment * 100).toFixed(1)}%, Technical=${(result.newWeights?.technical * 100).toFixed(1)}%`);
         } else {
           skippedCount++;
-          console.log(`[BackgroundJobs] - No adjustment for trader ${trader.name}: ${result.reason}`);
+          logger.info(`[BackgroundJobs] - No adjustment for trader ${trader.name}: ${result.reason}`);
         }
         
         results.push({ traderId: trader.id, name: trader.name, ...result });
       } catch (error) {
-        console.error(`[BackgroundJobs] ✗ Error adjusting weights for trader ${trader.id}:`, error.message);
+        logger.error(`[BackgroundJobs] ✗ Error adjusting weights for trader ${trader.id}:`, error.message);
         results.push({ traderId: trader.id, name: trader.name, error: error.message });
       }
     }
     
-    console.log(`[BackgroundJobs] ====== ADAPTIVE LEARNING COMPLETE ======`);
-    console.log(`[BackgroundJobs] Summary: ${adjustedCount} adjusted, ${skippedCount} skipped`);
+    logger.info(`[BackgroundJobs] ====== ADAPTIVE LEARNING COMPLETE ======`);
+    logger.info(`[BackgroundJobs] Summary: ${adjustedCount} adjusted, ${skippedCount} skipped`);
     
     return { adjusted: adjustedCount, skipped: skippedCount, results };
   } catch (error) {
-    console.error('[BackgroundJobs] Error in adaptive weight adjustments:', error);
+    logger.error('[BackgroundJobs] Error in adaptive weight adjustments:', error);
     return { error: error.message };
   }
 }
@@ -514,24 +515,24 @@ let warrantJobTimer = null;
  */
 async function runWarrantDailyJobs() {
   try {
-    console.log('[BackgroundJobs] ====== WARRANT DAILY JOBS START ======');
+    logger.info('[BackgroundJobs] ====== WARRANT DAILY JOBS START ======');
     
     const { processWarrantTimeDecay, settleExpiredWarrants } = await import('./trading.js');
     
     // 1. Settle expired warrants first
     const settled = await settleExpiredWarrants();
     if (settled.length > 0) {
-      console.log(`[BackgroundJobs] Settled ${settled.length} expired warrants`);
+      logger.info(`[BackgroundJobs] Settled ${settled.length} expired warrants`);
     }
     
     // 2. Apply theta decay to remaining open warrants
     const decayResult = await processWarrantTimeDecay();
-    console.log(`[BackgroundJobs] Theta decay: ${decayResult.processed} warrants updated`);
+    logger.info(`[BackgroundJobs] Theta decay: ${decayResult.processed} warrants updated`);
     
-    console.log('[BackgroundJobs] ====== WARRANT DAILY JOBS COMPLETE ======');
+    logger.info('[BackgroundJobs] ====== WARRANT DAILY JOBS COMPLETE ======');
     return { settled, decay: decayResult };
   } catch (error) {
-    console.error('[BackgroundJobs] Warrant daily jobs error:', error);
+    logger.error('[BackgroundJobs] Warrant daily jobs error:', error);
     return { error: error.message };
   }
 }
@@ -558,11 +559,11 @@ function scheduleAITraderJobs() {
     dailyReportTimer = setInterval(generateDailyReports, 24 * 60 * 60 * 1000);
   }, msUntilNextReport);
   
-  console.log(`[BackgroundJobs] Daily reports scheduled for ${nextReportRun.toISOString()}`);
+  logger.info(`[BackgroundJobs] Daily reports scheduled for ${nextReportRun.toISOString()}`);
   
   // Outcome tracking hourly
   outcomeTrackingTimer = setInterval(updateOutcomes, 60 * 60 * 1000);
-  console.log('[BackgroundJobs] Outcome tracking scheduled hourly');
+  logger.info('[BackgroundJobs] Outcome tracking scheduled hourly');
   
   // Run immediately on startup
   updateOutcomes();
@@ -586,25 +587,25 @@ function scheduleAITraderJobs() {
     adaptiveWeightsTimer = setInterval(adjustAdaptiveWeights, 24 * 60 * 60 * 1000);
   }, msUntilLearning);
   
-  console.log(`[BackgroundJobs] Adaptive learning scheduled for ${nextLearningRun.toISOString()} (daily after market close)`);
+  logger.info(`[BackgroundJobs] Adaptive learning scheduled for ${nextLearningRun.toISOString()} (daily after market close)`);
   
   // Also check every 2 hours if we're outside trading hours (catches weekends, holidays)
   adaptiveLearningCheckTimer = setInterval(() => {
     if (isOutsideTradingHours()) {
-      console.log('[BackgroundJobs] Periodic check: Outside trading hours, running adaptive learning...');
+      logger.info('[BackgroundJobs] Periodic check: Outside trading hours, running adaptive learning...');
       adjustAdaptiveWeights();
     }
   }, 2 * 60 * 60 * 1000); // Every 2 hours
   
-  console.log('[BackgroundJobs] Adaptive learning periodic check scheduled every 2 hours');
+  logger.info('[BackgroundJobs] Adaptive learning periodic check scheduled every 2 hours');
   
   // Run immediately on startup if outside trading hours
   setTimeout(async () => {
     if (isOutsideTradingHours()) {
-      console.log('[BackgroundJobs] Startup: Outside trading hours, running initial adaptive learning...');
+      logger.info('[BackgroundJobs] Startup: Outside trading hours, running initial adaptive learning...');
       await adjustAdaptiveWeights();
     } else {
-      console.log('[BackgroundJobs] Startup: Within trading hours, adaptive learning will run after market close');
+      logger.info('[BackgroundJobs] Startup: Within trading hours, adaptive learning will run after market close');
     }
   }, 10000); // 10 seconds after startup
 
@@ -623,7 +624,7 @@ function scheduleAITraderJobs() {
     warrantJobTimer = setInterval(runWarrantDailyJobs, 24 * 60 * 60 * 1000);
   }, msUntilWarrantJob);
 
-  console.log(`[BackgroundJobs] Warrant jobs (theta decay + expiry) scheduled for ${nextWarrantRun.toISOString()}`);
+  logger.info(`[BackgroundJobs] Warrant jobs (theta decay + expiry) scheduled for ${nextWarrantRun.toISOString()}`);
 }
 
 /**
@@ -658,7 +659,7 @@ function stopAITraderJobs() {
     warrantJobTimer = null;
   }
   
-  console.log('[BackgroundJobs] AI Trader jobs stopped');
+  logger.info('[BackgroundJobs] AI Trader jobs stopped');
 }
 
 export default {

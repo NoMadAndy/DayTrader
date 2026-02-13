@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getAuthState, getAuthHeaders, subscribeToAuth, type AuthState } from '../services/authService';
 import { RLAgentsPanel } from '../components';
 import { rlTradingService, type RLServiceHealth } from '../services/rlTradingService';
+import { log } from '../utils/logger';
 
 type AIHubTab = 'ml-models' | 'rl-agents' | 'historical-data';
 
@@ -129,7 +130,7 @@ export function AIModelsHubPage() {
         setMlServiceInfo(data);
       }
     } catch (error) {
-      console.error('Failed to fetch ML data:', error);
+      log.error('Failed to fetch ML data:', error);
     } finally {
       setMlLoading(false);
     }
@@ -193,7 +194,7 @@ export function AIModelsHubPage() {
             }
           }
         } catch (err) {
-          console.error('Status poll error:', err);
+          log.error('Status poll error:', err);
         }
       };
 
@@ -226,7 +227,7 @@ export function AIModelsHubPage() {
         setDeleteConfirm(null);
       }
     } catch (error) {
-      console.error('Delete failed:', error);
+      log.error('Delete failed:', error);
     }
   };
 
@@ -252,7 +253,7 @@ export function AIModelsHubPage() {
         setAvailableSymbols(data.symbols || []);
       }
     } catch (error) {
-      console.error('Failed to fetch available symbols:', error);
+      log.error('Failed to fetch available symbols:', error);
     } finally {
       setHistLoading(false);
     }
@@ -324,7 +325,7 @@ export function AIModelsHubPage() {
         }
       }
     } catch (error) {
-      console.error(`Failed to refresh ${symbol}:`, error);
+      log.error(`Failed to refresh ${symbol}:`, error);
     } finally {
       setRefreshing(prev => ({ ...prev, [symbol]: false }));
     }

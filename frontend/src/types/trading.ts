@@ -252,6 +252,18 @@ export interface PositionWithPnL extends Position {
   notionalValue: number;
   distanceToLiquidation: number | null;
   liquidationPrice: number | null;
+  // Additional calculated fields from backend
+  hoursHeld?: number;
+  distanceToStopLoss?: number | null;
+  distanceToTakeProfit?: number | null;
+  breakEvenPrice?: number | null;
+  dailyPnl?: number | null;
+  dailyPnlPercent?: number | null;
+  marketState?: string;
+  priceChange?: number | null;
+  priceChangePercent?: number | null;
+  investedValue?: number;
+  openFee?: number;
 }
 
 // ============================================================================

@@ -27,6 +27,7 @@ import { POPULAR_STOCKS } from '../utils/defaultStocks';
 import type { RLSignalInput, SignalSourceConfig } from '../utils/tradingSignals';
 import type { Portfolio, PortfolioMetrics, OrderSide, ProductType } from '../types/trading';
 import type { OHLCV, ForecastResult } from '../types/stock';
+import { log } from '../utils/logger';
 
 // Mode type for unified dashboard
 type DashboardMode = 'live' | 'backtest';
@@ -109,7 +110,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
           setMetrics(m);
         }
       } catch (err) {
-        console.error('Failed to load portfolio:', err);
+        log.error('Failed to load portfolio:', err);
       }
     };
     if (showQuickTrade) {
@@ -327,7 +328,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
         const validAgents = selectedRLAgents.filter(name => availableNames.has(name));
         
         if (validAgents.length === 0) {
-          console.warn('No valid RL agents found. Selected agents may have been deleted.');
+          log.warn('No valid RL agents found. Selected agents may have been deleted.');
           setRlSignals([]);
           return;
         }
@@ -339,7 +340,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
         
         // Race condition check: Ensure symbol hasn't changed during async call
         if (currentSymbolRef.current !== requestSymbol) {
-          console.log(`[Dashboard] Symbol changed during RL fetch (${requestSymbol} -> ${currentSymbolRef.current}), discarding stale results`);
+          log.info(`[Dashboard] Symbol changed during RL fetch (${requestSymbol} -> ${currentSymbolRef.current}), discarding stale results`);
           return;
         }
         
@@ -368,7 +369,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
           setRlSignals(signals);
         }
       } catch (err) {
-        console.warn('Failed to load RL signals:', err);
+        log.warn('Failed to load RL signals:', err);
         setRlSignals([]);
       }
     };
@@ -555,7 +556,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
           const symbols = await getCustomSymbols();
           setUserSymbols(symbols.map(s => s.symbol));
         } catch (err) {
-          console.warn('Failed to load user symbols:', err);
+          log.warn('Failed to load user symbols:', err);
         }
       }
     }

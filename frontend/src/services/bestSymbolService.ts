@@ -14,6 +14,7 @@ import {
   type CombinedSignalInput 
 } from '../utils/tradingSignals';
 import { generateForecast } from '../utils/forecast';
+import { log } from '../utils/logger';
 
 const STORAGE_KEY = 'daytrader_best_symbol';
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -105,7 +106,7 @@ export async function getBestSymbolFromWatchlist(): Promise<string> {
   // Check cache first for quick response
   const cached = getCachedBestSymbol();
   if (cached) {
-    console.log(`[BestSymbol] Using cached: ${cached.symbol} (score: ${cached.score.toFixed(1)})`);
+    log.info(`[BestSymbol] Using cached: ${cached.symbol} (score: ${cached.score.toFixed(1)})`);
     return cached.symbol;
   }
 
@@ -124,7 +125,7 @@ export async function getBestSymbolFromWatchlist(): Promise<string> {
     return 'AAPL'; // Fallback
   }
 
-  console.log(`[BestSymbol] Analyzing ${symbols.length} symbols...`);
+  log.info(`[BestSymbol] Analyzing ${symbols.length} symbols...`);
   
   // Analyze symbols in parallel (batch of 3 to avoid rate limits)
   const results: { symbol: string; score: number }[] = [];
@@ -149,8 +150,8 @@ export async function getBestSymbolFromWatchlist(): Promise<string> {
   results.sort((a, b) => b.score - a.score);
   
   const best = results[0];
-  console.log(`[BestSymbol] Best: ${best.symbol} (score: ${best.score.toFixed(1)})`);
-  console.log(`[BestSymbol] Top 3:`, results.slice(0, 3).map(r => `${r.symbol}: ${r.score.toFixed(1)}`).join(', '));
+  log.info(`[BestSymbol] Best: ${best.symbol} (score: ${best.score.toFixed(1)})`);
+  log.info(`[BestSymbol] Top 3:`, results.slice(0, 3).map(r => `${r.symbol}: ${r.score.toFixed(1)}`).join(', '));
   
   // Cache the result
   cacheBestSymbol(best.symbol, best.score);

@@ -8,6 +8,7 @@
  */
 
 import type { NewsItem } from './types';
+import { log } from '../utils/logger';
 
 // Backend proxy endpoint
 const TIINGO_API_BASE = '/api/tiingo';
@@ -42,14 +43,14 @@ export class TiingoProvider {
       const response = await fetch(url.toString());
       
       if (!response.ok) {
-        console.error(`Tiingo error: ${response.status}`);
+        log.error(`Tiingo error: ${response.status}`);
         return [];
       }
 
       const data = await response.json();
       return data.items || [];
     } catch (error) {
-      console.error('Tiingo stock news fetch error:', error);
+      log.error('Tiingo stock news fetch error:', error);
       return [];
     }
   }
@@ -70,14 +71,14 @@ export class TiingoProvider {
       const response = await fetch(url.toString());
       
       if (!response.ok) {
-        console.error(`Tiingo error: ${response.status}`);
+        log.error(`Tiingo error: ${response.status}`);
         return [];
       }
 
       const data = await response.json();
       return data.items || [];
     } catch (error) {
-      console.error('Tiingo market news fetch error:', error);
+      log.error('Tiingo market news fetch error:', error);
       return [];
     }
   }

@@ -6,6 +6,7 @@
  */
 
 import { query } from './db.js';
+import logger from './logger.js';
 
 // ============================================================================
 // Signal Accuracy Calculation
@@ -112,7 +113,7 @@ export async function calculateSignalAccuracy(traderId, days = 30) {
       },
     };
   } catch (error) {
-    console.error('Error calculating signal accuracy:', error);
+    logger.error('Error calculating signal accuracy:', error);
     throw error;
   }
 }

@@ -9,15 +9,38 @@
  * - Changelog: Version history
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { DataServiceProvider, useServiceWorker } from './hooks';
 import { SettingsProvider, useSettings } from './contexts';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Navigation } from './components/Navigation';
-import { DashboardPage, WatchlistPage, SettingsPage, InfoPage, TradingPortfolioPage, LeaderboardPage, AITraderPage, AITradersPage, AIModelsHubPage } from './pages';
 import { initializeAuth, subscribeToAuth } from './services/authService';
 import { getBestSymbolFromWatchlist, clearBestSymbolCache } from './services/bestSymbolService';
+import { log } from './utils/logger';
+
+// Lazy-loaded page components for code splitting
+const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
+const WatchlistPage = lazy(() => import('./pages/WatchlistPage').then(m => ({ default: m.WatchlistPage })));
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const InfoPage = lazy(() => import('./pages/InfoPage').then(m => ({ default: m.InfoPage })));
+const TradingPortfolioPage = lazy(() => import('./pages/TradingPortfolioPage').then(m => ({ default: m.TradingPortfolioPage })));
+const LeaderboardPage = lazy(() => import('./pages/LeaderboardPage').then(m => ({ default: m.LeaderboardPage })));
+const AITraderPage = lazy(() => import('./pages/AITraderPage').then(m => ({ default: m.AITraderPage })));
+const AITradersPage = lazy(() => import('./pages/AITradersPage'));
+const AIModelsHubPage = lazy(() => import('./pages/AIModelsHubPage').then(m => ({ default: m.AIModelsHubPage })));
+
+// Loading fallback for lazy-loaded pages
+function PageLoadingFallback() {
+  return (
+    <div className="flex items-center justify-center flex-1 min-h-[50vh]">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mx-auto mb-3"></div>
+        <p className="text-gray-400 text-sm">Laden...</p>
+      </div>
+    </div>
+  );
+}
 
 // Build info from Vite config
 declare const __BUILD_VERSION__: string;
@@ -33,7 +56,7 @@ function AppContent() {
   
   useEffect(() => {
     if (swSupported) {
-      console.log('[App] Service Worker aktiv', periodicSyncSupported ? '(mit Periodic Sync)' : '');
+      log.info('[App] Service Worker aktiv', periodicSyncSupported ? '(mit Periodic Sync)' : '');
     }
   }, [swSupported, periodicSyncSupported]);
 
@@ -50,7 +73,7 @@ function AppContent() {
         const bestSymbol = await getBestSymbolFromWatchlist();
         setSelectedSymbol(bestSymbol);
       } catch (error) {
-        console.error('[App] Error loading best symbol:', error);
+        log.error('[App] Error loading best symbol:', error);
         setSelectedSymbol('AAPL'); // Fallback
       }
       setIsLoadingBestSymbol(false);
@@ -84,8 +107,9 @@ function AppContent() {
         {/* Navigation */}
         <Navigation />
 
-        {/* Routes */}
+        {/* Routes - wrapped in Suspense for lazy-loaded pages */}
         <main className="flex-1 flex flex-col">
+          <Suspense fallback={<PageLoadingFallback />}>
           <Routes>
             <Route path="/" element={<WatchlistPage />} />
             <Route 
@@ -126,6 +150,7 @@ function AppContent() {
             {/* Redirect old changelog URL to info page */}
             <Route path="/changelog" element={<InfoPage />} />
           </Routes>
+          </Suspense>
         </main>
 
         <AppFooter />

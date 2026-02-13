@@ -584,6 +584,10 @@ Breaking changes should be marked with `!` (e.g., `feat!:`) or include `BREAKING
 - Never commit secrets or credentials
 - All data access is tenant-scoped for multi-tenant isolation
 - Input validation and safe error handling are required
+- **Rate Limiting**: API endpoints are protected (100 req/min, auth 20 req/15min)
+- **CORS**: Configurable via `CORS_ORIGIN` env var (warns if wildcard `*` in production)
+- **Structured Logging**: Winston-based, no PII in logs, JSON format in production
+- **Input Validation**: Email/password/symbol validation on all write endpoints
 
 ## Disclaimer
 

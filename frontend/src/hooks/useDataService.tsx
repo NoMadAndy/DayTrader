@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback, useMemo, createContext, useContext } 
 import type { StockData } from '../types/stock';
 import type { QuoteData, NewsItem, DataSourceType, StockSearchResult } from '../services/types';
 import { DataService, type DataServiceConfig } from '../services/dataService';
+import { log } from '../utils/logger';
 
 // Context for sharing data service configuration
 interface DataServiceContextValue {
@@ -53,7 +54,7 @@ function getInitialConfig(): DataServiceConfig {
       };
     }
   } catch (e) {
-    console.warn('Failed to load stored API config:', e);
+    log.warn('Failed to load stored API config:', e);
   }
   
   return envConfig;

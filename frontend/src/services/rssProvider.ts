@@ -6,6 +6,7 @@
  */
 
 import type { NewsItem } from './types';
+import { log } from '../utils/logger';
 
 // Backend RSS API endpoints
 const RSS_API_BASE = '/api/rss';
@@ -47,13 +48,13 @@ export class RSSProvider {
     try {
       const response = await fetch(`${RSS_API_BASE}/feeds`);
       if (!response.ok) {
-        console.error('Failed to fetch RSS feeds config');
+        log.error('Failed to fetch RSS feeds config');
         return [];
       }
       const data = await response.json();
       return data.feeds || [];
     } catch (error) {
-      console.error('RSS feeds config error:', error);
+      log.error('RSS feeds config error:', error);
       return [];
     }
   }
@@ -70,7 +71,7 @@ export class RSSProvider {
       const response = await fetch(`${RSS_API_BASE}/feed/${feedId}`);
       
       if (!response.ok) {
-        console.error(`RSS feed ${feedId} error: ${response.status}`);
+        log.error(`RSS feed ${feedId} error: ${response.status}`);
         return [];
       }
       
@@ -80,7 +81,7 @@ export class RSSProvider {
         feedId,
       }));
     } catch (error) {
-      console.error(`RSS feed ${feedId} fetch error:`, error);
+      log.error(`RSS feed ${feedId} fetch error:`, error);
       return [];
     }
   }
@@ -97,14 +98,14 @@ export class RSSProvider {
       const response = await fetch(`${RSS_API_BASE}/all`);
       
       if (!response.ok) {
-        console.error(`RSS all feeds error: ${response.status}`);
+        log.error(`RSS all feeds error: ${response.status}`);
         return [];
       }
       
       const data = await response.json();
       return data.items || [];
     } catch (error) {
-      console.error('RSS all feeds fetch error:', error);
+      log.error('RSS all feeds fetch error:', error);
       return [];
     }
   }

@@ -10,6 +10,7 @@
  */
 import { useEffect, useState, useCallback, useRef } from 'react';
 import type { AITraderEvent } from '../types/aiTrader';
+import { log } from '../utils/logger';
 
 interface UseAITraderStreamOptions {
   traderId?: number;
@@ -112,7 +113,7 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
     cleanup();
     
     setState(prev => ({ ...prev, connected: true, mode: 'polling', error: null }));
-    console.log('[Stream] Starting polling fallback mode');
+    log.info('[Stream] Starting polling fallback mode');
     
     const poll = async () => {
       try {
@@ -136,7 +137,7 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
           }
         }
       } catch (err) {
-        console.error('[Polling] Error:', err);
+        log.error('[Polling] Error:', err);
       }
     };
     
@@ -146,7 +147,7 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
   
   const connectSSE = useCallback(() => {
     if (isConnectingRef.current) {
-      console.log('[SSE] Connection already in progress, skipping');
+      log.info('[SSE] Connection already in progress, skipping');
       return;
     }
     
@@ -181,7 +182,7 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
       ? `/api/stream/ai-trader/${tid}`
       : '/api/stream/ai-traders';
     
-    console.log(`[SSE] Connecting to ${url}`);
+    log.info(`[SSE] Connecting to ${url}`);
     
     try {
       const es = new EventSource(url);
@@ -195,11 +196,11 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
         
         heartbeatTimeoutRef.current = window.setTimeout(() => {
           const timeSinceHeartbeat = Date.now() - lastHeartbeatRef.current;
-          console.warn(`[SSE] Heartbeat timeout (${timeSinceHeartbeat}ms since last heartbeat)`);
+          log.warn(`[SSE] Heartbeat timeout (${timeSinceHeartbeat}ms since last heartbeat)`);
           
           if (eventSourceRef.current) {
             const readyState = eventSourceRef.current.readyState;
-            console.log(`[SSE] Connection readyState: ${readyState} (0=CONNECTING, 1=OPEN, 2=CLOSED)`);
+            log.info(`[SSE] Connection readyState: ${readyState} (0=CONNECTING, 1=OPEN, 2=CLOSED)`);
             
             eventSourceRef.current.close();
             eventSourceRef.current = null;
@@ -207,10 +208,10 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
             sseFailureCountRef.current++;
             
             if (sseFailureCountRef.current >= MAX_SSE_FAILURES) {
-              console.log(`[SSE] Too many failures (${sseFailureCountRef.current}), switching to polling`);
+              log.info(`[SSE] Too many failures (${sseFailureCountRef.current}), switching to polling`);
               startPolling();
             } else {
-              console.log(`[SSE] Scheduling reconnect (failure ${sseFailureCountRef.current}/${MAX_SSE_FAILURES})`);
+              log.info(`[SSE] Scheduling reconnect (failure ${sseFailureCountRef.current}/${MAX_SSE_FAILURES})`);
               reconnectTimeoutRef.current = window.setTimeout(() => {
                 connectSSE();
               }, INITIAL_RECONNECT_DELAY_MS);
@@ -227,7 +228,7 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
           const esRef = eventSourceRef.current;
           if (esRef) {
             if (esRef.readyState === EventSource.CLOSED) {
-              console.warn('[SSE] Connection check: EventSource is CLOSED, reconnecting');
+              log.warn('[SSE] Connection check: EventSource is CLOSED, reconnecting');
               esRef.close();
               eventSourceRef.current = null;
               isConnectingRef.current = false;
@@ -235,14 +236,14 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
                 connectSSE();
               }, INITIAL_RECONNECT_DELAY_MS);
             } else if (esRef.readyState === EventSource.CONNECTING) {
-              console.log('[SSE] Connection check: Still connecting...');
+              log.info('[SSE] Connection check: Still connecting...');
             }
           }
         }, CONNECTION_CHECK_INTERVAL_MS);
       };
       
       es.onopen = () => {
-        console.log('[SSE] Connection opened successfully');
+        log.info('[SSE] Connection opened successfully');
         isConnectingRef.current = false;
         reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
         sseFailureCountRef.current = 0;
@@ -257,18 +258,18 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
           processEvent(event);
           setupHeartbeatTimeout();
         } catch (err) {
-          console.error('[SSE] Failed to parse message event:', err, e.data);
+          log.error('[SSE] Failed to parse message event:', err, e.data);
         }
       });
       
       es.addEventListener('heartbeat', () => {
-        console.debug('[SSE] Heartbeat received');
+        log.debug('[SSE] Heartbeat received');
         lastHeartbeatRef.current = Date.now();
         setupHeartbeatTimeout();
       });
       
       es.onerror = () => {
-        console.error('[SSE] Connection error, readyState:', es.readyState);
+        log.error('[SSE] Connection error, readyState:', es.readyState);
         isConnectingRef.current = false;
         setState(prev => ({ ...prev, connected: false, error: 'Connection error' }));
         
@@ -285,7 +286,7 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
         sseFailureCountRef.current++;
         
         if (sseFailureCountRef.current >= MAX_SSE_FAILURES) {
-          console.log(`[SSE] Too many errors (${sseFailureCountRef.current}), switching to polling`);
+          log.info(`[SSE] Too many errors (${sseFailureCountRef.current}), switching to polling`);
           es.close();
           eventSourceRef.current = null;
           startPolling();
@@ -295,7 +296,7 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
         const delay = Math.min(reconnectDelayRef.current * 1.5, MAX_RECONNECT_DELAY_MS);
         reconnectDelayRef.current = delay;
         
-        console.log(`[SSE] Error ${sseFailureCountRef.current}/${MAX_SSE_FAILURES}, will check state in ${delay}ms`);
+        log.info(`[SSE] Error ${sseFailureCountRef.current}/${MAX_SSE_FAILURES}, will check state in ${delay}ms`);
         
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
@@ -303,12 +304,12 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
         
         reconnectTimeoutRef.current = window.setTimeout(() => {
           if (eventSourceRef.current && eventSourceRef.current.readyState === EventSource.OPEN) {
-            console.log('[SSE] Browser auto-reconnected successfully');
+            log.info('[SSE] Browser auto-reconnected successfully');
             setupHeartbeatTimeout();
             return;
           }
           
-          console.log('[SSE] Browser did not auto-reconnect, forcing reconnect');
+          log.info('[SSE] Browser did not auto-reconnect, forcing reconnect');
           if (eventSourceRef.current) {
             eventSourceRef.current.close();
             eventSourceRef.current = null;
@@ -318,7 +319,7 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
       };
       
     } catch (err) {
-      console.error('[SSE] Failed to create EventSource:', err);
+      log.error('[SSE] Failed to create EventSource:', err);
       isConnectingRef.current = false;
       setState(prev => ({ ...prev, connected: false, error: 'Failed to connect', mode: 'connecting' }));
       
@@ -342,7 +343,7 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
   useEffect(() => {
     if (enabled && traderId !== undefined) {
       const timeout = setTimeout(() => {
-        console.log(`[SSE] TraderId changed to ${traderId}, reconnecting`);
+        log.info(`[SSE] TraderId changed to ${traderId}, reconnecting`);
         sseFailureCountRef.current = 0;
         reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
         connectSSE();
@@ -356,7 +357,7 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
   }, []);
   
   const reconnect = useCallback(() => {
-    console.log('[SSE] Manual reconnect requested');
+    log.info('[SSE] Manual reconnect requested');
     sseFailureCountRef.current = 0;
     reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
     isConnectingRef.current = false;

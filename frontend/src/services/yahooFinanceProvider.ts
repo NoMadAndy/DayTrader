@@ -9,6 +9,7 @@
 
 import type { OHLCV } from '../types/stock';
 import type { DataProvider, QuoteData, StockSearchResult } from './types';
+import { log } from '../utils/logger';
 
 // Use backend proxy API endpoints (relative URLs work with nginx proxy in prod, vite proxy in dev)
 const API_BASE_URL = '/api/yahoo';
@@ -34,13 +35,13 @@ export class YahooFinanceProvider implements DataProvider {
       });
       
       if (!response.ok) {
-        console.error(`Yahoo Finance API error: ${response.status} ${response.statusText}`);
+        log.error(`Yahoo Finance API error: ${response.status} ${response.statusText}`);
         return null;
       }
 
       return await response.json();
     } catch (error) {
-      console.warn('Yahoo Finance fetch error:', error);
+      log.warn('Yahoo Finance fetch error:', error);
       return null;
     }
   }

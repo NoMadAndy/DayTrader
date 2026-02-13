@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useRef, useEffect } from 'react';
+import { log } from '../utils/logger';
 
 export type NotificationType = 'info' | 'success' | 'warning' | 'error' | 'trade';
 
@@ -49,7 +50,7 @@ export function useNotificationFeedback({ settings, volume = 0.3 }: UseNotificat
         audioContextRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
         isInitializedRef.current = true;
       } catch {
-        console.warn('Web Audio API not supported');
+        log.warn('Web Audio API not supported');
       }
     }
     // Resume if suspended (browser autoplay policy)

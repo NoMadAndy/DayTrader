@@ -11,6 +11,7 @@
 
 import type { OHLCV } from '../types/stock';
 import type { DataProvider, QuoteData, NewsItem, StockSearchResult } from './types';
+import { log } from '../utils/logger';
 
 // Use backend proxy (relative URLs work with nginx/vite proxy)
 const API_BASE_URL = '/api/finnhub';
@@ -37,13 +38,13 @@ export class FinnhubProvider implements DataProvider {
       });
       
       if (!response.ok) {
-        console.error(`Finnhub API error: ${response.status} ${response.statusText}`);
+        log.error(`Finnhub API error: ${response.status} ${response.statusText}`);
         return null;
       }
 
       return await response.json();
     } catch (error) {
-      console.error('Finnhub fetch error:', error);
+      log.error('Finnhub fetch error:', error);
       return null;
     }
   }

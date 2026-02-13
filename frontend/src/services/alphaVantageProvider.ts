@@ -11,6 +11,7 @@
 
 import type { OHLCV } from '../types/stock';
 import type { DataProvider, QuoteData, StockSearchResult } from './types';
+import { log } from '../utils/logger';
 
 // Use backend proxy (relative URLs work with nginx/vite proxy)
 const API_BASE_URL = '/api/alphavantage';
@@ -38,9 +39,9 @@ export class AlphaVantageProvider implements DataProvider {
       
       if (!response.ok) {
         if (response.status === 429) {
-          console.warn('Alpha Vantage rate limit exceeded (cached data may be available)');
+          log.warn('Alpha Vantage rate limit exceeded (cached data may be available)');
         }
-        console.error(`Alpha Vantage API error: ${response.status} ${response.statusText}`);
+        log.error(`Alpha Vantage API error: ${response.status} ${response.statusText}`);
         return null;
       }
 
@@ -48,13 +49,13 @@ export class AlphaVantageProvider implements DataProvider {
       
       // Check for rate limit or error messages
       if (data['Error Message'] || data['Note']) {
-        console.error('Alpha Vantage API message:', data['Error Message'] || data['Note']);
+        log.error('Alpha Vantage API message:', data['Error Message'] || data['Note']);
         return null;
       }
 
       return data;
     } catch (error) {
-      console.error('Alpha Vantage fetch error:', error);
+      log.error('Alpha Vantage fetch error:', error);
       return null;
     }
   }

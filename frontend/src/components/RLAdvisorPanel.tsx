@@ -14,6 +14,7 @@ import {
   type SignalExplanation,
 } from '../services/rlTradingService';
 import type { OHLCV } from '../types/stock';
+import { log } from '../utils/logger';
 
 interface RLAdvisorPanelProps {
   symbol: string;
@@ -67,7 +68,7 @@ export default function RLAdvisorPanel({
         setAgents(agentList.filter(a => a.is_trained));
       }
     } catch (err) {
-      console.error('Failed to check RL service:', err);
+      log.error('Failed to check RL service:', err);
       setIsAvailable(false);
     } finally {
       setIsLoading(false);
@@ -112,7 +113,7 @@ export default function RLAdvisorPanel({
       const result = await rlTradingService.getSignalWithExplanation(agentName, historicalData);
       setExplanation(result);
     } catch (err) {
-      console.error('Failed to load explanation:', err);
+      log.error('Failed to load explanation:', err);
     } finally {
       setIsLoadingExplanation(false);
     }

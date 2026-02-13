@@ -8,6 +8,7 @@
  */
 
 import type { OHLCV } from '../types/stock';
+import { log } from '../utils/logger';
 
 // Use backend proxy for ML service
 const ML_API_BASE = '/api/ml';
@@ -82,7 +83,7 @@ class MLServiceClient {
       if (!response.ok) return null;
       return await response.json();
     } catch (error) {
-      console.warn('ML Service health check failed:', error);
+      log.warn('ML Service health check failed:', error);
       return null;
     }
   }
@@ -105,7 +106,7 @@ class MLServiceClient {
       const data = await response.json();
       return data.models || [];
     } catch (error) {
-      console.warn('Failed to list ML models:', error);
+      log.warn('Failed to list ML models:', error);
       return [];
     }
   }
@@ -119,7 +120,7 @@ class MLServiceClient {
       if (!response.ok) return null;
       return await response.json();
     } catch (error) {
-      console.warn(`Failed to get model info for ${symbol}:`, error);
+      log.warn(`Failed to get model info for ${symbol}:`, error);
       return null;
     }
   }
@@ -186,7 +187,7 @@ class MLServiceClient {
         statusUrl: result.status_url
       };
     } catch (error) {
-      console.error('Failed to start training:', error);
+      log.error('Failed to start training:', error);
       return { 
         success: false, 
         message: error instanceof Error ? error.message : 'Failed to start training' 
@@ -204,7 +205,7 @@ class MLServiceClient {
       if (!response.ok) return null;
       return await response.json();
     } catch (error) {
-      console.warn(`Failed to get training status for ${symbol}:`, error);
+      log.warn(`Failed to get training status for ${symbol}:`, error);
       return null;
     }
   }
@@ -234,13 +235,13 @@ class MLServiceClient {
 
       if (!response.ok) {
         const error = await response.json();
-        console.warn(`Prediction failed for ${symbol}:`, error);
+        log.warn(`Prediction failed for ${symbol}:`, error);
         return null;
       }
 
       return await response.json();
     } catch (error) {
-      console.error('Prediction error:', error);
+      log.error('Prediction error:', error);
       return null;
     }
   }
@@ -256,7 +257,7 @@ class MLServiceClient {
       });
       return response.ok;
     } catch (error) {
-      console.warn(`Failed to delete model for ${symbol}:`, error);
+      log.warn(`Failed to delete model for ${symbol}:`, error);
       return false;
     }
   }

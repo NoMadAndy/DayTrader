@@ -11,6 +11,7 @@ import {
   generateAITraderReport,
 } from '../services/aiTraderService';
 import type { AITraderDailyReport } from '../types/aiTrader';
+import { log } from '../utils/logger';
 
 export function useAITraderReports(traderId: number | undefined) {
   const [reports, setReports] = useState<AITraderDailyReport[]>([]);
@@ -27,7 +28,7 @@ export function useAITraderReports(traderId: number | undefined) {
       setReports(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch reports');
-      console.error('Error fetching reports:', err);
+      log.error('Error fetching reports:', err);
     } finally {
       setLoading(false);
     }
@@ -39,7 +40,7 @@ export function useAITraderReports(traderId: number | undefined) {
     try {
       return await getAITraderReportByDate(traderId, date);
     } catch (err) {
-      console.error('Error fetching report by date:', err);
+      log.error('Error fetching report by date:', err);
       return null;
     }
   };
@@ -53,7 +54,7 @@ export function useAITraderReports(traderId: number | undefined) {
       await fetchReports();
       return report;
     } catch (err) {
-      console.error('Error generating report:', err);
+      log.error('Error generating report:', err);
       return null;
     }
   };

@@ -8,6 +8,7 @@
  */
 
 import type { NewsItem } from './types';
+import { log } from '../utils/logger';
 
 // Use backend proxy API endpoint (relative URLs work with nginx proxy in prod, vite proxy in dev)
 const NEWS_API_PROXY_URL = '/api/news';
@@ -36,20 +37,20 @@ export class NewsApiProvider {
       const response = await fetch(url.toString());
       
       if (!response.ok) {
-        console.error(`NewsAPI error: ${response.status} ${response.statusText}`);
+        log.error(`NewsAPI error: ${response.status} ${response.statusText}`);
         return null;
       }
 
       const data = await response.json();
       
       if (data.status !== 'ok') {
-        console.error('NewsAPI error:', data.message);
+        log.error('NewsAPI error:', data.message);
         return null;
       }
 
       return data;
     } catch (error) {
-      console.error('NewsAPI fetch error:', error);
+      log.error('NewsAPI fetch error:', error);
       return null;
     }
   }

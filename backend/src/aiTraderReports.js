@@ -8,6 +8,7 @@
 import { query, getClient } from './db.js';
 import { calculateSignalAccuracy } from './aiTraderSignalAccuracy.js';
 import { generateInsights } from './aiTraderInsights.js';
+import logger from './logger.js';
 
 // ============================================================================
 // Daily Report Generation
@@ -279,12 +280,12 @@ export async function generateDailyReport(traderId, date = new Date()) {
     );
 
     await client.query('COMMIT');
-    console.log(`Generated daily report for trader ${traderId} on ${reportDateStr}`);
+    logger.info(`Generated daily report for trader ${traderId} on ${reportDateStr}`);
     return reportResult.rows[0];
 
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Error generating daily report:', error);
+    logger.error('Error generating daily report:', error);
     throw error;
   } finally {
     client.release();
@@ -340,7 +341,7 @@ async function getPortfolioValueAtTime(traderId, timestamp, client = null) {
     
     return cashBalance + positionsValue;
   } catch (error) {
-    console.error('Error getting portfolio value:', error);
+    logger.error('Error getting portfolio value:', error);
     return null;
   }
 }

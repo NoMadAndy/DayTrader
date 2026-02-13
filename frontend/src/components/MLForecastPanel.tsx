@@ -14,6 +14,7 @@ import { DataService } from '../services/dataService';
 import { DEFAULT_ML_SETTINGS, type MLSettings } from '../services/userSettingsService';
 import { useSettings } from '../contexts/SettingsContext';
 import type { OHLCV } from '../types/stock';
+import { log } from '../utils/logger';
 
 // ML Settings storage key (same as in SettingsPage)
 const ML_SETTINGS_STORAGE_KEY = 'daytrader_ml_settings';
@@ -29,7 +30,7 @@ function getMLSettings(): MLSettings {
       return { ...DEFAULT_ML_SETTINGS, ...JSON.parse(stored) };
     }
   } catch {
-    console.warn('Failed to load ML settings from localStorage');
+    log.warn('Failed to load ML settings from localStorage');
   }
   return { ...DEFAULT_ML_SETTINGS };
 }
@@ -134,7 +135,7 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
     
     // If we don't have enough data, fetch more
     if (stockData.length < requiredLength) {
-      console.log(`[ML Predict] Need ${requiredLength} data points, have ${stockData.length}. Fetching more...`);
+      log.info(`[ML Predict] Need ${requiredLength} data points, have ${stockData.length}. Fetching more...`);
       try {
         const dataService = new DataService();
         // Request extra days to account for weekends/holidays
@@ -143,14 +144,14 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
         
         if (fetchedData?.data && fetchedData.data.length >= requiredLength) {
           dataToUse = fetchedData.data;
-          console.log(`[ML Predict] Fetched ${dataToUse.length} data points`);
+          log.info(`[ML Predict] Fetched ${dataToUse.length} data points`);
         } else {
           setError(`Nicht genug Daten: ${fetchedData?.data?.length || 0}/${requiredLength} verfügbar`);
           setIsLoading(false);
           return;
         }
       } catch (err) {
-        console.error('[ML Predict] Failed to fetch additional data:', err);
+        log.error('[ML Predict] Failed to fetch additional data:', err);
         setError(`Nicht genug Daten für Vorhersage (${stockData.length}/${requiredLength})`);
         setIsLoading(false);
         return;
@@ -162,7 +163,7 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
     if (result) {
       // Validate that the prediction is for the correct symbol
       if (result.symbol && result.symbol.toUpperCase() !== symbol.toUpperCase()) {
-        console.error(`Prediction symbol mismatch: got ${result.symbol}, expected ${symbol}`);
+        log.error(`Prediction symbol mismatch: got ${result.symbol}, expected ${symbol}`);
         setError(t('ml.modelError').replace('{predSymbol}', result.symbol).replace('{symbol}', symbol));
         setPrediction(null);
         onPredictionsChange?.(null);
@@ -172,7 +173,7 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
         if (actualPrice && result.current_price) {
           const priceDiff = Math.abs(result.current_price - actualPrice) / actualPrice;
           if (priceDiff > 0.05) {
-            console.error(`Price mismatch: prediction has $${result.current_price.toFixed(2)}, actual is $${actualPrice.toFixed(2)}`);
+            log.error(`Price mismatch: prediction has $${result.current_price.toFixed(2)}, actual is $${actualPrice.toFixed(2)}`);
             setError(t('ml.modelOutdated'));
             setPrediction(null);
             onPredictionsChange?.(null);
@@ -202,7 +203,7 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
   const startTraining = async () => {
     // Get ML settings from localStorage
     const mlSettings = getMLSettings();
-    console.log('[ML Training] Using settings:', mlSettings);
+    log.info('[ML Training] Using settings:', mlSettings);
     
     // Calculate minimum required data points
     // Formula: sequence_length + forecast_days + 50 (buffer for train/test split)
@@ -212,7 +213,7 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
     
     // Check if we have enough data, if not fetch more
     if (!stockData || stockData.length < minRequired) {
-      console.log(`[ML Training] Need ${minRequired} data points, have ${stockData?.length || 0}. Fetching more...`);
+      log.info(`[ML Training] Need ${minRequired} data points, have ${stockData?.length || 0}. Fetching more...`);
       setError(null);
       
       try {
@@ -224,13 +225,13 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
         
         if (fetchedData?.data && fetchedData.data.length >= minRequired) {
           trainingData = fetchedData.data;
-          console.log(`[ML Training] Fetched ${trainingData.length} data points`);
+          log.info(`[ML Training] Fetched ${trainingData.length} data points`);
         } else {
           setError(t('ml.notEnoughData').replace('{required}', String(minRequired)).replace('{available}', String(fetchedData?.data?.length || 0)));
           return;
         }
       } catch (err) {
-        console.error('[ML Training] Failed to fetch additional data:', err);
+        log.error('[ML Training] Failed to fetch additional data:', err);
         setError(`${t('ml.loadingError')}: ${err instanceof Error ? err.message : 'Unknown error'}`);
         return;
       }

@@ -17,6 +17,7 @@ import {
 import { getCustomSymbols } from '../services/userSettingsService';
 import { getAvailableHistoricalSymbols, type AvailableSymbol } from '../services/tradingService';
 import { useSettings } from '../contexts';
+import { log } from '../utils/logger';
 import type { 
   AITrader, 
   AITraderPersonality, 
@@ -629,7 +630,7 @@ export function AITraderConfigModal({ trader, isOpen, onClose, onSaved }: AITrad
           try {
             await updateAITrader(newTrader.id, { avatar });
           } catch {
-            console.warn('Failed to set avatar');
+            log.warn('Failed to set avatar');
           }
         }
         
@@ -638,7 +639,7 @@ export function AITraderConfigModal({ trader, isOpen, onClose, onSaved }: AITrad
 
       onClose();
     } catch (err) {
-      console.error('Failed to save trader:', err);
+      log.error('Failed to save trader:', err);
       setError(err instanceof Error ? err.message : 'Fehler beim Speichern');
     } finally {
       setSaving(false);

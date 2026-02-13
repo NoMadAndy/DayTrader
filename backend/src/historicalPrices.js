@@ -9,6 +9,7 @@
 
 import { query, getClient } from './db.js';
 import fetch from 'node-fetch';
+import logger from './logger.js';
 
 // Yahoo Finance Chart API - more reliable than download endpoint
 const YAHOO_CHART_URL = 'https://query1.finance.yahoo.com/v8/finance/chart';
@@ -92,8 +93,8 @@ export async function fetchAndStoreHistoricalData(symbol, startDate, endDate) {
     // Use Yahoo Finance Chart API with period1/period2 parameters
     const url = `${YAHOO_CHART_URL}/${upperSymbol}?period1=${period1}&period2=${period2}&interval=1d&includeAdjustedClose=true`;
     
-    console.log(`[HistoricalPrices] Fetching ${upperSymbol} from ${startDate} to ${endDate}`);
-    console.log(`[HistoricalPrices] URL: ${url}`);
+    logger.info(`[HistoricalPrices] Fetching ${upperSymbol} from ${startDate} to ${endDate}`);
+    logger.info(`[HistoricalPrices] URL: ${url}`);
     
     const response = await fetch(url, {
       headers: {
@@ -104,14 +105,14 @@ export async function fetchAndStoreHistoricalData(symbol, startDate, endDate) {
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[HistoricalPrices] Yahoo Finance error: ${response.status} - ${errorText}`);
+      logger.error(`[HistoricalPrices] Yahoo Finance error: ${response.status} - ${errorText}`);
       return { success: false, recordsInserted: 0, error: `Yahoo Finance error: ${response.status}` };
     }
     
     const data = await response.json();
     
     if (!data.chart || !data.chart.result || data.chart.result.length === 0) {
-      console.error('[HistoricalPrices] No chart data in response');
+      logger.error('[HistoricalPrices] No chart data in response');
       return { success: false, recordsInserted: 0, error: 'No data returned from Yahoo Finance' };
     }
     
@@ -121,7 +122,7 @@ export async function fetchAndStoreHistoricalData(symbol, startDate, endDate) {
     const adjClose = result.indicators?.adjclose?.[0]?.adjclose;
     
     if (!timestamps || !quotes) {
-      console.error('[HistoricalPrices] Missing timestamps or quotes in response');
+      logger.error('[HistoricalPrices] Missing timestamps or quotes in response');
       return { success: false, recordsInserted: 0, error: 'Invalid data format from Yahoo Finance' };
     }
     
@@ -157,7 +158,7 @@ export async function fetchAndStoreHistoricalData(symbol, startDate, endDate) {
       return { success: false, recordsInserted: 0, error: 'No valid price records found' };
     }
     
-    console.log(`[HistoricalPrices] Parsed ${records.length} records for ${upperSymbol}`);
+    logger.info(`[HistoricalPrices] Parsed ${records.length} records for ${upperSymbol}`);
     
     // Batch insert into database using upsert
     const client = await getClient();
@@ -208,18 +209,18 @@ export async function fetchAndStoreHistoricalData(symbol, startDate, endDate) {
       }
       
       await client.query('COMMIT');
-      console.log(`[HistoricalPrices] Stored ${insertedCount} records for ${upperSymbol}`);
+      logger.info(`[HistoricalPrices] Stored ${insertedCount} records for ${upperSymbol}`);
       
       return { success: true, recordsInserted: insertedCount };
     } catch (dbError) {
       await client.query('ROLLBACK');
-      console.error(`[HistoricalPrices] Database error:`, dbError);
+      logger.error(`[HistoricalPrices] Database error:`, dbError);
       return { success: false, recordsInserted: 0, error: dbError.message };
     } finally {
       client.release();
     }
   } catch (error) {
-    console.error(`[HistoricalPrices] Fetch error:`, error);
+    logger.error(`[HistoricalPrices] Fetch error:`, error);
     return { success: false, recordsInserted: 0, error: error.message };
   }
 }

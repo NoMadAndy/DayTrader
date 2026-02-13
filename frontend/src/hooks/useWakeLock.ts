@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { log } from '../utils/logger';
 
 interface WakeLockSentinel {
   released: boolean;
@@ -72,11 +73,11 @@ export function useWakeLock(): UseWakeLockResult {
         wakeLockRef.current = await nav.wakeLock.request('screen');
         
         wakeLockRef.current.addEventListener('release', () => {
-          console.log('Wake Lock released');
+          log.info('Wake Lock released');
         });
         
         setIsActive(true);
-        console.log('Wake Lock acquired via API');
+        log.info('Wake Lock acquired via API');
         return;
       }
 
@@ -106,13 +107,13 @@ export function useWakeLock(): UseWakeLockResult {
         
         await noSleepVideoRef.current.play();
         setIsActive(true);
-        console.log('Wake Lock acquired via video workaround (iOS)');
+        log.info('Wake Lock acquired via video workaround (iOS)');
         return;
       }
 
-      console.warn('Wake Lock not supported on this browser');
+      log.warn('Wake Lock not supported on this browser');
     } catch (err) {
-      console.error('Failed to acquire Wake Lock:', err);
+      log.error('Failed to acquire Wake Lock:', err);
       setIsActive(false);
     }
   }, []);
@@ -133,9 +134,9 @@ export function useWakeLock(): UseWakeLockResult {
       }
 
       setIsActive(false);
-      console.log('Wake Lock released');
+      log.info('Wake Lock released');
     } catch (err) {
-      console.error('Failed to release Wake Lock:', err);
+      log.error('Failed to release Wake Lock:', err);
     }
   }, []);
 

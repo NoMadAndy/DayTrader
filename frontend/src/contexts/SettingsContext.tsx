@@ -9,6 +9,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, ty
 import { getAuthState, subscribeToAuth } from '../services/authService';
 import { getUserSettings, updateUserSettings } from '../services/userSettingsService';
 import { getEurUsdRate } from '../services/companyInfoService';
+import { log } from '../utils/logger';
 
 export type Language = 'de' | 'en';
 export type Currency = 'USD' | 'EUR';
@@ -51,7 +52,7 @@ function loadStoredSettings(): Settings {
       return { ...DEFAULT_SETTINGS, ...parsed };
     }
   } catch {
-    console.warn('Failed to load UI settings');
+    log.warn('Failed to load UI settings');
   }
   return DEFAULT_SETTINGS;
 }
@@ -60,7 +61,7 @@ function saveSettings(settings: Settings): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
   } catch {
-    console.warn('Failed to save UI settings');
+    log.warn('Failed to save UI settings');
   }
 }
 
@@ -1069,10 +1070,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         if (rate > 0) {
           eurRateRef.current = rate;
           updateEurRate(rate); // Update global rate for formatCurrencyValue
-          console.log(`[Settings] EUR rate updated: ${rate}`);
+          log.info(`[Settings] EUR rate updated: ${rate}`);
         }
       } catch (e) {
-        console.warn('Failed to fetch EUR rate:', e);
+        log.warn('Failed to fetch EUR rate:', e);
       }
     };
 
@@ -1102,7 +1103,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             }
           }
         } catch (e) {
-          console.warn('Failed to load server settings:', e);
+          log.warn('Failed to load server settings:', e);
         }
       }
     };
@@ -1124,7 +1125,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     if (isAuthenticated) {
       updateUserSettings({
         uiPreferences: { language: lang },
-      }).catch(console.warn);
+      }).catch(log.warn);
     }
   }, []);
 
@@ -1136,7 +1137,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     if (isAuthenticated) {
       updateUserSettings({
         uiPreferences: { currency: curr },
-      }).catch(console.warn);
+      }).catch(log.warn);
     }
   }, []);
 

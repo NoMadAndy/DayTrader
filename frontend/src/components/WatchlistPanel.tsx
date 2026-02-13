@@ -49,6 +49,7 @@ import { getOrCreatePortfolio, executeMarketOrder, getPortfolioMetrics, getWarra
 import { useSettings } from '../contexts/SettingsContext';
 import type { Portfolio, PortfolioMetrics, OrderSide, ProductType, Greeks } from '../types/trading';
 import { OptionChainPanel } from './OptionChainPanel';
+import { log } from '../utils/logger';
 import { 
   EXCHANGES, 
   EXCHANGE_REGIONS, 
@@ -161,7 +162,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
           setMetrics(m);
         }
       } catch (err) {
-        console.error('Failed to load portfolio:', err);
+        log.error('Failed to load portfolio:', err);
       }
     };
     if (authState.isAuthenticated) {
@@ -613,10 +614,10 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
     }
     
     const intervalMs = watchlistSettings.autoRefreshSeconds * 1000;
-    console.log(`[Watchlist] Signals auto-refresh every ${watchlistSettings.autoRefreshSeconds}s`);
+    log.info(`[Watchlist] Signals auto-refresh every ${watchlistSettings.autoRefreshSeconds}s`);
     
     const interval = setInterval(() => {
-      console.log('[Watchlist] Auto-refreshing signals...');
+      log.info('[Watchlist] Auto-refreshing signals...');
       refreshWatchlist();
     }, intervalMs);
     
@@ -847,7 +848,7 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
         setAddError('Keine Symbole konnten importiert werden');
       }
     } catch (err) {
-      console.error('Import error:', err);
+      log.error('Import error:', err);
       setAddError('Fehler beim Importieren der Datei');
     }
     

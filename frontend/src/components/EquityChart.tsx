@@ -7,6 +7,7 @@
 import { useState, useEffect } from 'react';
 import { getEquityCurve, formatCurrency } from '../services/tradingService';
 import type { EquityCurvePoint } from '../types/trading';
+import { log } from '../utils/logger';
 
 interface EquityChartProps {
   portfolioId: number;
@@ -29,7 +30,7 @@ export function EquityChart({ portfolioId, days = 30, height = 200 }: EquityChar
         setData(curveData);
       } catch (e) {
         setError('Chart konnte nicht geladen werden');
-        console.error(e);
+        log.error(e);
       } finally {
         setLoading(false);
       }

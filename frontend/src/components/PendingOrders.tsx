@@ -14,6 +14,7 @@ import {
   getProductTypeName,
 } from '../services/tradingService';
 import type { Order } from '../types/trading';
+import { log } from '../utils/logger';
 
 interface PendingOrdersProps {
   portfolioId: number;
@@ -33,7 +34,7 @@ export function PendingOrders({ portfolioId, onOrderCancelled }: PendingOrdersPr
       setOrders(data);
     } catch (e) {
       setError('Orders konnten nicht geladen werden');
-      console.error(e);
+      log.error(e);
     } finally {
       setLoading(false);
     }

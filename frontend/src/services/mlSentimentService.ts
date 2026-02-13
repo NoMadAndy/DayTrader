@@ -6,6 +6,7 @@
  */
 
 import { analyzeSentiment as analyzeLocal, type SentimentResult } from '../utils/sentimentAnalysis';
+import { log } from '../utils/logger';
 
 const ML_SENTIMENT_API = '/api/ml/sentiment';
 
@@ -47,11 +48,11 @@ export async function checkMLSentimentAvailable(): Promise<boolean> {
     if (response.ok) {
       const status: MLSentimentStatus = await response.json();
       mlServiceAvailable = true;
-      console.log('ML Sentiment service available:', status);
+      log.info('ML Sentiment service available:', status);
       return true;
     }
   } catch (error) {
-    console.log('ML Sentiment service not available, using local analysis');
+    log.info('ML Sentiment service not available, using local analysis');
   }
   
   mlServiceAvailable = false;
@@ -93,7 +94,7 @@ export async function analyzeMLSentiment(text: string): Promise<MLSentimentResul
       return data.result;
     }
   } catch (error) {
-    console.error('ML sentiment analysis failed:', error);
+    log.error('ML sentiment analysis failed:', error);
   }
   
   return null;
@@ -119,7 +120,7 @@ export async function analyzeMLSentimentBatch(texts: string[]): Promise<(MLSenti
       return data.results;
     }
   } catch (error) {
-    console.error('ML batch sentiment analysis failed:', error);
+    log.error('ML batch sentiment analysis failed:', error);
   }
   
   return texts.map(() => null);

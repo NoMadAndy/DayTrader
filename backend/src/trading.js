@@ -6,6 +6,7 @@
  */
 
 import { query, getClient } from './db.js';
+import logger from './logger.js';
 
 // ============================================================================
 // Constants & Fee Structures
@@ -434,7 +435,7 @@ export async function initializeTradingSchema() {
         END $$;
       `);
     } catch (migErr) {
-      console.warn('Migration warning (open_fee):', migErr.message);
+      logger.warn('Migration warning (open_fee):', migErr.message);
     }
 
     // Warrant/Options schema migration
@@ -480,13 +481,13 @@ export async function initializeTradingSchema() {
         END $$;
       `);
     } catch (migErr) {
-      console.warn('Migration warning (warrant fields):', migErr.message);
+      logger.warn('Migration warning (warrant fields):', migErr.message);
     }
     
-    console.log('Trading database schema initialized successfully');
+    logger.info('Trading database schema initialized successfully');
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('Trading schema initialization error:', e);
+    logger.error('Trading schema initialization error:', e);
     throw e;
   } finally {
     client.release();
@@ -628,7 +629,7 @@ export async function getOrCreatePortfolio(userId, portfolioName = 'Main Portfol
     
     return formatPortfolio(result.rows[0]);
   } catch (e) {
-    console.error('Get/create portfolio error:', e);
+    logger.error('Get/create portfolio error:', e);
     throw e;
   }
 }
@@ -644,7 +645,7 @@ export async function getUserPortfolios(userId) {
     );
     return result.rows.map(formatPortfolio);
   } catch (e) {
-    console.error('Get portfolios error:', e);
+    logger.error('Get portfolios error:', e);
     throw e;
   }
 }
@@ -674,7 +675,7 @@ export async function getPortfolio(portfolioId, userId) {
     
     return formatPortfolio(result.rows[0]);
   } catch (e) {
-    console.error('Get portfolio error:', e);
+    logger.error('Get portfolio error:', e);
     throw e;
   }
 }
@@ -710,7 +711,7 @@ export async function updatePortfolioSettings(portfolioId, userId, settings) {
     
     return result.rows.length > 0 ? formatPortfolio(result.rows[0]) : null;
   } catch (e) {
-    console.error('Update portfolio settings error:', e);
+    logger.error('Update portfolio settings error:', e);
     throw e;
   }
 }
@@ -793,7 +794,7 @@ export async function setInitialCapital(portfolioId, userId, newCapital) {
     return getPortfolio(portfolioId, userId);
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('Set initial capital error:', e);
+    logger.error('Set initial capital error:', e);
     throw e;
   } finally {
     client.release();
@@ -853,7 +854,7 @@ export async function resetPortfolio(portfolioId, userId) {
     return getPortfolio(portfolioId, userId);
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('Reset portfolio error:', e);
+    logger.error('Reset portfolio error:', e);
     throw e;
   } finally {
     client.release();
@@ -877,7 +878,7 @@ export async function getOpenPositions(portfolioId, userId) {
     );
     return result.rows.map(formatPosition);
   } catch (e) {
-    console.error('Get positions error:', e);
+    logger.error('Get positions error:', e);
     throw e;
   }
 }
@@ -896,7 +897,7 @@ export async function getAllPositions(portfolioId, userId, limit = 100) {
     );
     return result.rows.map(formatPosition);
   } catch (e) {
-    console.error('Get all positions error:', e);
+    logger.error('Get all positions error:', e);
     throw e;
   }
 }
@@ -914,7 +915,7 @@ export async function getOpenPositionsByPortfolio(portfolioId) {
     );
     return result.rows.map(formatPosition);
   } catch (e) {
-    console.error('Get positions by portfolio error:', e);
+    logger.error('Get positions by portfolio error:', e);
     throw e;
   }
 }
@@ -932,7 +933,7 @@ export async function updatePositionPrice(positionId, userId, currentPrice) {
     );
     return result.rows.length > 0 ? formatPosition(result.rows[0]) : null;
   } catch (e) {
-    console.error('Update position price error:', e);
+    logger.error('Update position price error:', e);
     throw e;
   }
 }
@@ -1163,7 +1164,7 @@ export async function executeMarketOrder(params) {
     };
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('Execute market order error:', e);
+    logger.error('Execute market order error:', e);
     return {
       success: false,
       error: e.message,
@@ -1264,7 +1265,7 @@ export async function closePosition(positionId, userId, currentPrice, reason = '
     };
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('Close position error:', e);
+    logger.error('Close position error:', e);
     return {
       success: false,
       error: e.message,
@@ -1335,10 +1336,10 @@ export async function processOvernightFees() {
     }
     
     await client.query('COMMIT');
-    console.log(`Processed overnight fees for ${positions.rows.length} positions`);
+    logger.info(`Processed overnight fees for ${positions.rows.length} positions`);
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('Process overnight fees error:', e);
+    logger.error('Process overnight fees error:', e);
   } finally {
     client.release();
   }
@@ -1396,7 +1397,7 @@ export async function updateWarrantPrices(priceUpdates) {
 
     return { updated, total: positions.rows.length };
   } catch (e) {
-    console.error('Update warrant prices error:', e);
+    logger.error('Update warrant prices error:', e);
     return { updated: 0, error: e.message };
   } finally {
     client.release();
@@ -1480,11 +1481,11 @@ export async function processWarrantTimeDecay() {
     }
 
     await client.query('COMMIT');
-    console.log(`Processed theta decay for ${processed} warrant positions`);
+    logger.info(`Processed theta decay for ${processed} warrant positions`);
     return { processed, total: positions.rows.length };
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('Process warrant time decay error:', e);
+    logger.error('Process warrant time decay error:', e);
     return { processed: 0, error: e.message };
   } finally {
     client.release();
@@ -1543,13 +1544,13 @@ export async function settleExpiredWarrants() {
     }
 
     if (settled.length > 0) {
-      console.log(`Settled ${settled.length} expired warrants:`, 
+      logger.info(`Settled ${settled.length} expired warrants:`, 
         settled.map(s => `${s.symbol} (${s.optionType}) → ${s.wasWorthless ? 'wertlos' : s.settlementPrice.toFixed(2)}`));
     }
 
     return settled;
   } catch (e) {
-    console.error('Settle expired warrants error:', e);
+    logger.error('Settle expired warrants error:', e);
     return [];
   }
 }
@@ -1572,7 +1573,7 @@ export async function getTransactionHistory(portfolioId, userId, limit = 50, off
     );
     return result.rows.map(formatTransaction);
   } catch (e) {
-    console.error('Get transactions error:', e);
+    logger.error('Get transactions error:', e);
     throw e;
   }
 }
@@ -1609,7 +1610,7 @@ export async function getFeeSummary(portfolioId, userId) {
     
     return summary;
   } catch (e) {
-    console.error('Get fee summary error:', e);
+    logger.error('Get fee summary error:', e);
     throw e;
   }
 }
@@ -1710,7 +1711,7 @@ export async function getPortfolioMetrics(portfolioId, userId) {
       isLiquidationRisk: marginLevel !== null && marginLevel < 100,
     };
   } catch (e) {
-    console.error('Get portfolio metrics error:', e);
+    logger.error('Get portfolio metrics error:', e);
     throw e;
   }
 }
@@ -1740,7 +1741,7 @@ export async function savePortfolioSnapshot(portfolioId) {
       ]
     );
   } catch (e) {
-    console.error('Save snapshot error:', e);
+    logger.error('Save snapshot error:', e);
   }
 }
 
@@ -1952,7 +1953,7 @@ export async function createPendingOrder(params) {
     };
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('Create pending order error:', e);
+    logger.error('Create pending order error:', e);
     return {
       success: false,
       error: e.message,
@@ -2021,7 +2022,7 @@ export async function cancelOrder(orderId, userId) {
     };
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('Cancel order error:', e);
+    logger.error('Cancel order error:', e);
     return {
       success: false,
       error: e.message,
@@ -2044,7 +2045,7 @@ export async function getPendingOrders(portfolioId, userId) {
     );
     return result.rows.map(formatOrder);
   } catch (e) {
-    console.error('Get pending orders error:', e);
+    logger.error('Get pending orders error:', e);
     throw e;
   }
 }
@@ -2112,7 +2113,7 @@ export async function checkPendingOrders(priceUpdates) {
         
         // If lock failed, order was already picked up by another process
         if (lockResult.rows.length === 0) {
-          console.log(`Order ${order.id} already being executed, skipping`);
+          logger.info(`Order ${order.id} already being executed, skipping`);
           continue;
         }
         
@@ -2146,14 +2147,14 @@ export async function checkPendingOrders(priceUpdates) {
              WHERE id = $1`,
             [order.id, result.error || 'Execution failed']
           );
-          console.error(`Order ${order.id} execution failed:`, result.error);
+          logger.error(`Order ${order.id} execution failed:`, result.error);
         }
       }
     }
     
     return executedOrders;
   } catch (e) {
-    console.error('Check pending orders error:', e);
+    logger.error('Check pending orders error:', e);
     return executedOrders;
   } finally {
     client.release();
@@ -2292,7 +2293,7 @@ export async function checkPositionTriggers(priceUpdates) {
     
     return triggeredPositions;
   } catch (e) {
-    console.error('Check position triggers error:', e);
+    logger.error('Check position triggers error:', e);
     return triggeredPositions;
   } finally {
     client.release();
@@ -2319,7 +2320,7 @@ export async function updatePositionLevels(positionId, userId, { stopLoss, takeP
     
     return formatPosition(result.rows[0]);
   } catch (e) {
-    console.error('Update position levels error:', e);
+    logger.error('Update position levels error:', e);
     throw e;
   }
 }
@@ -2382,7 +2383,7 @@ export async function getEquityCurve(portfolioId, userId, days = 30) {
       totalFeesPaid: parseFloat(row.total_fees_paid || 0),
     }));
   } catch (e) {
-    console.error('Get equity curve error:', e);
+    logger.error('Get equity curve error:', e);
     throw e;
   }
 }
@@ -2405,14 +2406,14 @@ export async function saveDailySnapshots() {
         await savePortfolioSnapshot(portfolio.id);
         savedCount++;
       } catch (e) {
-        console.error(`Failed to save snapshot for portfolio ${portfolio.id}:`, e);
+        logger.error(`Failed to save snapshot for portfolio ${portfolio.id}:`, e);
       }
     }
     
-    console.log(`Saved ${savedCount} portfolio snapshots`);
+    logger.info(`Saved ${savedCount} portfolio snapshots`);
     return savedCount;
   } catch (e) {
-    console.error('Save daily snapshots error:', e);
+    logger.error('Save daily snapshots error:', e);
     throw e;
   } finally {
     client.release();
@@ -2506,7 +2507,7 @@ export async function getLeaderboard(limit = 50, timeframe = 'all', filter = 'al
       aiTraderId: row.ai_trader_id,
     }));
   } catch (e) {
-    console.error('Get leaderboard error:', e);
+    logger.error('Get leaderboard error:', e);
     throw e;
   }
 }
@@ -2567,7 +2568,7 @@ export async function getUserRank(userId) {
       totalReturnPct: parseFloat(result.rows[0].total_return_pct || 0),
     };
   } catch (e) {
-    console.error('Get user rank error:', e);
+    logger.error('Get user rank error:', e);
     throw e;
   }
 }
@@ -2608,7 +2609,7 @@ export async function createBacktestSession(params) {
     return formatBacktestSession(result.rows[0]);
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('Create backtest session error:', e);
+    logger.error('Create backtest session error:', e);
     throw e;
   } finally {
     client.release();
@@ -2766,7 +2767,7 @@ export async function executeBacktestOrder(params) {
     };
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('Execute backtest order error:', e);
+    logger.error('Execute backtest order error:', e);
     return { success: false, error: e.message };
   } finally {
     client.release();
@@ -2857,7 +2858,7 @@ export async function closeBacktestPosition(positionId, userId, closePrice) {
     };
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('Close backtest position error:', e);
+    logger.error('Close backtest position error:', e);
     return { success: false, error: e.message };
   } finally {
     client.release();
@@ -2992,7 +2993,7 @@ export async function advanceBacktestTime(sessionId, userId, newDate, priceUpdat
     };
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('Advance backtest time error:', e);
+    logger.error('Advance backtest time error:', e);
     return { success: false, error: e.message };
   } finally {
     client.release();
@@ -3149,7 +3150,7 @@ export async function deleteBacktestSession(sessionId, userId) {
     return { success: true };
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('Delete backtest session error:', e);
+    logger.error('Delete backtest session error:', e);
     return { success: false, error: e.message };
   } finally {
     client.release();

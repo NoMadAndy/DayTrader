@@ -11,6 +11,9 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
+import rateLimit from 'express-rate-limit';
+import logger from './logger.js';
+import { isValidEmail, isValidPassword, isValidUsername, isValidSymbol, validateBody, validateSymbolParam, sanitizeString } from './validation.js';
 import db from './db.js';
 import stockCache from './stockCache.js';
 import backgroundJobs from './backgroundJobs.js';
@@ -34,16 +37,41 @@ try {
   const packageJson = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'));
   packageVersion = packageJson.version;
 } catch (e) {
-  console.warn('Could not read package.json version:', e.message);
+  logger.warn('Could not read package.json version', { error: e.message });
 }
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // Build info from environment (set during Docker build), fallback to package.json version
 const BUILD_VERSION = process.env.BUILD_VERSION || packageVersion;
 const BUILD_COMMIT = process.env.BUILD_COMMIT || 'unknown';
 const BUILD_TIME = process.env.BUILD_TIME || new Date().toISOString();
+
+// CORS configuration - warn if wildcard in production
+const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+if (CORS_ORIGIN === '*' && NODE_ENV === 'production') {
+  logger.warn('CORS_ORIGIN is set to wildcard (*) in production. Set CORS_ORIGIN env variable to your frontend domain for better security.');
+}
+
+// Rate limiting configuration
+const apiLimiter = rateLimit({
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10), // 1 minute
+  max: parseInt(process.env.RATE_LIMIT_MAX || '100', 10), // 100 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+  skip: (req) => req.path === '/health', // Always allow health checks
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // 20 attempts per 15 min
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many authentication attempts, please try again later.' },
+});
 
 // Middleware
 app.use(helmet({
@@ -51,12 +79,15 @@ app.use(helmet({
 }));
 app.use(compression());
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: CORS_ORIGIN,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Finnhub-Token', 'X-AlphaVantage-Key', 'X-TwelveData-Key'],
   credentials: true,
 }));
 app.use(express.json());
+
+// Apply rate limiting to API routes
+app.use('/api', apiLimiter);
 
 // Disable caching for all API endpoints to ensure fresh data
 app.use('/api', (req, res, next) => {
@@ -67,12 +98,19 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// Request logging
+// Structured request logging
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
     const duration = Date.now() - start;
-    console.log(`${req.method} ${req.path} ${res.statusCode} ${duration}ms`);
+    const logData = { method: req.method, path: req.path, statusCode: res.statusCode, duration };
+    if (res.statusCode >= 500) {
+      logger.error('Request failed', logData);
+    } else if (res.statusCode >= 400) {
+      logger.warn('Client error', logData);
+    } else {
+      logger.info(`${req.method} ${req.path} ${res.statusCode} ${duration}ms`, logData);
+    }
   });
   next();
 });
@@ -117,7 +155,7 @@ function parseChangelog() {
     for (const changelogPath of possiblePaths) {
       try {
         content = readFileSync(changelogPath, 'utf8');
-        console.log(`[Changelog] Loaded from: ${changelogPath}`);
+        logger.info(`[Changelog] Loaded from: ${changelogPath}`);
         break;
       } catch {
         // Try next path
@@ -125,7 +163,7 @@ function parseChangelog() {
     }
     
     if (!content) {
-      console.warn('[Changelog] Could not find CHANGELOG.md in any expected location');
+      logger.warn('[Changelog] Could not find CHANGELOG.md in any expected location');
       return [];
     }
     
@@ -202,7 +240,7 @@ function parseChangelog() {
     
     return entries;
   } catch (e) {
-    console.error('Failed to parse changelog:', e.message);
+    logger.error('Failed to parse changelog:', e.message);
     return [];
   }
 }
@@ -324,7 +362,7 @@ app.get('/api/stream/quotes', (req, res) => {
   // Store client connection
   sseClients.set(clientId, { res, symbols, connectedAt: new Date() });
   
-  console.log(`[SSE] Client ${clientId} connected for symbols: ${symbols.join(', ')}`);
+  logger.info(`[SSE] Client ${clientId} connected for symbols: ${symbols.join(', ')}`);
   
   // Send initial connection success
   res.write(`event: connected\ndata: ${JSON.stringify({ clientId, symbols })}\n\n`);
@@ -349,7 +387,7 @@ app.get('/api/stream/quotes', (req, res) => {
   req.on('close', () => {
     clearInterval(pingInterval);
     sseClients.delete(clientId);
-    console.log(`[SSE] Client ${clientId} disconnected`);
+    logger.info(`[SSE] Client ${clientId} disconnected`);
   });
 });
 
@@ -367,14 +405,14 @@ function broadcastQuoteUpdate(symbol, data) {
         client.res.write(`event: quote\ndata: ${JSON.stringify({ symbol: upperSymbol, data, updatedAt: new Date().toISOString() })}\n\n`);
         notified++;
       } catch (e) {
-        console.error(`[SSE] Error sending to client ${clientId}:`, e);
+        logger.error(`[SSE] Error sending to client ${clientId}:`, e);
         sseClients.delete(clientId);
       }
     }
   }
   
   if (notified > 0) {
-    console.log(`[SSE] Broadcast ${upperSymbol} update to ${notified} clients`);
+    logger.info(`[SSE] Broadcast ${upperSymbol} update to ${notified} clients`);
   }
 }
 
@@ -421,29 +459,28 @@ app.get('/api/stream/stats', (req, res) => {
  * POST /api/auth/register
  * Body: { email, password, username? }
  */
-app.post('/api/auth/register', express.json(), async (req, res) => {
+app.post('/api/auth/register', authLimiter, express.json(), validateBody({
+  email: { required: true, validator: isValidEmail, message: 'Invalid email format' },
+  password: { required: true, validator: isValidPassword, message: 'Password must be 8-128 characters' },
+  username: { required: false, validator: isValidUsername, message: 'Username must be 2-50 alphanumeric characters' },
+}), async (req, res) => {
   if (!process.env.DATABASE_URL) {
-    console.log('Registration attempt failed: Database not configured');
+    logger.warn('Registration attempt failed: Database not configured');
     return res.status(503).json({ error: 'Database not configured' });
   }
   
   const { email, password, username } = req.body;
   
-  console.log(`Registration attempt for email: ${email?.substring(0, 3)}***`);
-  
-  if (!email || !password) {
-    console.log('Registration failed: Missing required fields');
-    return res.status(400).json({ error: 'Email and password are required' });
-  }
+  logger.info('Registration attempt', { email: email?.substring(0, 3) + '***' });
   
   const result = await registerUser(email, password, username);
   
   if (!result.success) {
-    console.log(`Registration failed for ${email}: ${result.error}`);
+    logger.warn('Registration failed', { email: email?.substring(0, 3) + '***', error: result.error });
     return res.status(400).json({ error: result.error });
   }
   
-  console.log(`Registration successful for email: ${email?.substring(0, 3)}***`);
+  logger.info('Registration successful', { email: email?.substring(0, 3) + '***' });
   res.status(201).json({ user: result.user });
 });
 
@@ -452,20 +489,18 @@ app.post('/api/auth/register', express.json(), async (req, res) => {
  * POST /api/auth/login
  * Body: { email, password }
  */
-app.post('/api/auth/login', express.json(), async (req, res) => {
+app.post('/api/auth/login', authLimiter, express.json(), validateBody({
+  email: { required: true, validator: isValidEmail, message: 'Invalid email format' },
+  password: { required: true, validator: isValidPassword, message: 'Password must be 8-128 characters' },
+}), async (req, res) => {
   if (!process.env.DATABASE_URL) {
-    console.log('Login attempt failed: Database not configured');
+    logger.warn('Login attempt failed: Database not configured');
     return res.status(503).json({ error: 'Database not configured' });
   }
   
   const { email, password } = req.body;
   
-  console.log(`Login attempt for email: ${email?.substring(0, 3)}***`);
-  
-  if (!email || !password) {
-    console.log('Login failed: Missing required fields');
-    return res.status(400).json({ error: 'Email and password are required' });
-  }
+  logger.info('Login attempt', { email: email?.substring(0, 3) + '***' });
   
   const userAgent = req.headers['user-agent'];
   const ipAddress = req.ip || req.connection.remoteAddress;
@@ -473,11 +508,11 @@ app.post('/api/auth/login', express.json(), async (req, res) => {
   const result = await loginUser(email, password, userAgent, ipAddress);
   
   if (!result.success) {
-    console.log(`Login failed for ${email}: ${result.error}`);
+    logger.warn('Login failed', { email: email?.substring(0, 3) + '***', error: result.error });
     return res.status(401).json({ error: result.error });
   }
   
-  console.log(`Login successful for email: ${email?.substring(0, 3)}***`);
+  logger.info('Login successful', { email: email?.substring(0, 3) + '***' });
   res.json({ token: result.token, user: result.user });
 });
 
@@ -779,7 +814,7 @@ app.get('/api/yahoo/quote/:symbols', async (req, res) => {
     });
     
     if (!response.ok) {
-      console.error(`Yahoo Finance quote error: ${response.status} ${response.statusText}`);
+      logger.error(`Yahoo Finance quote error: ${response.status} ${response.statusText}`);
       return res.status(response.status).json({ 
         error: 'Yahoo Finance quote error',
         status: response.status,
@@ -796,7 +831,7 @@ app.get('/api/yahoo/quote/:symbols', async (req, res) => {
     
     res.json(data);
   } catch (error) {
-    console.error('Yahoo Finance quote proxy error:', error);
+    logger.error('Yahoo Finance quote proxy error:', error);
     res.status(500).json({ 
       error: 'Failed to fetch quote from Yahoo Finance',
       message: error.message 
@@ -835,7 +870,7 @@ app.get('/api/yahoo/chart/:symbol', async (req, res) => {
         const prices = await historicalPricesService.getHistoricalPrices(symbol, startDate, endDate);
         if (prices && prices.length > 0) {
           const chartData = convertToYahooChartFormat(symbol, prices);
-          console.log(`[Yahoo Chart] Serving ${symbol} (${effectiveRange}) from database: ${prices.length} records`);
+          logger.info(`[Yahoo Chart] Serving ${symbol} (${effectiveRange}) from database: ${prices.length} records`);
           return res.json({
             ...chartData,
             _cache: { 
@@ -849,7 +884,7 @@ app.get('/api/yahoo/chart/:symbol', async (req, res) => {
       }
       
       // Data not in DB or insufficient - fetch from Yahoo and store
-      console.log(`[Yahoo Chart] Fetching ${symbol} (${effectiveRange}) from Yahoo Finance and storing in DB...`);
+      logger.info(`[Yahoo Chart] Fetching ${symbol} (${effectiveRange}) from Yahoo Finance and storing in DB...`);
       const fetchResult = await historicalPricesService.fetchAndStoreHistoricalData(symbol, startDate, endDate);
       
       if (fetchResult.success) {
@@ -857,7 +892,7 @@ app.get('/api/yahoo/chart/:symbol', async (req, res) => {
         const prices = await historicalPricesService.getHistoricalPrices(symbol, startDate, endDate);
         if (prices && prices.length > 0) {
           const chartData = convertToYahooChartFormat(symbol, prices);
-          console.log(`[Yahoo Chart] Stored and serving ${symbol}: ${prices.length} records`);
+          logger.info(`[Yahoo Chart] Stored and serving ${symbol}: ${prices.length} records`);
           return res.json({
             ...chartData,
             _cache: { 
@@ -871,9 +906,9 @@ app.get('/api/yahoo/chart/:symbol', async (req, res) => {
       }
       
       // Fall through to direct Yahoo API if DB storage failed
-      console.log(`[Yahoo Chart] DB storage failed for ${symbol}, falling back to direct API`);
+      logger.info(`[Yahoo Chart] DB storage failed for ${symbol}, falling back to direct API`);
     } catch (dbError) {
-      console.error(`[Yahoo Chart] Database error for ${symbol}:`, dbError.message);
+      logger.error(`[Yahoo Chart] Database error for ${symbol}:`, dbError.message);
       // Fall through to direct Yahoo API
     }
   }
@@ -900,7 +935,7 @@ app.get('/api/yahoo/chart/:symbol', async (req, res) => {
     });
     
     if (!response.ok) {
-      console.error(`Yahoo Finance API error: ${response.status} ${response.statusText}`);
+      logger.error(`Yahoo Finance API error: ${response.status} ${response.statusText}`);
       return res.status(response.status).json({ 
         error: 'Yahoo Finance API error',
         status: response.status,
@@ -918,7 +953,7 @@ app.get('/api/yahoo/chart/:symbol', async (req, res) => {
     
     res.json(data);
   } catch (error) {
-    console.error('Yahoo Finance proxy error:', error);
+    logger.error('Yahoo Finance proxy error:', error);
     res.status(500).json({ 
       error: 'Failed to fetch from Yahoo Finance',
       message: error.message 
@@ -963,7 +998,7 @@ app.get('/api/yahoo/quoteSummary/:symbol', async (req, res) => {
     });
     
     if (!response.ok) {
-      console.error(`Yahoo Finance quoteSummary error: ${response.status} ${response.statusText}`);
+      logger.error(`Yahoo Finance quoteSummary error: ${response.status} ${response.statusText}`);
       return res.status(response.status).json({ 
         error: 'Yahoo Finance quoteSummary error',
         status: response.status,
@@ -980,7 +1015,7 @@ app.get('/api/yahoo/quoteSummary/:symbol', async (req, res) => {
     
     res.json(data);
   } catch (error) {
-    console.error('Yahoo Finance quoteSummary proxy error:', error);
+    logger.error('Yahoo Finance quoteSummary proxy error:', error);
     res.status(500).json({ 
       error: 'Failed to fetch quote summary from Yahoo Finance',
       message: error.message 
@@ -1019,7 +1054,7 @@ app.get('/api/forex/eurusd', async (req, res) => {
       res.json({ rate: 0.92, source: 'fallback' });
     }
   } catch (error) {
-    console.error('Forex rate error:', error);
+    logger.error('Forex rate error:', error);
     res.json({ rate: 0.92, source: 'fallback' });
   }
 });
@@ -1047,7 +1082,7 @@ app.get('/api/yahoo/search', async (req, res) => {
     });
     
     if (!response.ok) {
-      console.error(`Yahoo Finance search error: ${response.status} ${response.statusText}`);
+      logger.error(`Yahoo Finance search error: ${response.status} ${response.statusText}`);
       return res.status(response.status).json({ 
         error: 'Yahoo Finance search error',
         status: response.status,
@@ -1058,7 +1093,7 @@ app.get('/api/yahoo/search', async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    console.error('Yahoo Finance search proxy error:', error);
+    logger.error('Yahoo Finance search proxy error:', error);
     res.status(500).json({ 
       error: 'Failed to search Yahoo Finance',
       message: error.message 
@@ -1087,7 +1122,7 @@ app.get('/api/finnhub/quote/:symbol', async (req, res) => {
   if (process.env.DATABASE_URL) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
-      console.log(`[Finnhub] Cache hit for quote ${symbol}`);
+      logger.info(`[Finnhub] Cache hit for quote ${symbol}`);
       return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
     }
   }
@@ -1111,12 +1146,12 @@ app.get('/api/finnhub/quote/:symbol', async (req, res) => {
     // Cache the result for all users
     if (process.env.DATABASE_URL && data && data.c !== 0) {
       await stockCache.setCache(cacheKey, 'quote', symbol.toUpperCase(), data, 'finnhub', stockCache.CACHE_DURATIONS.quote);
-      console.log(`[Finnhub] Cached quote for ${symbol}`);
+      logger.info(`[Finnhub] Cached quote for ${symbol}`);
     }
     
     res.json(data);
   } catch (error) {
-    console.error('Finnhub quote proxy error:', error);
+    logger.error('Finnhub quote proxy error:', error);
     res.status(500).json({ error: 'Failed to fetch from Finnhub', message: error.message });
   }
 });
@@ -1137,7 +1172,7 @@ app.get('/api/finnhub/candles/:symbol', async (req, res) => {
   if (process.env.DATABASE_URL) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
-      console.log(`[Finnhub] Cache hit for candles ${symbol}`);
+      logger.info(`[Finnhub] Cache hit for candles ${symbol}`);
       return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
     }
   }
@@ -1162,12 +1197,12 @@ app.get('/api/finnhub/candles/:symbol', async (req, res) => {
     if (process.env.DATABASE_URL && data && data.s === 'ok') {
       const ttl = resolution === 'D' ? stockCache.CACHE_DURATIONS.candles_daily : stockCache.CACHE_DURATIONS.candles_intraday;
       await stockCache.setCache(cacheKey, 'candles', symbol.toUpperCase(), data, 'finnhub', ttl);
-      console.log(`[Finnhub] Cached candles for ${symbol}`);
+      logger.info(`[Finnhub] Cached candles for ${symbol}`);
     }
     
     res.json(data);
   } catch (error) {
-    console.error('Finnhub candles proxy error:', error);
+    logger.error('Finnhub candles proxy error:', error);
     res.status(500).json({ error: 'Failed to fetch candles from Finnhub', message: error.message });
   }
 });
@@ -1186,7 +1221,7 @@ app.get('/api/finnhub/profile/:symbol', async (req, res) => {
   if (process.env.DATABASE_URL) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
-      console.log(`[Finnhub] Cache hit for profile ${symbol}`);
+      logger.info(`[Finnhub] Cache hit for profile ${symbol}`);
       return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
     }
   }
@@ -1210,12 +1245,12 @@ app.get('/api/finnhub/profile/:symbol', async (req, res) => {
     // Cache company info for 24 hours
     if (process.env.DATABASE_URL && data && data.name) {
       await stockCache.setCache(cacheKey, 'company_info', symbol.toUpperCase(), data, 'finnhub', stockCache.CACHE_DURATIONS.company_info);
-      console.log(`[Finnhub] Cached profile for ${symbol}`);
+      logger.info(`[Finnhub] Cached profile for ${symbol}`);
     }
     
     res.json(data);
   } catch (error) {
-    console.error('Finnhub profile proxy error:', error);
+    logger.error('Finnhub profile proxy error:', error);
     res.status(500).json({ error: 'Failed to fetch profile from Finnhub', message: error.message });
   }
 });
@@ -1233,7 +1268,7 @@ app.get('/api/finnhub/metrics/:symbol', async (req, res) => {
   if (process.env.DATABASE_URL) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
-      console.log(`[Finnhub] Cache hit for metrics ${symbol}`);
+      logger.info(`[Finnhub] Cache hit for metrics ${symbol}`);
       return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
     }
   }
@@ -1256,12 +1291,12 @@ app.get('/api/finnhub/metrics/:symbol', async (req, res) => {
     
     if (process.env.DATABASE_URL && data && data.metric) {
       await stockCache.setCache(cacheKey, 'company_info', symbol.toUpperCase(), data, 'finnhub', stockCache.CACHE_DURATIONS.company_info);
-      console.log(`[Finnhub] Cached metrics for ${symbol}`);
+      logger.info(`[Finnhub] Cached metrics for ${symbol}`);
     }
     
     res.json(data);
   } catch (error) {
-    console.error('Finnhub metrics proxy error:', error);
+    logger.error('Finnhub metrics proxy error:', error);
     res.status(500).json({ error: 'Failed to fetch metrics from Finnhub', message: error.message });
   }
 });
@@ -1287,7 +1322,7 @@ app.get('/api/finnhub/news/:symbol', async (req, res) => {
   if (process.env.DATABASE_URL) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
-      console.log(`[Finnhub] Cache hit for news ${symbol}`);
+      logger.info(`[Finnhub] Cache hit for news ${symbol}`);
       return res.json({ data: cached.data, _cached: true, _cachedAt: cached.cachedAt });
     }
   }
@@ -1311,12 +1346,12 @@ app.get('/api/finnhub/news/:symbol', async (req, res) => {
     // Cache news for 5 minutes
     if (process.env.DATABASE_URL && Array.isArray(data)) {
       await stockCache.setCache(cacheKey, 'news', symbol.toUpperCase(), data, 'finnhub', 300);
-      console.log(`[Finnhub] Cached news for ${symbol}`);
+      logger.info(`[Finnhub] Cached news for ${symbol}`);
     }
     
     res.json(data);
   } catch (error) {
-    console.error('Finnhub news proxy error:', error);
+    logger.error('Finnhub news proxy error:', error);
     res.status(500).json({ error: 'Failed to fetch news from Finnhub', message: error.message });
   }
 });
@@ -1335,7 +1370,7 @@ app.get('/api/finnhub/search', async (req, res) => {
   if (process.env.DATABASE_URL && q) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
-      console.log(`[Finnhub] Cache hit for search ${q}`);
+      logger.info(`[Finnhub] Cache hit for search ${q}`);
       return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
     }
   }
@@ -1363,12 +1398,12 @@ app.get('/api/finnhub/search', async (req, res) => {
     // Cache search results for 24 hours
     if (process.env.DATABASE_URL && data && data.result) {
       await stockCache.setCache(cacheKey, 'search', q.toUpperCase(), data, 'finnhub', stockCache.CACHE_DURATIONS.search);
-      console.log(`[Finnhub] Cached search for ${q}`);
+      logger.info(`[Finnhub] Cached search for ${q}`);
     }
     
     res.json(data);
   } catch (error) {
-    console.error('Finnhub search proxy error:', error);
+    logger.error('Finnhub search proxy error:', error);
     res.status(500).json({ error: 'Failed to search Finnhub', message: error.message });
   }
 });
@@ -1391,7 +1426,7 @@ app.get('/api/alphavantage/quote/:symbol', async (req, res) => {
   if (process.env.DATABASE_URL) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
-      console.log(`[AlphaVantage] Cache hit for quote ${symbol}`);
+      logger.info(`[AlphaVantage] Cache hit for quote ${symbol}`);
       return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
     }
   }
@@ -1419,12 +1454,12 @@ app.get('/api/alphavantage/quote/:symbol', async (req, res) => {
     
     if (process.env.DATABASE_URL && data['Global Quote'] && data['Global Quote']['05. price']) {
       await stockCache.setCache(cacheKey, 'quote', symbol.toUpperCase(), data, 'alphavantage', stockCache.CACHE_DURATIONS.quote);
-      console.log(`[AlphaVantage] Cached quote for ${symbol}`);
+      logger.info(`[AlphaVantage] Cached quote for ${symbol}`);
     }
     
     res.json(data);
   } catch (error) {
-    console.error('Alpha Vantage quote proxy error:', error);
+    logger.error('Alpha Vantage quote proxy error:', error);
     res.status(500).json({ error: 'Failed to fetch from Alpha Vantage', message: error.message });
   }
 });
@@ -1444,7 +1479,7 @@ app.get('/api/alphavantage/daily/:symbol', async (req, res) => {
   if (process.env.DATABASE_URL) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
-      console.log(`[AlphaVantage] Cache hit for daily ${symbol}`);
+      logger.info(`[AlphaVantage] Cache hit for daily ${symbol}`);
       return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
     }
   }
@@ -1471,12 +1506,12 @@ app.get('/api/alphavantage/daily/:symbol', async (req, res) => {
     
     if (process.env.DATABASE_URL && data['Time Series (Daily)']) {
       await stockCache.setCache(cacheKey, 'candles', symbol.toUpperCase(), data, 'alphavantage', stockCache.CACHE_DURATIONS.candles_daily);
-      console.log(`[AlphaVantage] Cached daily for ${symbol}`);
+      logger.info(`[AlphaVantage] Cached daily for ${symbol}`);
     }
     
     res.json(data);
   } catch (error) {
-    console.error('Alpha Vantage daily proxy error:', error);
+    logger.error('Alpha Vantage daily proxy error:', error);
     res.status(500).json({ error: 'Failed to fetch daily from Alpha Vantage', message: error.message });
   }
 });
@@ -1496,7 +1531,7 @@ app.get('/api/alphavantage/intraday/:symbol', async (req, res) => {
   if (process.env.DATABASE_URL) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
-      console.log(`[AlphaVantage] Cache hit for intraday ${symbol}`);
+      logger.info(`[AlphaVantage] Cache hit for intraday ${symbol}`);
       return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
     }
   }
@@ -1523,12 +1558,12 @@ app.get('/api/alphavantage/intraday/:symbol', async (req, res) => {
     
     if (process.env.DATABASE_URL && data[`Time Series (${interval})`]) {
       await stockCache.setCache(cacheKey, 'candles', symbol.toUpperCase(), data, 'alphavantage', stockCache.CACHE_DURATIONS.candles_intraday);
-      console.log(`[AlphaVantage] Cached intraday for ${symbol}`);
+      logger.info(`[AlphaVantage] Cached intraday for ${symbol}`);
     }
     
     res.json(data);
   } catch (error) {
-    console.error('Alpha Vantage intraday proxy error:', error);
+    logger.error('Alpha Vantage intraday proxy error:', error);
     res.status(500).json({ error: 'Failed to fetch intraday from Alpha Vantage', message: error.message });
   }
 });
@@ -1546,7 +1581,7 @@ app.get('/api/alphavantage/overview/:symbol', async (req, res) => {
   if (process.env.DATABASE_URL) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
-      console.log(`[AlphaVantage] Cache hit for overview ${symbol}`);
+      logger.info(`[AlphaVantage] Cache hit for overview ${symbol}`);
       return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
     }
   }
@@ -1574,12 +1609,12 @@ app.get('/api/alphavantage/overview/:symbol', async (req, res) => {
     // Cache company info for 24 hours
     if (process.env.DATABASE_URL && data && data.Symbol) {
       await stockCache.setCache(cacheKey, 'company_info', symbol.toUpperCase(), data, 'alphavantage', stockCache.CACHE_DURATIONS.company_info);
-      console.log(`[AlphaVantage] Cached overview for ${symbol}`);
+      logger.info(`[AlphaVantage] Cached overview for ${symbol}`);
     }
     
     res.json(data);
   } catch (error) {
-    console.error('Alpha Vantage overview proxy error:', error);
+    logger.error('Alpha Vantage overview proxy error:', error);
     res.status(500).json({ error: 'Failed to fetch overview from Alpha Vantage', message: error.message });
   }
 });
@@ -1598,7 +1633,7 @@ app.get('/api/alphavantage/search', async (req, res) => {
   if (process.env.DATABASE_URL && keywords) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
-      console.log(`[AlphaVantage] Cache hit for search ${keywords}`);
+      logger.info(`[AlphaVantage] Cache hit for search ${keywords}`);
       return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
     }
   }
@@ -1629,12 +1664,12 @@ app.get('/api/alphavantage/search', async (req, res) => {
     
     if (process.env.DATABASE_URL && data && data.bestMatches) {
       await stockCache.setCache(cacheKey, 'search', keywords.toUpperCase(), data, 'alphavantage', stockCache.CACHE_DURATIONS.search);
-      console.log(`[AlphaVantage] Cached search for ${keywords}`);
+      logger.info(`[AlphaVantage] Cached search for ${keywords}`);
     }
     
     res.json(data);
   } catch (error) {
-    console.error('Alpha Vantage search proxy error:', error);
+    logger.error('Alpha Vantage search proxy error:', error);
     res.status(500).json({ error: 'Failed to search Alpha Vantage', message: error.message });
   }
 });
@@ -1657,7 +1692,7 @@ app.get('/api/twelvedata/quote/:symbol', async (req, res) => {
   if (process.env.DATABASE_URL) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
-      console.log(`[TwelveData] Cache hit for quote ${symbol}`);
+      logger.info(`[TwelveData] Cache hit for quote ${symbol}`);
       return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
     }
   }
@@ -1684,12 +1719,12 @@ app.get('/api/twelvedata/quote/:symbol', async (req, res) => {
     
     if (process.env.DATABASE_URL && data && data.close) {
       await stockCache.setCache(cacheKey, 'quote', symbol.toUpperCase(), data, 'twelvedata', stockCache.CACHE_DURATIONS.quote);
-      console.log(`[TwelveData] Cached quote for ${symbol}`);
+      logger.info(`[TwelveData] Cached quote for ${symbol}`);
     }
     
     res.json(data);
   } catch (error) {
-    console.error('Twelve Data quote proxy error:', error);
+    logger.error('Twelve Data quote proxy error:', error);
     res.status(500).json({ error: 'Failed to fetch from Twelve Data', message: error.message });
   }
 });
@@ -1709,7 +1744,7 @@ app.get('/api/twelvedata/timeseries/:symbol', async (req, res) => {
   if (process.env.DATABASE_URL) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
-      console.log(`[TwelveData] Cache hit for timeseries ${symbol}`);
+      logger.info(`[TwelveData] Cache hit for timeseries ${symbol}`);
       return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
     }
   }
@@ -1739,12 +1774,12 @@ app.get('/api/twelvedata/timeseries/:symbol', async (req, res) => {
         ? stockCache.CACHE_DURATIONS.candles_daily 
         : stockCache.CACHE_DURATIONS.candles_intraday;
       await stockCache.setCache(cacheKey, 'candles', symbol.toUpperCase(), data, 'twelvedata', ttl);
-      console.log(`[TwelveData] Cached timeseries for ${symbol}`);
+      logger.info(`[TwelveData] Cached timeseries for ${symbol}`);
     }
     
     res.json(data);
   } catch (error) {
-    console.error('Twelve Data timeseries proxy error:', error);
+    logger.error('Twelve Data timeseries proxy error:', error);
     res.status(500).json({ error: 'Failed to fetch timeseries from Twelve Data', message: error.message });
   }
 });
@@ -1763,7 +1798,7 @@ app.get('/api/twelvedata/search', async (req, res) => {
   if (process.env.DATABASE_URL && symbol) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
-      console.log(`[TwelveData] Cache hit for search ${symbol}`);
+      logger.info(`[TwelveData] Cache hit for search ${symbol}`);
       return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
     }
   }
@@ -1790,12 +1825,12 @@ app.get('/api/twelvedata/search', async (req, res) => {
     
     if (process.env.DATABASE_URL && data && data.data) {
       await stockCache.setCache(cacheKey, 'search', symbol.toUpperCase(), data, 'twelvedata', stockCache.CACHE_DURATIONS.search);
-      console.log(`[TwelveData] Cached search for ${symbol}`);
+      logger.info(`[TwelveData] Cached search for ${symbol}`);
     }
     
     res.json(data);
   } catch (error) {
-    console.error('Twelve Data search proxy error:', error);
+    logger.error('Twelve Data search proxy error:', error);
     res.status(500).json({ error: 'Failed to search Twelve Data', message: error.message });
   }
 });
@@ -1839,7 +1874,7 @@ app.get('/api/news/everything', async (req, res) => {
     const data = await response.json();
     
     if (!response.ok) {
-      console.error(`NewsAPI error: ${response.status} ${data.message || response.statusText}`);
+      logger.error(`NewsAPI error: ${response.status} ${data.message || response.statusText}`);
       return res.status(response.status).json({ 
         error: 'NewsAPI error',
         status: response.status,
@@ -1849,7 +1884,7 @@ app.get('/api/news/everything', async (req, res) => {
     
     res.json(data);
   } catch (error) {
-    console.error('NewsAPI proxy error:', error);
+    logger.error('NewsAPI proxy error:', error);
     res.status(500).json({ 
       error: 'Failed to fetch from NewsAPI',
       message: error.message 
@@ -1869,7 +1904,7 @@ app.get('/api/ml/health', async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    console.error('ML Service health check error:', error);
+    logger.error('ML Service health check error:', error);
     res.status(503).json({ 
       error: 'ML Service unavailable',
       message: error.message 
@@ -1886,7 +1921,7 @@ app.get('/api/ml/version', async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    console.error('ML Service version error:', error);
+    logger.error('ML Service version error:', error);
     res.status(503).json({ 
       error: 'ML Service unavailable',
       message: error.message 
@@ -1903,7 +1938,7 @@ app.get('/api/ml/models', async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    console.error('ML Service models error:', error);
+    logger.error('ML Service models error:', error);
     res.status(503).json({ 
       error: 'ML Service unavailable',
       message: error.message 
@@ -1920,7 +1955,7 @@ app.get('/api/ml/models/:symbol', async (req, res) => {
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('ML Service model info error:', error);
+    logger.error('ML Service model info error:', error);
     res.status(503).json({ 
       error: 'ML Service unavailable',
       message: error.message 
@@ -1941,7 +1976,7 @@ app.post('/api/ml/train', express.json({ limit: '50mb' }), async (req, res) => {
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('ML Service training error:', error);
+    logger.error('ML Service training error:', error);
     res.status(503).json({ 
       error: 'ML Service unavailable',
       message: error.message 
@@ -1958,7 +1993,7 @@ app.get('/api/ml/train/:symbol/status', async (req, res) => {
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('ML Service training status error:', error);
+    logger.error('ML Service training status error:', error);
     res.status(503).json({ 
       error: 'ML Service unavailable',
       message: error.message 
@@ -1979,7 +2014,7 @@ app.post('/api/ml/predict', express.json({ limit: '10mb' }), async (req, res) =>
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('ML Service prediction error:', error);
+    logger.error('ML Service prediction error:', error);
     res.status(503).json({ 
       error: 'ML Service unavailable',
       message: error.message 
@@ -1998,7 +2033,7 @@ app.delete('/api/ml/models/:symbol', async (req, res) => {
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('ML Service model deletion error:', error);
+    logger.error('ML Service model deletion error:', error);
     res.status(503).json({ 
       error: 'ML Service unavailable',
       message: error.message 
@@ -2015,7 +2050,7 @@ app.get('/api/ml/sentiment/status', async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    console.error('ML Service sentiment status error:', error);
+    logger.error('ML Service sentiment status error:', error);
     res.status(503).json({ 
       error: 'ML Service unavailable',
       message: error.message 
@@ -2034,7 +2069,7 @@ app.post('/api/ml/sentiment/load', async (req, res) => {
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('ML Service sentiment load error:', error);
+    logger.error('ML Service sentiment load error:', error);
     res.status(503).json({ 
       error: 'ML Service unavailable',
       message: error.message 
@@ -2055,7 +2090,7 @@ app.post('/api/ml/sentiment/analyze', express.json(), async (req, res) => {
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('ML Service sentiment analyze error:', error);
+    logger.error('ML Service sentiment analyze error:', error);
     res.status(503).json({ 
       error: 'ML Service unavailable',
       message: error.message 
@@ -2076,7 +2111,7 @@ app.post('/api/ml/sentiment/analyze/batch', express.json({ limit: '5mb' }), asyn
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('ML Service sentiment batch analyze error:', error);
+    logger.error('ML Service sentiment batch analyze error:', error);
     res.status(503).json({ 
       error: 'ML Service unavailable',
       message: error.message 
@@ -2104,7 +2139,7 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
         const ageMinutes = (Date.now() - new Date(archived.analyzedAt).getTime()) / (1000 * 60);
         // Use archive if less than 24 hours old
         if (ageMinutes < 60 * 24) {
-          console.log(`[Sentiment] Using archived sentiment for ${symbol} (${Math.round(ageMinutes)} min old)`);
+          logger.info(`[Sentiment] Using archived sentiment for ${symbol} (${Math.round(ageMinutes)} min old)`);
           return {
             symbol: symbol.toUpperCase(),
             sentiment: archived.sentiment,
@@ -2118,7 +2153,7 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
         }
       }
     } catch (archiveErr) {
-      console.warn(`[Sentiment] Archive fallback error:`, archiveErr.message);
+      logger.warn(`[Sentiment] Archive fallback error:`, archiveErr.message);
     }
     return null;
   };
@@ -2128,7 +2163,7 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
     const cacheKey = `sentiment:combined:${symbol.toUpperCase()}`;
     const cached = await stockCache.getCached(cacheKey);
     if (cached && cached.data) {
-      console.log(`[Sentiment] Cache hit for ${symbol}`);
+      logger.info(`[Sentiment] Cache hit for ${symbol}`);
       return res.json(cached.data);
     }
     
@@ -2151,11 +2186,11 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
             companyName = (result.longName || result.shortName || '')
               .replace(/\s*(Inc\.?|Corp\.?|Ltd\.?|PLC|AG|SE|KGaA|N\.V\.|S\.A\.|GmbH|Co\.|& Co|Holdings?|Group|International)\s*/gi, '')
               .trim();
-            console.log(`[Sentiment] International symbol ${symbol} -> base: ${baseSymbol}, company: ${companyName}`);
+            logger.info(`[Sentiment] International symbol ${symbol} -> base: ${baseSymbol}, company: ${companyName}`);
           }
         }
       } catch (err) {
-        console.warn(`[Sentiment] Could not fetch company name for ${symbol}:`, err.message);
+        logger.warn(`[Sentiment] Could not fetch company name for ${symbol}:`, err.message);
       }
     }
     
@@ -2177,7 +2212,7 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
         marketauxApiKey = apiKeys.marketaux || null;
       }
     } catch (dbErr) {
-      console.warn(`[Sentiment] Could not fetch API keys from DB:`, dbErr.message);
+      logger.warn(`[Sentiment] Could not fetch API keys from DB:`, dbErr.message);
     }
     
     // Build list of symbols/terms to search for
@@ -2200,7 +2235,7 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
           if (response.ok) {
             const news = await response.json();
             if (Array.isArray(news) && news.length > 0) {
-              console.log(`[Sentiment] Finnhub found ${news.length} news for term "${term}"`);
+              logger.info(`[Sentiment] Finnhub found ${news.length} news for term "${term}"`);
               news.slice(0, 10).forEach(item => {
                 if (item.headline && !newsTexts.includes(item.headline)) {
                   newsTexts.push(item.headline);
@@ -2210,7 +2245,7 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
             }
           }
         } catch (err) {
-          console.warn(`[Sentiment] Finnhub error for ${term}:`, err.message);
+          logger.warn(`[Sentiment] Finnhub error for ${term}:`, err.message);
         }
       }
     }
@@ -2239,7 +2274,7 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
           if (response.ok) {
             const data = await response.json();
             if (data.data && Array.isArray(data.data) && data.data.length > 0) {
-              console.log(`[Sentiment] Marketaux found ${data.data.length} news for term "${term}"`);
+              logger.info(`[Sentiment] Marketaux found ${data.data.length} news for term "${term}"`);
               data.data.slice(0, 10).forEach(item => {
                 if (item.title && !newsTexts.includes(item.title)) {
                   newsTexts.push(item.title);
@@ -2249,7 +2284,7 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
             }
           }
         } catch (err) {
-          console.warn(`[Sentiment] Marketaux error for ${term}:`, err.message);
+          logger.warn(`[Sentiment] Marketaux error for ${term}:`, err.message);
         }
       }
     }
@@ -2284,12 +2319,12 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
         mlModelLoaded = statusData.loaded === true;
       }
     } catch (statusErr) {
-      console.warn(`[Sentiment] ML service status check failed:`, statusErr.message);
+      logger.warn(`[Sentiment] ML service status check failed:`, statusErr.message);
     }
     
     // If ML model not loaded, try archived sentiment first
     if (!mlModelLoaded) {
-      console.warn(`[Sentiment] FinBERT model not loaded for ${symbol}`);
+      logger.warn(`[Sentiment] FinBERT model not loaded for ${symbol}`);
       
       const archivedFallback = await getArchivedFallback();
       if (archivedFallback) {
@@ -2382,19 +2417,19 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
     
     // Cache for 60 minutes (was 10 min)
     await stockCache.setCache(cacheKey, 'sentiment', symbol.toUpperCase(), result, 'combined', 3600);
-    console.log(`[Sentiment] Analyzed ${newsTexts.length} news items for ${symbol}: ${overallSentiment} (${avgScore.toFixed(3)})`);
+    logger.info(`[Sentiment] Analyzed ${newsTexts.length} news items for ${symbol}: ${overallSentiment} (${avgScore.toFixed(3)})`);
     
     // Archive sentiment for historical analysis
     try {
       await sentimentArchive.archiveSentiment(result);
     } catch (archiveError) {
-      console.warn(`[Sentiment] Failed to archive sentiment: ${archiveError.message}`);
+      logger.warn(`[Sentiment] Failed to archive sentiment: ${archiveError.message}`);
     }
     
     res.json(result);
     
   } catch (error) {
-    console.error(`[Sentiment] Error analyzing ${symbol}:`, error.message);
+    logger.error(`[Sentiment] Error analyzing ${symbol}:`, error.message);
     
     // Try archived sentiment as final fallback
     const archivedFallback = await getArchivedFallback();
@@ -2434,7 +2469,7 @@ app.get('/api/sentiment/history/:symbol', async (req, res) => {
       days_requested: parseInt(days)
     });
   } catch (error) {
-    console.error(`[Sentiment Archive] Error fetching history for ${req.params.symbol}:`, error);
+    logger.error(`[Sentiment Archive] Error fetching history for ${req.params.symbol}:`, error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -2452,7 +2487,7 @@ app.get('/api/sentiment/trend/:symbol', async (req, res) => {
       ...trend
     });
   } catch (error) {
-    console.error(`[Sentiment Archive] Error fetching trend for ${req.params.symbol}:`, error);
+    logger.error(`[Sentiment Archive] Error fetching trend for ${req.params.symbol}:`, error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -2465,7 +2500,7 @@ app.get('/api/sentiment/symbols', async (req, res) => {
     const symbols = await sentimentArchive.getArchivedSymbols();
     res.json({ symbols, count: symbols.length });
   } catch (error) {
-    console.error('[Sentiment Archive] Error fetching symbols:', error);
+    logger.error('[Sentiment Archive] Error fetching symbols:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -2485,7 +2520,7 @@ app.get('/api/rl/health', async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    console.error('RL Trading Service health check error:', error);
+    logger.error('RL Trading Service health check error:', error);
     res.status(503).json({ 
       error: 'RL Trading Service unavailable',
       message: error.message 
@@ -2502,7 +2537,7 @@ app.get('/api/rl/info', async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    console.error('RL Trading Service info error:', error);
+    logger.error('RL Trading Service info error:', error);
     res.status(503).json({ 
       error: 'RL Trading Service unavailable',
       message: error.message 
@@ -2519,7 +2554,7 @@ app.get('/api/rl/agents', async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    console.error('RL Trading Service agents list error:', error);
+    logger.error('RL Trading Service agents list error:', error);
     res.status(503).json({ 
       error: 'RL Trading Service unavailable',
       message: error.message 
@@ -2536,7 +2571,7 @@ app.get('/api/rl/agents/:agentName', async (req, res) => {
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('RL Trading Service agent status error:', error);
+    logger.error('RL Trading Service agent status error:', error);
     res.status(503).json({ 
       error: 'RL Trading Service unavailable',
       message: error.message 
@@ -2555,7 +2590,7 @@ app.delete('/api/rl/agents/:agentName', authMiddleware, async (req, res) => {
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('RL Trading Service agent deletion error:', error);
+    logger.error('RL Trading Service agent deletion error:', error);
     res.status(503).json({ 
       error: 'RL Trading Service unavailable',
       message: error.message 
@@ -2572,7 +2607,7 @@ app.get('/api/rl/presets', async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    console.error('RL Trading Service presets error:', error);
+    logger.error('RL Trading Service presets error:', error);
     res.status(503).json({ 
       error: 'RL Trading Service unavailable',
       message: error.message 
@@ -2589,7 +2624,7 @@ app.get('/api/rl/presets/:presetName', async (req, res) => {
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('RL Trading Service preset error:', error);
+    logger.error('RL Trading Service preset error:', error);
     res.status(503).json({ 
       error: 'RL Trading Service unavailable',
       message: error.message 
@@ -2610,7 +2645,7 @@ app.post('/api/rl/train', authMiddleware, express.json({ limit: '100mb' }), asyn
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('RL Trading Service train error:', error);
+    logger.error('RL Trading Service train error:', error);
     res.status(503).json({ 
       error: 'RL Trading Service unavailable',
       message: error.message 
@@ -2631,7 +2666,7 @@ app.post('/api/rl/train/from-backend', authMiddleware, express.json(), async (re
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('RL Trading Service train from backend error:', error);
+    logger.error('RL Trading Service train from backend error:', error);
     res.status(503).json({ 
       error: 'RL Trading Service unavailable',
       message: error.message 
@@ -2648,7 +2683,7 @@ app.get('/api/rl/train/status/:agentName', async (req, res) => {
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('RL Trading Service training status error:', error);
+    logger.error('RL Trading Service training status error:', error);
     res.status(503).json({ 
       error: 'RL Trading Service unavailable',
       message: error.message 
@@ -2666,7 +2701,7 @@ app.get('/api/rl/train/logs/:agentName', async (req, res) => {
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('RL Trading Service training logs error:', error);
+    logger.error('RL Trading Service training logs error:', error);
     res.status(503).json({ 
       error: 'RL Trading Service unavailable',
       message: error.message 
@@ -2687,7 +2722,7 @@ app.post('/api/rl/signal', express.json({ limit: '10mb' }), async (req, res) => 
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('RL Trading Service signal error:', error);
+    logger.error('RL Trading Service signal error:', error);
     res.status(503).json({ 
       error: 'RL Trading Service unavailable',
       message: error.message 
@@ -2708,7 +2743,7 @@ app.post('/api/rl/signal/explain', express.json({ limit: '10mb' }), async (req, 
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('RL Trading Service explain error:', error);
+    logger.error('RL Trading Service explain error:', error);
     res.status(503).json({ 
       error: 'RL Trading Service unavailable',
       message: error.message 
@@ -2729,7 +2764,7 @@ app.post('/api/rl/signals/multi', express.json({ limit: '10mb' }), async (req, r
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('RL Trading Service multi-signal error:', error);
+    logger.error('RL Trading Service multi-signal error:', error);
     res.status(503).json({ 
       error: 'RL Trading Service unavailable',
       message: error.message 
@@ -2747,7 +2782,7 @@ app.get('/api/rl/signal/:agentName/quick', async (req, res) => {
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('RL Trading Service quick signal error:', error);
+    logger.error('RL Trading Service quick signal error:', error);
     res.status(503).json({ 
       error: 'RL Trading Service unavailable',
       message: error.message 
@@ -2764,7 +2799,7 @@ app.get('/api/rl/options/:optionType', async (req, res) => {
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('RL Trading Service options error:', error);
+    logger.error('RL Trading Service options error:', error);
     res.status(503).json({ 
       error: 'RL Trading Service unavailable',
       message: error.message 
@@ -2781,7 +2816,7 @@ app.get('/api/rl/ai-trader/:traderId/self-training-status', async (req, res) => 
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('RL Trading Service self-training status error:', error);
+    logger.error('RL Trading Service self-training status error:', error);
     res.status(503).json({ 
       error: 'RL Trading Service unavailable',
       message: error.message 
@@ -2814,7 +2849,7 @@ app.get('/api/watchlist/signals/:symbol', async (req, res) => {
     // Not in cache - return empty so frontend knows to fetch fresh data
     res.json({ cached: false, symbol });
   } catch (error) {
-    console.error('Watchlist signal cache error:', error);
+    logger.error('Watchlist signal cache error:', error);
     res.status(500).json({ error: 'Cache lookup failed' });
   }
 });
@@ -2844,7 +2879,7 @@ app.post('/api/watchlist/signals/:symbol', express.json({ limit: '1mb' }), async
     
     res.json({ success: true, ttlSeconds, cacheKey });
   } catch (error) {
-    console.error('Watchlist signal cache store error:', error);
+    logger.error('Watchlist signal cache store error:', error);
     res.status(500).json({ error: 'Cache store failed' });
   }
 });
@@ -2878,7 +2913,7 @@ app.post('/api/watchlist/signals/batch', express.json(), async (req, res) => {
     
     res.json({ results, requestedAt: new Date().toISOString() });
   } catch (error) {
-    console.error('Watchlist batch cache error:', error);
+    logger.error('Watchlist batch cache error:', error);
     res.status(500).json({ error: 'Batch cache lookup failed' });
   }
 });
@@ -2894,7 +2929,7 @@ app.delete('/api/watchlist/signals/:symbol', async (req, res) => {
     await stockCache.clearSymbolCache(symbol);
     res.json({ success: true, symbol });
   } catch (error) {
-    console.error('Watchlist signal cache clear error:', error);
+    logger.error('Watchlist signal cache clear error:', error);
     res.status(500).json({ error: 'Cache clear failed' });
   }
 });
@@ -3003,7 +3038,7 @@ app.put('/api/trading/portfolio/:id/settings', authMiddleware, express.json(), a
  */
 app.put('/api/trading/portfolio/:id/capital', authMiddleware, express.json(), async (req, res) => {
   try {
-    console.log('Set capital request:', { body: req.body, params: req.params, userId: req.user?.id });
+    logger.info('Set capital request:', { body: req.body, params: req.params, userId: req.user?.id });
     
     let { initialCapital } = req.body;
     
@@ -3013,7 +3048,7 @@ app.put('/api/trading/portfolio/:id/capital', authMiddleware, express.json(), as
     }
     
     if (typeof initialCapital !== 'number' || isNaN(initialCapital)) {
-      console.log('Invalid capital value:', { initialCapital, type: typeof initialCapital, body: req.body });
+      logger.info('Invalid capital value:', { initialCapital, type: typeof initialCapital, body: req.body });
       return res.status(400).json({ error: 'initialCapital must be a valid number' });
     }
     
@@ -3022,10 +3057,10 @@ app.put('/api/trading/portfolio/:id/capital', authMiddleware, express.json(), as
       req.user.id, 
       initialCapital
     );
-    console.log('Capital set successfully:', { portfolioId: portfolio.id, newCapital: initialCapital });
+    logger.info('Capital set successfully:', { portfolioId: portfolio.id, newCapital: initialCapital });
     res.json(portfolio);
   } catch (e) {
-    console.error('Set capital error:', e.message);
+    logger.error('Set capital error:', e.message);
     res.status(400).json({ error: e.message || 'Failed to set initial capital' });
   }
 });
@@ -3052,7 +3087,7 @@ app.get('/api/trading/portfolio/:id/metrics', authMiddleware, async (req, res) =
     const metrics = await trading.getPortfolioMetrics(parseInt(req.params.id), req.user.id);
     res.json(metrics);
   } catch (e) {
-    console.error('Get metrics error:', e);
+    logger.error('Get metrics error:', e);
     res.status(500).json({ error: 'Failed to get portfolio metrics' });
   }
 });
@@ -3166,7 +3201,7 @@ app.post('/api/trading/order/market', authMiddleware, express.json(), async (req
     
     res.json(result);
   } catch (e) {
-    console.error('Market order error:', e);
+    logger.error('Market order error:', e);
     res.status(500).json({ error: 'Failed to execute market order' });
   }
 });
@@ -3241,7 +3276,7 @@ app.post('/api/trading/order/pending', authMiddleware, express.json(), async (re
     
     res.json(result);
   } catch (e) {
-    console.error('Create pending order error:', e);
+    logger.error('Create pending order error:', e);
     res.status(500).json({ error: 'Failed to create pending order' });
   }
 });
@@ -3314,7 +3349,7 @@ app.post('/api/trading/check-triggers', authMiddleware, express.json(), async (r
     
     // Update warrant positions based on underlying price changes (delta approximation)
     await trading.updateWarrantPrices(prices).catch(e => {
-      console.warn('Warrant price update error (non-critical):', e.message);
+      logger.warn('Warrant price update error (non-critical):', e.message);
     });
     
     res.json({
@@ -3322,7 +3357,7 @@ app.post('/api/trading/check-triggers', authMiddleware, express.json(), async (r
       triggeredPositions,
     });
   } catch (e) {
-    console.error('Check triggers error:', e);
+    logger.error('Check triggers error:', e);
     res.status(500).json({ error: 'Failed to check triggers' });
   }
 });
@@ -3432,7 +3467,7 @@ app.post('/api/trading/warrant/price', authMiddleware, express.json(), async (re
     const data = await response.json();
     res.json(data);
   } catch (e) {
-    console.error('Warrant pricing error:', e);
+    logger.error('Warrant pricing error:', e);
     res.status(500).json({ error: 'Failed to calculate warrant price' });
   }
 });
@@ -3473,7 +3508,7 @@ app.post('/api/trading/warrant/implied-volatility', authMiddleware, express.json
     const data = await response.json();
     res.json(data);
   } catch (e) {
-    console.error('Implied vol error:', e);
+    logger.error('Implied vol error:', e);
     res.status(500).json({ error: 'Failed to calculate implied volatility' });
   }
 });
@@ -3515,7 +3550,7 @@ app.post('/api/trading/warrant/chain', authMiddleware, express.json(), async (re
     const data = await response.json();
     res.json(data);
   } catch (e) {
-    console.error('Option chain error:', e);
+    logger.error('Option chain error:', e);
     res.status(500).json({ error: 'Failed to generate option chain' });
   }
 });
@@ -3580,7 +3615,7 @@ app.post('/api/trading/options/chain/real', authMiddleware, express.json(), asyn
     const cacheKey = `${cleanSymbol}:${forceSource || 'auto'}`;
     const cached = getCachedOptions(cacheKey);
     if (cached) {
-      console.log(`[Options Cache HIT] ${cacheKey}`);
+      logger.info(`[Options Cache HIT] ${cacheKey}`);
       return res.json({ ...cached, cached: true });
     }
 
@@ -3610,12 +3645,12 @@ app.post('/api/trading/options/chain/real', authMiddleware, express.json(), asyn
     // Cache successful responses
     if (data && data.success) {
       setCachedOptions(cacheKey, data);
-      console.log(`[Options Cache SET] ${cacheKey} (source: ${data.source})`);
+      logger.info(`[Options Cache SET] ${cacheKey} (source: ${data.source})`);
     }
 
     res.json(data);
   } catch (e) {
-    console.error('Real options chain error:', e);
+    logger.error('Real options chain error:', e);
     res.status(500).json({ error: 'Failed to fetch real options chain' });
   }
 });
@@ -3640,7 +3675,7 @@ app.get('/api/historical-prices/symbols/available', async (req, res) => {
     const symbols = await historicalPrices.getAvailableSymbols();
     res.json({ symbols });
   } catch (e) {
-    console.error('Get available symbols error:', e);
+    logger.error('Get available symbols error:', e);
     res.status(500).json({ error: e.message || 'Failed to get available symbols' });
   }
 });
@@ -3664,7 +3699,7 @@ app.get('/api/historical-prices/:symbol/availability', async (req, res) => {
       ...availability
     });
   } catch (e) {
-    console.error('Check availability error:', e);
+    logger.error('Check availability error:', e);
     res.status(500).json({ error: e.message || 'Failed to check data availability' });
   }
 });
@@ -3697,7 +3732,7 @@ app.post('/api/historical-prices/:symbol/refresh', authMiddleware, async (req, r
       });
     }
   } catch (e) {
-    console.error('Refresh historical data error:', e);
+    logger.error('Refresh historical data error:', e);
     res.status(500).json({ error: e.message || 'Failed to refresh historical data' });
   }
 });
@@ -3726,7 +3761,7 @@ app.get('/api/historical-prices/:symbol', async (req, res) => {
     
     if (!availability.hasData) {
       // Fetch from Yahoo Finance and store in database
-      console.log(`[API] Fetching historical data for ${symbol} (${normalizedStartDate} to ${normalizedEndDate})`);
+      logger.info(`[API] Fetching historical data for ${symbol} (${normalizedStartDate} to ${normalizedEndDate})`);
       const fetchResult = await historicalPrices.fetchAndStoreHistoricalData(symbol, normalizedStartDate, normalizedEndDate);
       
       if (!fetchResult.success) {
@@ -3751,7 +3786,7 @@ app.get('/api/historical-prices/:symbol', async (req, res) => {
       prices
     });
   } catch (e) {
-    console.error('Get historical prices error:', e);
+    logger.error('Get historical prices error:', e);
     res.status(500).json({ error: e.message || 'Failed to get historical prices' });
   }
 });
@@ -3797,7 +3832,7 @@ app.post('/api/trading/backtest/session', authMiddleware, async (req, res) => {
     
     res.status(201).json(session);
   } catch (e) {
-    console.error('Create backtest session error:', e);
+    logger.error('Create backtest session error:', e);
     res.status(500).json({ error: e.message || 'Failed to create backtest session' });
   }
 });
@@ -3811,7 +3846,7 @@ app.get('/api/trading/backtest/sessions', authMiddleware, async (req, res) => {
     const sessions = await trading.getUserBacktestSessions(req.user.id);
     res.json(sessions);
   } catch (e) {
-    console.error('Get backtest sessions error:', e);
+    logger.error('Get backtest sessions error:', e);
     res.status(500).json({ error: e.message || 'Failed to get backtest sessions' });
   }
 });
@@ -3863,7 +3898,7 @@ app.post('/api/trading/backtest/order', authMiddleware, async (req, res) => {
     
     res.json(result);
   } catch (e) {
-    console.error('Execute backtest order error:', e);
+    logger.error('Execute backtest order error:', e);
     res.status(500).json({ error: 'Failed to execute backtest order' });
   }
 });
@@ -3980,7 +4015,7 @@ app.get('/api/ai-traders', async (req, res) => {
     const traders = await aiTrader.getAllAITraders();
     res.json(traders.map(t => aiTrader.formatTraderForApi(t)));
   } catch (e) {
-    console.error('Get AI traders error:', e);
+    logger.error('Get AI traders error:', e);
     res.status(500).json({ error: 'Failed to fetch AI traders' });
   }
 });
@@ -4004,7 +4039,7 @@ app.get('/api/ai-traders/learning-status', async (req, res) => {
       }))
     });
   } catch (e) {
-    console.error('Get learning status error:', e);
+    logger.error('Get learning status error:', e);
     res.status(500).json({ error: e.message || 'Failed to get learning status' });
   }
 });
@@ -4016,7 +4051,7 @@ app.get('/api/ai-traders/learning-status', async (req, res) => {
 app.post('/api/ai-traders/trigger-learning-all', authMiddleware, async (req, res) => {
   try {
     const force = req.body.force === true;
-    console.log(`[API] Manual adaptive learning trigger for all traders (force: ${force})`);
+    logger.info(`[API] Manual adaptive learning trigger for all traders (force: ${force})`);
     
     const result = await backgroundJobs.adjustAdaptiveWeights(force);
     
@@ -4026,7 +4061,7 @@ app.post('/api/ai-traders/trigger-learning-all', authMiddleware, async (req, res
       ...result
     });
   } catch (e) {
-    console.error('Trigger learning all error:', e);
+    logger.error('Trigger learning all error:', e);
     res.status(500).json({ error: e.message || 'Failed to trigger adaptive learning' });
   }
 });
@@ -4081,7 +4116,7 @@ app.get('/api/ai-traders/:id/training-status', async (req, res) => {
           };
         }
       } catch (rlError) {
-        console.warn('Failed to fetch RL agent status:', rlError.message);
+        logger.warn('Failed to fetch RL agent status:', rlError.message);
       }
     }
     
@@ -4119,7 +4154,7 @@ app.get('/api/ai-traders/:id/training-status', async (req, res) => {
       learningMode
     });
   } catch (e) {
-    console.error('Get training status error:', e);
+    logger.error('Get training status error:', e);
     res.status(500).json({ error: e.message || 'Failed to get training status' });
   }
 });
@@ -4136,7 +4171,7 @@ app.get('/api/ai-traders/:id', async (req, res) => {
     }
     res.json(aiTrader.formatTraderForApi(trader));
   } catch (e) {
-    console.error('Get AI trader error:', e);
+    logger.error('Get AI trader error:', e);
     res.status(500).json({ error: 'Failed to fetch AI trader' });
   }
 });
@@ -4170,7 +4205,7 @@ app.post('/api/ai-traders', authMiddleware, async (req, res) => {
     const completeTrader = await aiTrader.getAITrader(trader.id);
     res.json(aiTrader.formatTraderForApi(completeTrader));
   } catch (e) {
-    console.error('Create AI trader error:', e);
+    logger.error('Create AI trader error:', e);
     if (e.message.includes('duplicate key')) {
       res.status(400).json({ error: 'AI trader with this name already exists' });
     } else {
@@ -4218,7 +4253,7 @@ app.put('/api/ai-traders/:id', authMiddleware, async (req, res) => {
     
     res.json(aiTrader.formatTraderForApi(trader));
   } catch (e) {
-    console.error('Update AI trader error:', e);
+    logger.error('Update AI trader error:', e);
     res.status(500).json({ error: 'Failed to update AI trader' });
   }
 });
@@ -4235,7 +4270,7 @@ app.delete('/api/ai-traders/:id', authMiddleware, async (req, res) => {
     }
     res.json({ success: true });
   } catch (e) {
-    console.error('Delete AI trader error:', e);
+    logger.error('Delete AI trader error:', e);
     res.status(500).json({ error: 'Failed to delete AI trader' });
   }
 });
@@ -4316,7 +4351,7 @@ app.post('/api/ai-traders/:id/start', authMiddleware, async (req, res) => {
     };
     
     // Log the config being sent (for debugging)
-    console.log(`[AI-Trader Start] Sending config for trader ${traderId}:`, JSON.stringify({
+    logger.info(`[AI-Trader Start] Sending config for trader ${traderId}:`, JSON.stringify({
       rl_agent_name: config.rl_agent_name,
       symbols: config.symbols,
       schedule_enabled: config.schedule_enabled
@@ -4332,13 +4367,13 @@ app.post('/api/ai-traders/:id/start', authMiddleware, async (req, res) => {
       
       if (!rlResponse.ok) {
         const errorText = await rlResponse.text();
-        console.error(`RL service start failed: ${rlResponse.status} ${errorText}`);
+        logger.error(`RL service start failed: ${rlResponse.status} ${errorText}`);
         // Don't fail the request - DB status was updated, user can retry
       } else {
-        console.log(`AI Trader ${traderId} started in RL service`);
+        logger.info(`AI Trader ${traderId} started in RL service`);
       }
     } catch (rlError) {
-      console.error('Error calling RL service:', rlError);
+      logger.error('Error calling RL service:', rlError);
       // Don't fail the request - DB status was updated, user can retry
     }
     
@@ -4347,7 +4382,7 @@ app.post('/api/ai-traders/:id/start', authMiddleware, async (req, res) => {
     
     res.json(aiTrader.formatTraderForApi(trader));
   } catch (e) {
-    console.error('Start AI trader error:', e);
+    logger.error('Start AI trader error:', e);
     res.status(500).json({ error: 'Failed to start AI trader' });
   }
 });
@@ -4377,13 +4412,13 @@ app.post('/api/ai-traders/:id/stop', authMiddleware, async (req, res) => {
       
       if (!rlResponse.ok) {
         const errorText = await rlResponse.text();
-        console.error(`RL service stop failed: ${rlResponse.status} ${errorText}`);
+        logger.error(`RL service stop failed: ${rlResponse.status} ${errorText}`);
         // Don't fail the request - DB status was updated, user can retry
       } else {
-        console.log(`AI Trader ${traderId} stopped in RL service`);
+        logger.info(`AI Trader ${traderId} stopped in RL service`);
       }
     } catch (rlError) {
-      console.error('Error calling RL service:', rlError);
+      logger.error('Error calling RL service:', rlError);
       // Don't fail the request - DB status was updated, user can retry
     }
     
@@ -4392,7 +4427,7 @@ app.post('/api/ai-traders/:id/stop', authMiddleware, async (req, res) => {
     
     res.json(aiTrader.formatTraderForApi(trader));
   } catch (e) {
-    console.error('Stop AI trader error:', e);
+    logger.error('Stop AI trader error:', e);
     res.status(500).json({ error: 'Failed to stop AI trader' });
   }
 });
@@ -4422,13 +4457,13 @@ app.post('/api/ai-traders/:id/pause', authMiddleware, async (req, res) => {
       
       if (!rlResponse.ok) {
         const errorText = await rlResponse.text();
-        console.error(`RL service stop failed: ${rlResponse.status} ${errorText}`);
+        logger.error(`RL service stop failed: ${rlResponse.status} ${errorText}`);
         // Don't fail the request - DB status was updated, user can retry
       } else {
-        console.log(`AI Trader ${traderId} paused in RL service`);
+        logger.info(`AI Trader ${traderId} paused in RL service`);
       }
     } catch (rlError) {
-      console.error('Error calling RL service:', rlError);
+      logger.error('Error calling RL service:', rlError);
       // Don't fail the request - DB status was updated, user can retry
     }
     
@@ -4437,7 +4472,7 @@ app.post('/api/ai-traders/:id/pause', authMiddleware, async (req, res) => {
     
     res.json(aiTrader.formatTraderForApi(trader));
   } catch (e) {
-    console.error('Pause AI trader error:', e);
+    logger.error('Pause AI trader error:', e);
     res.status(500).json({ error: 'Failed to pause AI trader' });
   }
 });
@@ -4456,7 +4491,7 @@ app.get('/api/ai-traders/:id/decisions', async (req, res) => {
     );
     res.json(decisions);
   } catch (e) {
-    console.error('Get decisions error:', e);
+    logger.error('Get decisions error:', e);
     res.status(500).json({ error: 'Failed to fetch decisions' });
   }
 });
@@ -4530,7 +4565,7 @@ app.post('/api/ai-traders/:id/decisions', async (req, res) => {
     
     res.status(201).json(decision);
   } catch (e) {
-    console.error('Record decision error:', e);
+    logger.error('Record decision error:', e);
     res.status(500).json({ error: 'Failed to record decision' });
   }
 });
@@ -4547,7 +4582,7 @@ app.get('/api/ai-traders/:id/decisions/:did', async (req, res) => {
     }
     res.json(decision);
   } catch (e) {
-    console.error('Get decision error:', e);
+    logger.error('Get decision error:', e);
     res.status(500).json({ error: 'Failed to fetch decision' });
   }
 });
@@ -4570,10 +4605,10 @@ app.delete('/api/ai-traders/:id/decisions/:did', async (req, res) => {
     // Delete the decision
     await db.query('DELETE FROM ai_trader_decisions WHERE id = $1', [decisionId]);
     
-    console.log(`[AI Trader] Deleted decision ${decisionId} for trader ${traderId}`);
+    logger.info(`[AI Trader] Deleted decision ${decisionId} for trader ${traderId}`);
     res.json({ success: true, message: 'Decision deleted' });
   } catch (e) {
-    console.error('Delete decision error:', e);
+    logger.error('Delete decision error:', e);
     res.status(500).json({ error: 'Failed to delete decision' });
   }
 });
@@ -4595,7 +4630,7 @@ app.post('/api/ai-traders/recalculate-stats', async (req, res) => {
     
     res.json({ success: true, tradersUpdated: traders.length, outcomesUpdated });
   } catch (e) {
-    console.error('Recalculate stats error:', e);
+    logger.error('Recalculate stats error:', e);
     res.status(500).json({ error: 'Failed to recalculate stats' });
   }
 });
@@ -4627,17 +4662,17 @@ app.patch('/api/ai-traders/:id/decisions/mark-executed', async (req, res) => {
     );
     
     if (result.rows.length === 0) {
-      console.log(`[AI Trader] No matching decision found to mark as executed: ${traderId}/${symbol}/${decision_type}`);
+      logger.info(`[AI Trader] No matching decision found to mark as executed: ${traderId}/${symbol}/${decision_type}`);
       return res.status(404).json({ error: 'Decision not found' });
     }
     
     // Update trader statistics
     await aiTrader.updateTraderStats(traderId);
     
-    console.log(`[AI Trader] Marked decision ${result.rows[0].id} as executed for trader ${traderId}`);
+    logger.info(`[AI Trader] Marked decision ${result.rows[0].id} as executed for trader ${traderId}`);
     res.status(204).send();
   } catch (e) {
-    console.error('Mark decision executed error:', e);
+    logger.error('Mark decision executed error:', e);
     res.status(500).json({ error: 'Failed to mark decision as executed' });
   }
 });
@@ -4700,7 +4735,7 @@ app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
           }
         }
       } catch (e) {
-        console.warn(`Failed to fetch live quote for ${symbol}:`, e.message);
+        logger.warn(`Failed to fetch live quote for ${symbol}:`, e.message);
       }
     }
     
@@ -4858,7 +4893,7 @@ app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
       broker_profile: brokerKey,
     });
   } catch (e) {
-    console.error('Get portfolio error:', e);
+    logger.error('Get portfolio error:', e);
     res.status(500).json({ error: 'Failed to fetch portfolio' });
   }
 });
@@ -4895,13 +4930,13 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
         if (livePrice && livePrice > 0) {
           const priceDiff = Math.abs(price - livePrice) / livePrice * 100;
           if (priceDiff > 1.0) {
-            console.warn(`[AI Trader ${traderId}] Price correction: ${symbol} requested $${price.toFixed(2)}, market is $${livePrice.toFixed(2)} (${priceDiff.toFixed(1)}% diff)`);
+            logger.warn(`[AI Trader ${traderId}] Price correction: ${symbol} requested $${price.toFixed(2)}, market is $${livePrice.toFixed(2)} (${priceDiff.toFixed(1)}% diff)`);
           }
           price = livePrice;  // Always use the live market price
         }
       }
     } catch (priceErr) {
-      console.warn(`[AI Trader ${traderId}] Could not verify live price for ${symbol}, using submitted price:`, priceErr.message);
+      logger.warn(`[AI Trader ${traderId}] Could not verify live price for ${symbol}, using submitted price:`, priceErr.message);
     }
     
     // Get AI trader
@@ -5012,7 +5047,7 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
         try {
           await aiTrader.updateTraderStats(traderId);
         } catch (statsErr) {
-          console.error(`[AI Trader ${traderId}] Stats update error (non-fatal):`, statsErr.message);
+          logger.error(`[AI Trader ${traderId}] Stats update error (non-fatal):`, statsErr.message);
         }
         
         // Emit SSE event for real-time UI updates
@@ -5086,7 +5121,7 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
         // Update portfolio cash (add back cost basis + gross P&L - close fee)
         const proceeds = Math.max(0, (entryPrice * positionQty) + grossPnl - closeFee);
         if (proceeds === 0) {
-          console.warn(`[AI Trader ${traderId}] Proceeds capped at 0 for ${symbol} (gross: ${grossPnl.toFixed(2)}, closeFee: ${closeFee.toFixed(2)})`);
+          logger.warn(`[AI Trader ${traderId}] Proceeds capped at 0 for ${symbol} (gross: ${grossPnl.toFixed(2)}, closeFee: ${closeFee.toFixed(2)})`);
         }
         await client.query(
           `UPDATE portfolios SET cash_balance = cash_balance + $1, updated_at = NOW() WHERE id = $2`,
@@ -5106,7 +5141,7 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
           await aiTrader.updatePendingOutcomes();
           await aiTrader.updateTraderStats(traderId);
         } catch (statsErr) {
-          console.error(`[AI Trader ${traderId}] Stats update error (non-fatal):`, statsErr.message);
+          logger.error(`[AI Trader ${traderId}] Stats update error (non-fatal):`, statsErr.message);
         }
         
         // Emit SSE event for real-time UI updates
@@ -5135,7 +5170,7 @@ app.post('/api/ai-traders/:id/execute', async (req, res) => {
       client.release();
     }
   } catch (e) {
-    console.error('Execute trade error:', e);
+    logger.error('Execute trade error:', e);
     res.status(500).json({ error: 'Failed to execute trade', details: e.message });
   }
 });
@@ -5182,7 +5217,7 @@ app.get('/api/ai-traders/:id/positions', async (req, res) => {
           }
         }
       } catch (e) {
-        console.warn(`Failed to fetch live quote for ${symbol}:`, e.message);
+        logger.warn(`Failed to fetch live quote for ${symbol}:`, e.message);
       }
     }
     
@@ -5269,7 +5304,7 @@ app.get('/api/ai-traders/:id/positions', async (req, res) => {
     
     res.json(enhancedPositions);
   } catch (e) {
-    console.error('Get positions error:', e);
+    logger.error('Get positions error:', e);
     res.status(500).json({ error: 'Failed to fetch positions' });
   }
 });
@@ -5497,7 +5532,7 @@ app.get('/api/ai-traders/:id/trades', async (req, res) => {
     
     res.json(trades.slice(0, parseInt(limit)));
   } catch (e) {
-    console.error('Get trades error:', e);
+    logger.error('Get trades error:', e);
     res.status(500).json({ error: 'Failed to fetch trades' });
   }
 });
@@ -5516,7 +5551,7 @@ app.get('/api/ai-traders/:id/reports', async (req, res) => {
     );
     res.json(reports);
   } catch (e) {
-    console.error('Get reports error:', e);
+    logger.error('Get reports error:', e);
     res.status(500).json({ error: 'Failed to fetch reports' });
   }
 });
@@ -5539,7 +5574,7 @@ app.get('/api/ai-traders/:id/reports/:date', async (req, res) => {
     
     res.json(report);
   } catch (e) {
-    console.error('Get report by date error:', e);
+    logger.error('Get report by date error:', e);
     res.status(500).json({ error: 'Failed to fetch report' });
   }
 });
@@ -5561,7 +5596,7 @@ app.post('/api/ai-traders/:id/reports/generate', authMiddleware, async (req, res
     
     res.json(report);
   } catch (e) {
-    console.error('Generate report error:', e);
+    logger.error('Generate report error:', e);
     res.status(500).json({ error: 'Failed to generate report' });
   }
 });
@@ -5582,7 +5617,7 @@ app.get('/api/ai-traders/:id/signal-accuracy', async (req, res) => {
     
     res.json(accuracy);
   } catch (e) {
-    console.error('Get signal accuracy error:', e);
+    logger.error('Get signal accuracy error:', e);
     res.status(500).json({ error: 'Failed to calculate signal accuracy' });
   }
 });
@@ -5601,7 +5636,7 @@ app.get('/api/ai-traders/:id/insights', async (req, res) => {
     
     res.json({ insights });
   } catch (e) {
-    console.error('Get insights error:', e);
+    logger.error('Get insights error:', e);
     res.status(500).json({ error: 'Failed to fetch insights' });
   }
 });
@@ -5622,7 +5657,7 @@ app.get('/api/ai-traders/:id/weight-history', async (req, res) => {
     
     res.json(history);
   } catch (e) {
-    console.error('Get weight history error:', e);
+    logger.error('Get weight history error:', e);
     res.status(500).json({ error: 'Failed to fetch weight history' });
   }
 });
@@ -5644,7 +5679,7 @@ app.post('/api/ai-traders/:id/adjust-weights', authMiddleware, async (req, res) 
     
     res.json(result);
   } catch (e) {
-    console.error('Adjust weights error:', e);
+    logger.error('Adjust weights error:', e);
     res.status(400).json({ error: e.message || 'Failed to adjust weights' });
   }
 });
@@ -5661,7 +5696,7 @@ app.get('/api/ai-traders/:id/training-history', async (req, res) => {
     const history = await aiTrader.getTrainingHistory(traderId, limit);
     res.json(history);
   } catch (e) {
-    console.error('Get training history error:', e);
+    logger.error('Get training history error:', e);
     res.status(500).json({ error: 'Failed to fetch training history' });
   }
 });
@@ -5677,7 +5712,7 @@ app.post('/api/ai-traders/:id/training-history', async (req, res) => {
     
     res.json(record);
   } catch (e) {
-    console.error('Record training session error:', e);
+    logger.error('Record training session error:', e);
     res.status(500).json({ error: 'Failed to record training session' });
   }
 });
@@ -5692,7 +5727,7 @@ app.get('/api/ai-traders/:id/training-stats', async (req, res) => {
     const stats = await aiTrader.getTrainingStats(traderId);
     res.json(stats);
   } catch (e) {
-    console.error('Get training stats error:', e);
+    logger.error('Get training stats error:', e);
     res.status(500).json({ error: 'Failed to fetch training stats' });
   }
 });
@@ -5720,7 +5755,7 @@ app.post('/api/ai-traders/:id/trigger-learning', authMiddleware, async (req, res
       });
     }
     
-    console.log(`[API] Manual adaptive learning trigger for trader ${traderId}`);
+    logger.info(`[API] Manual adaptive learning trigger for trader ${traderId}`);
     const result = await aiTraderLearningModule.adjustSignalWeights(traderId);
     
     res.json({
@@ -5730,7 +5765,7 @@ app.post('/api/ai-traders/:id/trigger-learning', authMiddleware, async (req, res
       ...result
     });
   } catch (e) {
-    console.error('Trigger learning error:', e);
+    logger.error('Trigger learning error:', e);
     res.status(500).json({ error: e.message || 'Failed to trigger adaptive learning' });
   }
 });
@@ -5903,7 +5938,7 @@ app.get('/api/rss/feed/:feedId', async (req, res) => {
     
     res.json(result);
   } catch (error) {
-    console.error(`RSS feed fetch error for ${feedId}:`, error.message);
+    logger.error(`RSS feed fetch error for ${feedId}:`, error.message);
     res.status(500).json({ 
       error: 'Failed to fetch RSS feed',
       feedId
@@ -5950,7 +5985,7 @@ app.get('/api/rss/all', async (req, res) => {
           feedId
         }));
       } catch (error) {
-        console.error(`RSS fetch failed for ${feedId}:`, error.message);
+        logger.error(`RSS fetch failed for ${feedId}:`, error.message);
         return [];
       }
     });
@@ -5969,7 +6004,7 @@ app.get('/api/rss/all', async (req, res) => {
     
     res.json(result);
   } catch (error) {
-    console.error('RSS all feeds fetch error:', error.message);
+    logger.error('RSS all feeds fetch error:', error.message);
     res.status(500).json({ error: 'Failed to fetch RSS feeds' });
   }
 });
@@ -6050,7 +6085,7 @@ app.get('/api/marketaux/news', async (req, res) => {
     
     res.json(normalizedData);
   } catch (error) {
-    console.error('Marketaux proxy error:', error);
+    logger.error('Marketaux proxy error:', error);
     res.status(500).json({ error: 'Failed to fetch from Marketaux' });
   }
 });
@@ -6128,7 +6163,7 @@ app.get('/api/fmp/news/stock', async (req, res) => {
     
     res.json(normalizedData);
   } catch (error) {
-    console.error('FMP proxy error:', error);
+    logger.error('FMP proxy error:', error);
     res.status(500).json({ error: 'Failed to fetch from FMP' });
   }
 });
@@ -6197,7 +6232,7 @@ app.get('/api/fmp/news/general', async (req, res) => {
     
     res.json(normalizedData);
   } catch (error) {
-    console.error('FMP general news proxy error:', error);
+    logger.error('FMP general news proxy error:', error);
     res.status(500).json({ error: 'Failed to fetch from FMP' });
   }
 });
@@ -6275,7 +6310,7 @@ app.get('/api/tiingo/news', async (req, res) => {
     
     res.json(normalizedData);
   } catch (error) {
-    console.error('Tiingo proxy error:', error);
+    logger.error('Tiingo proxy error:', error);
     res.status(500).json({ error: 'Failed to fetch from Tiingo' });
   }
 });
@@ -6355,7 +6390,7 @@ app.get('/api/mediastack/news', async (req, res) => {
     
     res.json(normalizedData);
   } catch (error) {
-    console.error('mediastack proxy error:', error);
+    logger.error('mediastack proxy error:', error);
     res.status(500).json({ error: 'Failed to fetch from mediastack' });
   }
 });
@@ -6435,7 +6470,7 @@ app.get('/api/newsdata/news', async (req, res) => {
     
     res.json(normalizedData);
   } catch (error) {
-    console.error('NewsData.io proxy error:', error);
+    logger.error('NewsData.io proxy error:', error);
     res.status(500).json({ error: 'Failed to fetch from NewsData.io' });
   }
 });
@@ -6447,7 +6482,7 @@ app.use((req, res) => {
 
 // Error handler
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
+  logger.error('Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });
 
@@ -6461,7 +6496,7 @@ const startServer = async () => {
       await aiTrader.initializeAITraderSchema();
       await stockCache.initializeCacheTable();
       await sentimentArchive.initializeSentimentArchive();
-      console.log('Database connected and initialized');
+      logger.info('Database connected and initialized');
       
       // Schedule session cleanup every hour
       setInterval(() => {
@@ -6521,17 +6556,17 @@ const startServer = async () => {
       // Start background jobs for automatic quote updates
       backgroundJobs.startBackgroundJobs();
     } catch (e) {
-      console.error('Database initialization failed:', e.message);
-      console.log('Server will start without database features');
+      logger.error('Database initialization failed:', e.message);
+      logger.info('Server will start without database features');
     }
   } else {
-    console.log('DATABASE_URL not set - running without database features');
+    logger.info('DATABASE_URL not set - running without database features');
   }
   
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`DayTrader Backend Proxy running on port ${PORT}`);
-    console.log(`Version: ${BUILD_VERSION} (${BUILD_COMMIT})`);
-    console.log(`Build time: ${BUILD_TIME}`);
+    logger.info(`DayTrader Backend Proxy running on port ${PORT}`);
+    logger.info(`Version: ${BUILD_VERSION} (${BUILD_COMMIT})`);
+    logger.info(`Build time: ${BUILD_TIME}`);
   });
 };
 

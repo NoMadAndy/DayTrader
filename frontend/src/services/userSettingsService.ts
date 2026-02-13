@@ -6,6 +6,7 @@
  */
 
 import { getAuthState, getAuthHeaders } from './authService';
+import { log } from '../utils/logger';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -91,7 +92,7 @@ export function getWatchlistSettings(): WatchlistSettings {
       return { ...DEFAULT_WATCHLIST_SETTINGS, ...parsed };
     }
   } catch {
-    console.warn('Failed to load watchlist settings');
+    log.warn('Failed to load watchlist settings');
   }
   return { ...DEFAULT_WATCHLIST_SETTINGS };
 }
@@ -103,7 +104,7 @@ export function saveWatchlistSettings(settings: WatchlistSettings): void {
   try {
     localStorage.setItem(WATCHLIST_SETTINGS_KEY, JSON.stringify(settings));
   } catch {
-    console.warn('Failed to save watchlist settings');
+    log.warn('Failed to save watchlist settings');
   }
 }
 
@@ -120,7 +121,7 @@ export function getSignalSourceSettings(): SignalSourceSettings {
       return { ...DEFAULT_SIGNAL_SOURCE_SETTINGS, ...parsed };
     }
   } catch {
-    console.warn('Failed to load signal source settings');
+    log.warn('Failed to load signal source settings');
   }
   return { ...DEFAULT_SIGNAL_SOURCE_SETTINGS };
 }
@@ -132,7 +133,7 @@ export function saveSignalSourceSettings(settings: SignalSourceSettings): void {
   try {
     localStorage.setItem(SIGNAL_SETTINGS_KEY, JSON.stringify(settings));
   } catch {
-    console.warn('Failed to save signal source settings');
+    log.warn('Failed to save signal source settings');
   }
 }
 

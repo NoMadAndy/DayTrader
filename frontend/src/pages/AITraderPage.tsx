@@ -26,6 +26,7 @@ import { useWakeLock } from '../hooks/useWakeLock';
 import { startAITrader, stopAITrader, pauseAITrader } from '../services/aiTraderService';
 import type { AITrader, AITraderDecision, AITraderEvent } from '../types/aiTrader';
 import type { PositionWithPnL } from '../types/trading';
+import { log } from '../utils/logger';
 
 // Auto-refresh interval in milliseconds
 const AUTO_REFRESH_INTERVAL_MS = 30000; // 30 seconds
@@ -344,7 +345,7 @@ export function AITraderPage() {
         setExecutedTrades(Array.isArray(tradesData) ? tradesData : []);
       }
     } catch (err) {
-      console.error('Error loading trader data:', err);
+      log.error('Error loading trader data:', err);
       if (showLoadingState) {
         setError('Failed to load AI trader data');
       }
@@ -488,7 +489,7 @@ export function AITraderPage() {
       const updated = await startAITrader(traderId);
       setTrader(updated);
     } catch (err) {
-      console.error('Error starting trader:', err);
+      log.error('Error starting trader:', err);
     }
   };
   
@@ -500,7 +501,7 @@ export function AITraderPage() {
       // Clear SSE events after stopping
       clearEvents();
     } catch (err) {
-      console.error('Error stopping trader:', err);
+      log.error('Error stopping trader:', err);
     }
   };
   
@@ -510,7 +511,7 @@ export function AITraderPage() {
       const updated = await pauseAITrader(traderId);
       setTrader(updated);
     } catch (err) {
-      console.error('Error pausing trader:', err);
+      log.error('Error pausing trader:', err);
     }
   };
   
@@ -1082,22 +1083,22 @@ export function AITraderPage() {
                     {positions.map((position) => {
                       const pnlPercent = position.unrealizedPnlPercent || 0;
                       const pnl = position.unrealizedPnl || 0;
-                      const hoursHeld = (position as any).hoursHeld || 0;
-                      const daysHeld = (position as any).daysHeld || 0;
-                      const distanceToSL = (position as any).distanceToStopLoss;
-                      const distanceToTP = (position as any).distanceToTakeProfit;
+                      const hoursHeld = position.hoursHeld || 0;
+                      const daysHeld = position.daysHeld || 0;
+                      const distanceToSL = position.distanceToStopLoss;
+                      const distanceToTP = position.distanceToTakeProfit;
                       const currentPrice = position.currentPrice || position.entryPrice;
-                      const totalFeesPaid = (position as any).totalFeesPaid || 0;
-                      const breakEvenPrice = (position as any).breakEvenPrice || null;
+                      const totalFeesPaid = position.totalFeesPaid || 0;
+                      const breakEvenPrice = position.breakEvenPrice || null;
                       const holdLabel = daysHeld > 0 ? `${daysHeld}d` : `${hoursHeld}h`;
-                      const dailyPnl = (position as any).dailyPnl;
-                      const dailyPnlPercent = (position as any).dailyPnlPercent;
-                      const marketState = (position as any).marketState || 'UNKNOWN';
-                      const priceChange = (position as any).priceChange;
-                      const priceChangePercent = (position as any).priceChangePercent;
-                      const notionalValue = (position as any).notionalValue || (currentPrice * position.quantity);
-                      const investedValue = (position as any).investedValue || (position.entryPrice * position.quantity);
-                      const openFee = (position as any).openFee || 0;
+                      const dailyPnl = position.dailyPnl;
+                      const dailyPnlPercent = position.dailyPnlPercent;
+                      const marketState = position.marketState || 'UNKNOWN';
+                      const priceChange = position.priceChange;
+                      const priceChangePercent = position.priceChangePercent;
+                      const notionalValue = position.notionalValue || (currentPrice * position.quantity);
+                      const investedValue = position.investedValue || (position.entryPrice * position.quantity);
+                      const openFee = position.openFee || 0;
                       const isExpanded = expandedPositionId === position.id;
                       const pnlColor = pnlPercent >= 0 ? 'text-green-400' : 'text-red-400';
                       
@@ -1118,11 +1119,11 @@ export function AITraderPage() {
                             >
                               {position.side === 'short' ? '🔴' : '🟢'} {position.symbol}
                             </button>
-                            {(position as any).productType === 'warrant' && (
+                            {position.productType === 'warrant' && (
                               <span className={`px-1 py-0.5 rounded text-[9px] font-bold ${
-                                (position as any).optionType === 'call' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                                position.optionType === 'call' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
                               }`}>
-                                {(position as any).optionType === 'call' ? 'C' : 'P'}
+                                {position.optionType === 'call' ? 'C' : 'P'}
                               </span>
                             )}
                             <span className="text-gray-500">{position.quantity}x</span>
@@ -1283,44 +1284,44 @@ export function AITraderPage() {
                               </div>
                               
                               {/* Warrant Info */}
-                              {(position as any).productType === 'warrant' && (
+                              {position.productType === 'warrant' && (
                                 <div className="bg-amber-500/10 border border-amber-500/30 rounded p-1.5 mt-1">
                                   <div className="flex items-center gap-1.5 mb-1">
                                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                      (position as any).optionType === 'call' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                                      position.optionType === 'call' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
                                     }`}>
-                                      {(position as any).optionType === 'call' ? 'CALL' : 'PUT'}
+                                      {position.optionType === 'call' ? 'CALL' : 'PUT'}
                                     </span>
                                     <span className="text-[10px] text-amber-400">
-                                      Strike ${(position as any).strikePrice?.toFixed(2) || '—'}
+                                      Strike ${position.strikePrice?.toFixed(2) || '—'}
                                     </span>
                                   </div>
                                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 text-[10px]">
-                                    {(position as any).greeks && (
+                                    {position.greeks && (
                                       <>
                                         <div>
                                           <span className="text-gray-500">Δ</span>
-                                          <span className="text-amber-300 ml-1">{(position as any).greeks.delta?.toFixed(3)}</span>
+                                          <span className="text-amber-300 ml-1">{position.greeks.delta?.toFixed(3)}</span>
                                         </div>
                                         <div>
                                           <span className="text-gray-500">Θ</span>
-                                          <span className="text-amber-300 ml-1">{(position as any).greeks.theta?.toFixed(3)}</span>
+                                          <span className="text-amber-300 ml-1">{position.greeks.theta?.toFixed(3)}</span>
                                         </div>
                                         <div>
                                           <span className="text-gray-500">V</span>
-                                          <span className="text-amber-300 ml-1">{(position as any).greeks.vega?.toFixed(3)}</span>
+                                          <span className="text-amber-300 ml-1">{position.greeks.vega?.toFixed(3)}</span>
                                         </div>
                                       </>
                                     )}
                                   </div>
-                                  {(position as any).expiryDate && (
+                                  {position.expiryDate && (
                                     <div className="text-[10px] mt-0.5">
                                       <span className="text-gray-500">Verfall </span>
                                       <span className={`${
-                                        new Date((position as any).expiryDate).getTime() - Date.now() < 7 * 86400000
+                                        new Date(position.expiryDate).getTime() - Date.now() < 7 * 86400000
                                           ? 'text-red-400' : 'text-amber-300'
                                       }`}>
-                                        {new Date((position as any).expiryDate).toLocaleDateString('de-DE')}
+                                        {new Date(position.expiryDate).toLocaleDateString('de-DE')}
                                       </span>
                                     </div>
                                   )}

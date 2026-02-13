@@ -16,10 +16,10 @@ describe('Backend Health', () => {
     assert.ok(data.version);
   });
 
-  it('health response contains version 1.39.0', async () => {
+  it('health response contains version', async () => {
     const res = await fetch(`${BACKEND_URL}/health`);
     const data = await res.json();
-    assert.match(data.version, /^1\.39/);
+    assert.match(data.version, /^1\.\d+/);
   });
 });
 

@@ -11,6 +11,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { log } from '../utils/logger';
 
 interface LogEntry {
   timestamp: string;
@@ -59,7 +60,7 @@ export function TrainingConsole({ agentName, isTraining, progress, onClose }: Tr
         }
       }
     } catch (error) {
-      console.error('Failed to fetch training logs:', error);
+      log.error('Failed to fetch training logs:', error);
     }
   }, [agentName]);
 

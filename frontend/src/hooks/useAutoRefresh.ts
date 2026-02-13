@@ -18,6 +18,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useDataService } from './useDataService';
 import type { QuoteData, DataSourceType } from '../services/types';
 import { PROVIDER_RATE_LIMITS } from '../services/rateLimiter';
+import { log } from '../utils/logger';
 
 // Minimum and maximum refresh intervals (in ms)
 const MIN_REFRESH_INTERVAL = 15000;  // 15 seconds minimum
@@ -330,7 +331,7 @@ export function useServiceWorker() {
   
   useEffect(() => {
     if (!('serviceWorker' in navigator)) {
-      console.log('[SW] Service Worker not supported');
+      log.info('[SW] Service Worker not supported');
       return;
     }
     
@@ -339,7 +340,7 @@ export function useServiceWorker() {
     // Register Service Worker
     navigator.serviceWorker.register('/sw.js')
       .then(async (reg) => {
-        console.log('[SW] Service Worker registered:', reg.scope);
+        log.info('[SW] Service Worker registered:', reg.scope);
         setRegistration(reg);
         
         // Check for Periodic Background Sync support
@@ -353,34 +354,34 @@ export function useServiceWorker() {
               setPeriodicSyncSupported(true);
               
               // Register periodic sync (every 15 minutes minimum)
-              await (reg as any).periodicSync.register('update-quotes', {
+              await reg.periodicSync!.register('update-quotes', {
                 minInterval: 15 * 60 * 1000, // 15 minutes
               });
-              console.log('[SW] Periodic sync registered');
+              log.info('[SW] Periodic sync registered');
             }
           } catch (e) {
-            console.log('[SW] Periodic sync not available:', e);
+            log.info('[SW] Periodic sync not available:', e);
           }
         }
         
         // Register regular background sync
         if ('sync' in reg) {
           try {
-            await (reg as any).sync.register('update-quotes');
-            console.log('[SW] Background sync registered');
+            await reg.sync!.register('update-quotes');
+            log.info('[SW] Background sync registered');
           } catch (e) {
-            console.log('[SW] Background sync not available:', e);
+            log.info('[SW] Background sync not available:', e);
           }
         }
       })
       .catch((err) => {
-        console.error('[SW] Service Worker registration failed:', err);
+        log.error('[SW] Service Worker registration failed:', err);
       });
   }, []);
   
   const triggerSync = useCallback(() => {
     if (registration && 'sync' in registration) {
-      (registration as any).sync.register('update-quotes').catch(console.error);
+      registration.sync!.register('update-quotes').catch(log.error);
     } else if (navigator.serviceWorker.controller) {
       navigator.serviceWorker.controller.postMessage({ type: 'MANUAL_SYNC' });
     }

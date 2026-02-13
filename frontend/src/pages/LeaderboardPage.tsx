@@ -14,6 +14,7 @@ import {
 } from '../services/tradingService';
 import { useSettings } from '../contexts/SettingsContext';
 import type { LeaderboardEntry, UserRank } from '../types/trading';
+import { log } from '../utils/logger';
 
 type TimeframeType = 'all' | 'month' | 'week' | 'day';
 type FilterType = 'all' | 'humans' | 'ai';
@@ -47,7 +48,7 @@ export function LeaderboardPage() {
         setUserRank(rankData);
       } catch (e) {
         setError(t('leaderboard.loadError'));
-        console.error(e);
+        log.error(e);
       } finally {
         setLoading(false);
       }

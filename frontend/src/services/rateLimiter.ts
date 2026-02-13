@@ -16,6 +16,7 @@
  */
 
 import type { DataSourceType } from './types';
+import { log } from '../utils/logger';
 
 // Rate limit configurations per provider
 export interface RateLimitConfig {
@@ -173,7 +174,7 @@ export class RateLimiter {
         });
       }
     } catch (e) {
-      console.warn('Failed to load rate limiter stats:', e);
+      log.warn('Failed to load rate limiter stats:', e);
     }
 
     // Load news provider stats
@@ -197,7 +198,7 @@ export class RateLimiter {
         });
       }
     } catch (e) {
-      console.warn('Failed to load news rate limiter stats:', e);
+      log.warn('Failed to load news rate limiter stats:', e);
     }
 
     // Initialize missing providers
@@ -226,7 +227,7 @@ export class RateLimiter {
       });
       localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
     } catch (e) {
-      console.warn('Failed to save rate limiter stats:', e);
+      log.warn('Failed to save rate limiter stats:', e);
     }
 
     // Save news provider stats
@@ -237,7 +238,7 @@ export class RateLimiter {
       });
       localStorage.setItem(NEWS_STORAGE_KEY, JSON.stringify(obj));
     } catch (e) {
-      console.warn('Failed to save news rate limiter stats:', e);
+      log.warn('Failed to save news rate limiter stats:', e);
     }
   }
 
@@ -300,7 +301,7 @@ export class RateLimiter {
 
       // Check daily limit
       if (stats.requestsToday >= config.requestsPerDay) {
-        console.warn(`${source}: Daily limit reached (${config.requestsPerDay})`);
+        log.warn(`${source}: Daily limit reached (${config.requestsPerDay})`);
         return false;
       }
 
@@ -312,7 +313,7 @@ export class RateLimiter {
 
       // Check per-minute limit
       if (stats.requestsThisMinute >= config.requestsPerMinute) {
-        console.warn(`${source}: Minute limit reached (${config.requestsPerMinute})`);
+        log.warn(`${source}: Minute limit reached (${config.requestsPerMinute})`);
         return false;
       }
 
@@ -327,7 +328,7 @@ export class RateLimiter {
 
     // Check daily limit
     if (stats.requestsToday >= config.requestsPerDay) {
-      console.warn(`${source}: Daily limit reached (${config.requestsPerDay})`);
+      log.warn(`${source}: Daily limit reached (${config.requestsPerDay})`);
       return false;
     }
 
@@ -339,14 +340,14 @@ export class RateLimiter {
 
     // Check per-minute limit
     if (stats.requestsThisMinute >= config.requestsPerMinute) {
-      console.warn(`${source}: Minute limit reached (${config.requestsPerMinute})`);
+      log.warn(`${source}: Minute limit reached (${config.requestsPerMinute})`);
       return false;
     }
 
     // Check cooldown
     if (now - stats.lastRequest < config.cooldownMs) {
       const waitTime = config.cooldownMs - (now - stats.lastRequest);
-      console.warn(`${source}: Cooldown active, wait ${waitTime}ms`);
+      log.warn(`${source}: Cooldown active, wait ${waitTime}ms`);
       return false;
     }
 
@@ -517,7 +518,7 @@ export class RateLimiter {
     // Check if identical request is already pending
     const pending = this.pendingRequests.get(key) as PendingRequest<T> | undefined;
     if (pending && Date.now() - pending.timestamp < 5000) {
-      console.log(`Deduplicating request: ${key}`);
+      log.info(`Deduplicating request: ${key}`);
       return pending.promise;
     }
 

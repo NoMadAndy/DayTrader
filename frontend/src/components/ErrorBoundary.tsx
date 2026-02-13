@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { log } from '../utils/logger';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -25,7 +26,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    console.error('[ErrorBoundary] Unhandled error:', error, errorInfo.componentStack);
+    log.error('[ErrorBoundary] Unhandled error:', error, errorInfo.componentStack);
   }
 
   private handleReload = (): void => {

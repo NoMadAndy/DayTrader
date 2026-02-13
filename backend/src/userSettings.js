@@ -6,6 +6,7 @@
  */
 
 import { query, getClient } from './db.js';
+import logger from './logger.js';
 
 /**
  * Get user settings
@@ -54,7 +55,7 @@ export async function getUserSettings(userId) {
       updatedAt: settings.updated_at,
     };
   } catch (e) {
-    console.error('Get user settings error:', e);
+    logger.error('Get user settings error:', e);
     throw e;
   }
 }
@@ -129,7 +130,7 @@ export async function updateUserSettings(userId, updates) {
       updatedAt: settings.updated_at,
     };
   } catch (e) {
-    console.error('Update user settings error:', e);
+    logger.error('Update user settings error:', e);
     throw e;
   }
 }
@@ -155,7 +156,7 @@ export async function getCustomSymbols(userId) {
       isCustom: true,
     }));
   } catch (e) {
-    console.error('Get custom symbols error:', e);
+    logger.error('Get custom symbols error:', e);
     throw e;
   }
 }
@@ -203,7 +204,7 @@ export async function addCustomSymbol(userId, symbol, name) {
       },
     };
   } catch (e) {
-    console.error('Add custom symbol error:', e);
+    logger.error('Add custom symbol error:', e);
     return { success: false, error: 'Failed to add symbol' };
   }
 }
@@ -222,7 +223,7 @@ export async function removeCustomSymbol(userId, symbol) {
     );
     return result.rowCount > 0;
   } catch (e) {
-    console.error('Remove custom symbol error:', e);
+    logger.error('Remove custom symbol error:', e);
     return false;
   }
 }

@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from 'react';
 import { getAITraderInsights } from '../services/aiTraderService';
+import { log } from '../utils/logger';
 
 interface AITraderInsightsProps {
   traderId: number;
@@ -22,7 +23,7 @@ export default function AITraderInsights({ traderId }: AITraderInsightsProps) {
         const data = await getAITraderInsights(traderId);
         setInsights(data.insights);
       } catch (error) {
-        console.error('Error fetching insights:', error);
+        log.error('Error fetching insights:', error);
       } finally {
         setLoading(false);
       }

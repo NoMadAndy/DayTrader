@@ -32,6 +32,7 @@ import { MediastackProvider } from './mediastackProvider';
 import { NewsdataProvider } from './newsdataProvider';
 import { getRSSProvider, type RSSProvider } from './rssProvider';
 import { getRateLimiter, PROVIDER_RATE_LIMITS, NEWS_PROVIDER_RATE_LIMITS, type RateLimiter, type NewsProviderType } from './rateLimiter';
+import { log } from '../utils/logger';
 
 // Stock name mappings for display
 const STOCK_NAMES: Record<string, string> = {
@@ -249,7 +250,7 @@ export class DataService {
     }
 
     if (!this.rateLimiter.canMakeRequest(source)) {
-      console.warn(`Rate limit reached for ${source}, will try fallback`);
+      log.warn(`Rate limit reached for ${source}, will try fallback`);
       return false;
     }
 
@@ -355,7 +356,7 @@ export class DataService {
     // Check cache first (using rate limiter's intelligent cache)
     const cached = this.rateLimiter.getCached<QuoteData>(cacheKey);
     if (cached) {
-      console.log(`Cache hit for quote: ${symbol}`);
+      log.info(`Cache hit for quote: ${symbol}`);
       return cached;
     }
 
@@ -377,7 +378,7 @@ export class DataService {
               return quote;
             }
           } catch (error) {
-            console.warn(`${source} quote fetch failed:`, error);
+            log.warn(`${source} quote fetch failed:`, error);
           }
         }
       }
@@ -395,7 +396,7 @@ export class DataService {
     // Historical data can be cached longer
     const cached = this.rateLimiter.getCached<StockData>(cacheKey);
     if (cached) {
-      console.log(`Cache hit for candles: ${symbol}`);
+      log.info(`Cache hit for candles: ${symbol}`);
       return cached;
     }
 
@@ -423,13 +424,13 @@ export class DataService {
               return stockData;
             }
           } catch (error) {
-            console.warn(`${source} candle fetch failed:`, error);
+            log.warn(`${source} candle fetch failed:`, error);
           }
         }
       }
 
       // All providers failed - return null (no fake data!)
-      console.error('All providers failed for', symbol);
+      log.error('All providers failed for', symbol);
       return null;
     });
   }
@@ -443,7 +444,7 @@ export class DataService {
     // News can be cached longer (5 minutes)
     const cached = this.rateLimiter.getCached<NewsItem[]>(cacheKey);
     if (cached) {
-      console.log(`Cache hit for news: ${symbol}`);
+      log.info(`Cache hit for news: ${symbol}`);
       return cached;
     }
 
@@ -457,7 +458,7 @@ export class DataService {
         newsPromises.push(
           finnhub.fetchNews(symbol)
             .then(news => { allNews.push(...news); })
-            .catch(error => console.warn('Finnhub news fetch failed:', error))
+            .catch(error => log.warn('Finnhub news fetch failed:', error))
         );
       }
 
@@ -471,7 +472,7 @@ export class DataService {
                 this.rateLimiter.recordRequest('newsApi');
                 allNews.push(...news); 
               })
-              .catch(error => console.warn('NewsAPI fetch failed:', error))
+              .catch(error => log.warn('NewsAPI fetch failed:', error))
           );
         }
       }
@@ -486,7 +487,7 @@ export class DataService {
                 this.rateLimiter.recordRequest('marketaux');
                 allNews.push(...news); 
               })
-              .catch(error => console.warn('Marketaux fetch failed:', error))
+              .catch(error => log.warn('Marketaux fetch failed:', error))
           );
         }
       }
@@ -501,7 +502,7 @@ export class DataService {
                 this.rateLimiter.recordRequest('fmp');
                 allNews.push(...news); 
               })
-              .catch(error => console.warn('FMP fetch failed:', error))
+              .catch(error => log.warn('FMP fetch failed:', error))
           );
         }
       }
@@ -516,7 +517,7 @@ export class DataService {
                 this.rateLimiter.recordRequest('tiingo');
                 allNews.push(...news); 
               })
-              .catch(error => console.warn('Tiingo fetch failed:', error))
+              .catch(error => log.warn('Tiingo fetch failed:', error))
           );
         }
       }
@@ -531,7 +532,7 @@ export class DataService {
                 this.rateLimiter.recordRequest('mediastack');
                 allNews.push(...news); 
               })
-              .catch(error => console.warn('mediastack fetch failed:', error))
+              .catch(error => log.warn('mediastack fetch failed:', error))
           );
         }
       }
@@ -546,7 +547,7 @@ export class DataService {
                 this.rateLimiter.recordRequest('newsdata');
                 allNews.push(...news); 
               })
-            .catch(error => console.warn('NewsData.io fetch failed:', error))
+            .catch(error => log.warn('NewsData.io fetch failed:', error))
         );
         }
       }
@@ -568,7 +569,7 @@ export class DataService {
                 }));
                 allNews.push(...rssNews.slice(0, 10)); // Limit RSS items
               })
-              .catch(error => console.warn('RSS feeds fetch failed:', error))
+              .catch(error => log.warn('RSS feeds fetch failed:', error))
           );
         }
       }
@@ -618,7 +619,7 @@ export class DataService {
             return results;
           }
         } catch (error) {
-          console.warn(`${source} search failed:`, error);
+          log.warn(`${source} search failed:`, error);
         }
       }
     }
