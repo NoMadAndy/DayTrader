@@ -90,6 +90,10 @@ export interface AgentConfig {
   learning_rate: number;
   gamma: number;
   ent_coef: number;
+  // Short Selling & Slippage
+  enable_short_selling?: boolean;
+  slippage_model?: 'none' | 'fixed' | 'proportional' | 'volume';
+  slippage_bps?: number;
   // Transformer Architecture Settings
   use_transformer_policy?: boolean;
   transformer_d_model?: number;
@@ -116,6 +120,12 @@ export interface AgentStatus {
     mean_return_pct: number;
     max_return_pct: number;
     min_return_pct: number;
+    mean_sharpe_ratio?: number;
+    mean_sortino_ratio?: number;
+    mean_max_drawdown?: number;
+    mean_win_rate?: number;
+    mean_profit_factor?: number;
+    mean_alpha_pct?: number;
   };
 }
 
@@ -184,6 +194,60 @@ export interface MultiSignalResponse {
   };
   agents_queried: number;
   agents_responded: number;
+}
+
+// ============== Backtesting Types ==============
+
+export interface BacktestRequest {
+  agent_name: string;
+  symbol?: string;
+  days?: number;
+  enable_short_selling?: boolean;
+  slippage_model?: 'none' | 'fixed' | 'proportional' | 'volume';
+  slippage_bps?: number;
+}
+
+export interface BacktestTradeEntry {
+  step: number;
+  action: string;
+  shares: number;
+  price: number;
+  value: number;
+  fees: number;
+  slippage: number;
+  portfolio_value: number;
+}
+
+export interface BacktestResult {
+  agent_name: string;
+  symbol?: string;
+  days?: number;
+  total_steps: number;
+  total_reward: number;
+  final_portfolio_value: number;
+  return_pct: number;
+  total_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+  win_rate: number;
+  max_drawdown: number;
+  sharpe_ratio: number;
+  sortino_ratio: number;
+  calmar_ratio: number;
+  profit_factor: number;
+  avg_win: number;
+  avg_loss: number;
+  total_fees_paid: number;
+  fee_impact_pct: number;
+  benchmark_return_pct: number;
+  alpha_pct: number;
+  slippage_model: string;
+  slippage_bps: number;
+  short_selling_enabled: boolean;
+  equity_curve: Array<{ step: number; portfolio_value: number; return_pct: number }>;
+  equity_curve_full_length: number;
+  trade_history: BacktestTradeEntry[];
+  actions_summary: Record<string, number>;
 }
 
 export interface RLServiceHealth {
@@ -460,6 +524,28 @@ class RLTradingService {
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.detail || 'Failed to get signal explanation');
+    }
+    return response.json();
+  }
+
+  // ============== Backtesting ==============
+
+  /**
+   * Run a backtest on a trained agent
+   */
+  async backtestAgent(request: BacktestRequest): Promise<BacktestResult> {
+    const response = await fetch(`${RL_API_BASE}/backtest`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Backtest failed');
     }
     return response.json();
   }

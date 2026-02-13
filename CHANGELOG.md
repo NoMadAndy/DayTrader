@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Slippage-Modellierung** — 4 realistische Slippage-Modelle: `none`, `fixed`, `proportional` (mit Random-Jitter), `volume` (Sqrt-Market-Impact)
 - **Konfigurierbares Reward-System** — 18 individuell anpassbare Reward-Gewichte (Sharpe-basiert, Drawdown-Penalty, Alpha-Bonus, Haltedauer-Alignment)
 
+### Added (Frontend)
+- **Backtest-Modal für RL-Agents** — 📊-Button bei trainierten Agents öffnet Backtest-Dialog mit Symbol, Tage, Slippage-Modell, Short Selling Konfiguration
+- **Backtest-Ergebnis-Ansicht** — Equity Curve (SVG-Chart), Summary Cards (Return, Alpha, Sharpe, Max DD), Detail-Metriken (Sortino, Calmar, Profit Factor, Win Rate, Gebühren), Aktionen-Verteilung
+- **Short Selling & Slippage im Create-Form** — Neue Sektion beim Agent-Erstellen: Short Selling Toggle, Slippage-Modell Auswahl, Slippage BPS
+- **Erweiterte Agent-Detail-Metriken** — Sharpe Ratio, Max Drawdown, Win Rate, Alpha direkt in der Agent-Übersicht sichtbar
+
 ### Changed
 - **Trading Environment v2** — Komplett neu geschriebenes Gymnasium-Environment mit Benchmark-Tracking, SL/TP für Long und Short, erweiterte Portfolio-Features (7 statt 5)
 - **Out-of-Sample Evaluation** — Nach jedem Training automatische OOS-Bewertung auf den letzten 20% der Daten mit Overfitting-Warnung

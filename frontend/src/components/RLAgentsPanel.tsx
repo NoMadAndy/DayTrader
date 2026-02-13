@@ -21,6 +21,7 @@ import {
   type RiskProfile,
   type TradingStyle,
   type BrokerProfile,
+  type BacktestResult,
 } from '../services/rlTradingService';
 import { 
   getCustomSymbols, 
@@ -54,6 +55,9 @@ const DEFAULT_CONFIG: Partial<AgentConfig> = {
   learning_rate: 0.0003,
   gamma: 0.99,
   ent_coef: 0.01,
+  enable_short_selling: false,
+  slippage_model: 'proportional',
+  slippage_bps: 5.0,
 };
 
 export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
@@ -86,6 +90,16 @@ export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
   const [formDays, setFormDays] = useState(365);
   const [formTimesteps, setFormTimesteps] = useState(100000);
   const [showTransformerOptions, setShowTransformerOptions] = useState(false);
+  
+  // Backtest state
+  const [backtestAgent, setBacktestAgent] = useState<string | null>(null);
+  const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
+  const [backtestLoading, setBacktestLoading] = useState(false);
+  const [backtestSymbol, setBacktestSymbol] = useState('AAPL');
+  const [backtestDays, setBacktestDays] = useState(365);
+  const [backtestShortSelling, setBacktestShortSelling] = useState(false);
+  const [backtestSlippageModel, setBacktestSlippageModel] = useState<'none'|'fixed'|'proportional'|'volume'>('proportional');
+  const [backtestSlippageBps, setBacktestSlippageBps] = useState(5.0);
   
   // Training state
   const [trainingStatus, setTrainingStatus] = useState<Record<string, TrainingStatus>>({});
@@ -369,6 +383,28 @@ export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete agent');
+    }
+  };
+
+  const handleRunBacktest = async () => {
+    if (!backtestAgent) return;
+    setBacktestLoading(true);
+    setBacktestResult(null);
+    setError(null);
+    try {
+      const result = await rlTradingService.backtestAgent({
+        agent_name: backtestAgent,
+        symbol: backtestSymbol,
+        days: backtestDays,
+        enable_short_selling: backtestShortSelling,
+        slippage_model: backtestSlippageModel,
+        slippage_bps: backtestSlippageBps,
+      });
+      setBacktestResult(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Backtest failed');
+    } finally {
+      setBacktestLoading(false);
     }
   };
 
@@ -781,6 +817,53 @@ export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
             </div>
           </div>
           
+          {/* Short Selling & Slippage Section */}
+          <div className="mt-4 p-4 bg-slate-800 rounded-lg border border-slate-600">
+            <h5 className="text-white font-medium mb-3">📉 Short Selling & Slippage</h5>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="enable_short_selling"
+                  checked={formConfig.enable_short_selling || false}
+                  onChange={(e) => setFormConfig(prev => ({ ...prev, enable_short_selling: e.target.checked }))}
+                  className="w-4 h-4 rounded bg-slate-600 border-slate-500 text-blue-600"
+                />
+                <label htmlFor="enable_short_selling" className="text-sm text-slate-300 cursor-pointer">
+                  Short Selling erlauben
+                </label>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Slippage-Modell</label>
+                <select
+                  value={formConfig.slippage_model || 'proportional'}
+                  onChange={(e) => setFormConfig(prev => ({ ...prev, slippage_model: e.target.value as AgentConfig['slippage_model'] }))}
+                  className="w-full bg-slate-600 text-white rounded px-3 py-2 text-sm"
+                >
+                  <option value="none">Kein Slippage</option>
+                  <option value="fixed">Fixed (BPS)</option>
+                  <option value="proportional">Proportional + Jitter</option>
+                  <option value="volume">Volume Impact (√)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Slippage (BPS)</label>
+                <input
+                  type="number"
+                  value={formConfig.slippage_bps ?? 5.0}
+                  onChange={(e) => setFormConfig(prev => ({ ...prev, slippage_bps: Number(e.target.value) }))}
+                  className="w-full bg-slate-600 text-white rounded px-3 py-2 text-sm"
+                  min="0"
+                  max="50"
+                  step="0.5"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 mt-2">
+              Slippage simuliert realistische Ausführungskosten. 5 BPS = 0,05% pro Trade.
+            </p>
+          </div>
+
           {/* Transformer Architecture Section */}
           <div className="mt-4 p-4 bg-slate-800 rounded-lg border border-slate-600">
             <div className="flex items-center justify-between mb-3">
@@ -978,6 +1061,19 @@ export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
                   >
                     🗑️
                   </button>
+                  {agent.is_trained && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setBacktestAgent(agent.name);
+                        setBacktestResult(null);
+                      }}
+                      className="text-slate-400 hover:text-blue-400 ml-1"
+                      title="Backtest agent"
+                    >
+                      📊
+                    </button>
+                  )}
                 </div>
                 
                 {/* Training Progress */}
@@ -1070,6 +1166,38 @@ export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
                               {formatNumber(agent.performance_metrics.min_return_pct)}%
                             </span>
                           </div>
+                          {agent.performance_metrics.mean_sharpe_ratio !== undefined && (
+                            <div>
+                              <span className="text-slate-400">Sharpe:</span>
+                              <span className={`ml-1 ${(agent.performance_metrics.mean_sharpe_ratio ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {formatNumber(agent.performance_metrics.mean_sharpe_ratio)}
+                              </span>
+                            </div>
+                          )}
+                          {agent.performance_metrics.mean_max_drawdown !== undefined && (
+                            <div>
+                              <span className="text-slate-400">Max DD:</span>
+                              <span className="text-red-400 ml-1">
+                                {formatNumber((agent.performance_metrics.mean_max_drawdown ?? 0) * 100)}%
+                              </span>
+                            </div>
+                          )}
+                          {agent.performance_metrics.mean_win_rate !== undefined && (
+                            <div>
+                              <span className="text-slate-400">Win Rate:</span>
+                              <span className="text-white ml-1">
+                                {formatNumber((agent.performance_metrics.mean_win_rate ?? 0) * 100)}%
+                              </span>
+                            </div>
+                          )}
+                          {agent.performance_metrics.mean_alpha_pct !== undefined && (
+                            <div>
+                              <span className="text-slate-400">Alpha:</span>
+                              <span className={`ml-1 ${(agent.performance_metrics.mean_alpha_pct ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {formatNumber(agent.performance_metrics.mean_alpha_pct)}%
+                              </span>
+                            </div>
+                          )}
                         </>
                       )}
                     </div>
@@ -1085,6 +1213,258 @@ export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
           })
         )}
       </div>
+
+      {/* Backtest Modal */}
+      {backtestAgent && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => { setBacktestAgent(null); setBacktestResult(null); }}>
+          <div className="bg-slate-800 rounded-xl w-full max-w-4xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="p-5 border-b border-slate-700 flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-semibold text-white">📊 Backtest: {backtestAgent}</h3>
+                <p className="text-sm text-slate-400">RL-Agent auf historischen Daten simulieren</p>
+              </div>
+              <button onClick={() => { setBacktestAgent(null); setBacktestResult(null); }} className="text-slate-400 hover:text-white text-xl">✕</button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              {/* Config */}
+              {!backtestResult && (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Symbol</label>
+                    <input
+                      type="text"
+                      value={backtestSymbol}
+                      onChange={(e) => setBacktestSymbol(e.target.value.toUpperCase())}
+                      className="w-full bg-slate-700 text-white rounded px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Tage</label>
+                    <input
+                      type="number"
+                      value={backtestDays}
+                      onChange={(e) => setBacktestDays(Number(e.target.value))}
+                      className="w-full bg-slate-700 text-white rounded px-3 py-2 text-sm"
+                      min="30" max="3650"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Slippage-Modell</label>
+                    <select
+                      value={backtestSlippageModel}
+                      onChange={(e) => setBacktestSlippageModel(e.target.value as 'none'|'fixed'|'proportional'|'volume')}
+                      className="w-full bg-slate-700 text-white rounded px-3 py-2 text-sm"
+                    >
+                      <option value="none">Kein Slippage</option>
+                      <option value="fixed">Fixed</option>
+                      <option value="proportional">Proportional</option>
+                      <option value="volume">Volume Impact</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Slippage (BPS)</label>
+                    <input
+                      type="number"
+                      value={backtestSlippageBps}
+                      onChange={(e) => setBacktestSlippageBps(Number(e.target.value))}
+                      className="w-full bg-slate-700 text-white rounded px-3 py-2 text-sm"
+                      min="0" max="50" step="0.5"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={backtestShortSelling}
+                        onChange={(e) => setBacktestShortSelling(e.target.checked)}
+                        className="w-4 h-4 rounded bg-slate-600 text-blue-600"
+                      />
+                      <span className="text-sm text-slate-300">Short Selling</span>
+                    </label>
+                  </div>
+                  <div className="flex items-end">
+                    <button
+                      onClick={handleRunBacktest}
+                      disabled={backtestLoading}
+                      className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+                    >
+                      {backtestLoading ? '⏳ Läuft...' : '▶ Backtest starten'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Loading */}
+              {backtestLoading && (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500"></div>
+                  <span className="ml-3 text-slate-400">Agent backtested auf {backtestSymbol}...</span>
+                </div>
+              )}
+
+              {/* Results */}
+              {backtestResult && (
+                <div className="space-y-4">
+                  {/* Back button */}
+                  <button
+                    onClick={() => setBacktestResult(null)}
+                    className="text-sm text-blue-400 hover:text-blue-300"
+                  >
+                    ← Neuer Backtest
+                  </button>
+
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="bg-slate-700 rounded-lg p-3 text-center">
+                      <div className="text-xs text-slate-400">Return</div>
+                      <div className={`text-lg font-bold ${backtestResult.return_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {backtestResult.return_pct >= 0 ? '+' : ''}{formatNumber(backtestResult.return_pct)}%
+                      </div>
+                    </div>
+                    <div className="bg-slate-700 rounded-lg p-3 text-center">
+                      <div className="text-xs text-slate-400">Alpha vs B&H</div>
+                      <div className={`text-lg font-bold ${backtestResult.alpha_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {backtestResult.alpha_pct >= 0 ? '+' : ''}{formatNumber(backtestResult.alpha_pct)}%
+                      </div>
+                    </div>
+                    <div className="bg-slate-700 rounded-lg p-3 text-center">
+                      <div className="text-xs text-slate-400">Sharpe Ratio</div>
+                      <div className={`text-lg font-bold ${backtestResult.sharpe_ratio >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {formatNumber(backtestResult.sharpe_ratio)}
+                      </div>
+                    </div>
+                    <div className="bg-slate-700 rounded-lg p-3 text-center">
+                      <div className="text-xs text-slate-400">Max Drawdown</div>
+                      <div className="text-lg font-bold text-red-400">
+                        {formatNumber(backtestResult.max_drawdown * 100)}%
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Equity Curve */}
+                  {backtestResult.equity_curve && backtestResult.equity_curve.length > 0 && (
+                    <div className="bg-slate-700 rounded-lg p-4">
+                      <h4 className="text-white font-medium mb-3">Equity Curve</h4>
+                      <div className="w-full" style={{ height: 200 }}>
+                        <svg viewBox="0 0 600 200" className="w-full h-full" preserveAspectRatio="none">
+                          {(() => {
+                            const curve = backtestResult.equity_curve;
+                            const minV = Math.min(...curve.map(p => p.portfolio_value));
+                            const maxV = Math.max(...curve.map(p => p.portfolio_value));
+                            const range = maxV - minV || 1;
+                            const pad = 10;
+                            const w = 600 - pad * 2;
+                            const h = 200 - pad * 2;
+                            const points = curve.map((p, i) => {
+                              const x = pad + (i / (curve.length - 1)) * w;
+                              const y = pad + h - ((p.portfolio_value - minV) / range) * h;
+                              return `${x},${y}`;
+                            });
+                            const startVal = curve[0].portfolio_value;
+                            const endVal = curve[curve.length - 1].portfolio_value;
+                            const color = endVal >= startVal ? '#4ade80' : '#f87171';
+                            return (
+                              <>
+                                <defs>
+                                  <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+                                    <stop offset="100%" stopColor={color} stopOpacity="0.0" />
+                                  </linearGradient>
+                                </defs>
+                                <polygon
+                                  points={`${pad},${pad + h} ${points.join(' ')} ${pad + w},${pad + h}`}
+                                  fill="url(#eqGrad)"
+                                />
+                                <polyline
+                                  points={points.join(' ')}
+                                  fill="none"
+                                  stroke={color}
+                                  strokeWidth="2"
+                                />
+                                <text x={pad} y={pad - 2} fill="#94a3b8" fontSize="10">
+                                  {Math.round(maxV).toLocaleString()}€
+                                </text>
+                                <text x={pad} y={pad + h + 12} fill="#94a3b8" fontSize="10">
+                                  {Math.round(minV).toLocaleString()}€
+                                </text>
+                              </>
+                            );
+                          })()}
+                        </svg>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Detailed Metrics */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <span className="text-slate-400 block text-xs">Sortino</span>
+                      <span className="text-white">{formatNumber(backtestResult.sortino_ratio)}</span>
+                    </div>
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <span className="text-slate-400 block text-xs">Calmar</span>
+                      <span className="text-white">{formatNumber(backtestResult.calmar_ratio)}</span>
+                    </div>
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <span className="text-slate-400 block text-xs">Profit Factor</span>
+                      <span className="text-white">{formatNumber(backtestResult.profit_factor)}</span>
+                    </div>
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <span className="text-slate-400 block text-xs">Win Rate</span>
+                      <span className="text-white">{formatNumber(backtestResult.win_rate * 100)}%</span>
+                    </div>
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <span className="text-slate-400 block text-xs">Trades</span>
+                      <span className="text-white">{backtestResult.total_trades} ({backtestResult.winning_trades}W / {backtestResult.losing_trades}L)</span>
+                    </div>
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <span className="text-slate-400 block text-xs">Avg Win / Loss</span>
+                      <span className="text-green-400">{formatNumber(backtestResult.avg_win)}</span>
+                      <span className="text-slate-500 mx-1">/</span>
+                      <span className="text-red-400">{formatNumber(backtestResult.avg_loss)}</span>
+                    </div>
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <span className="text-slate-400 block text-xs">Gebühren</span>
+                      <span className="text-amber-400">{formatNumber(backtestResult.total_fees_paid)}€ ({formatNumber(backtestResult.fee_impact_pct)}%)</span>
+                    </div>
+                    <div className="bg-slate-700/50 rounded p-2">
+                      <span className="text-slate-400 block text-xs">Benchmark (B&H)</span>
+                      <span className={backtestResult.benchmark_return_pct >= 0 ? 'text-green-400' : 'text-red-400'}>
+                        {formatNumber(backtestResult.benchmark_return_pct)}%
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Actions Summary */}
+                  {backtestResult.actions_summary && Object.keys(backtestResult.actions_summary).length > 0 && (
+                    <div className="bg-slate-700 rounded-lg p-4">
+                      <h4 className="text-white font-medium mb-2 text-sm">Aktionen</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {Object.entries(backtestResult.actions_summary).sort((a, b) => b[1] - a[1]).map(([action, count]) => (
+                          <span key={action} className="text-xs px-2 py-1 bg-slate-600 rounded text-slate-300">
+                            {action}: <strong className="text-white">{count}</strong>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Config Info */}
+                  <div className="text-xs text-slate-500 flex flex-wrap gap-3">
+                    <span>Slippage: {backtestResult.slippage_model} ({backtestResult.slippage_bps} BPS)</span>
+                    <span>Short: {backtestResult.short_selling_enabled ? 'Ja' : 'Nein'}</span>
+                    <span>Schritte: {backtestResult.total_steps}</span>
+                    <span>Portfolio: {Math.round(backtestResult.final_portfolio_value).toLocaleString()}€</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
