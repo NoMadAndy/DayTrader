@@ -292,36 +292,36 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
   return (
     <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-          <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h3 className="text-base sm:text-lg font-semibold text-white flex items-center gap-1.5 sm:gap-2 min-w-0">
+          <svg className="w-4 h-4 sm:w-5 sm:h-5 text-purple-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
-          {t('ml.prediction')}
+          <span className="truncate">{t('ml.prediction')}</span>
           {health?.device_info.cuda_available && (
-            <span className="text-xs bg-green-600/20 text-green-400 px-2 py-0.5 rounded-full">
+            <span className="text-[10px] sm:text-xs bg-green-600/20 text-green-400 px-1.5 sm:px-2 py-0.5 rounded-full whitespace-nowrap">
               GPU: {health.device_info.cuda_device_name?.split(' ')[0] || 'CUDA'}
             </span>
           )}
-          <span className="text-xs bg-purple-600/20 text-purple-300 px-2 py-0.5 rounded-full uppercase">
+          <span className="text-[10px] sm:text-xs bg-purple-600/20 text-purple-300 px-1.5 sm:px-2 py-0.5 rounded-full uppercase whitespace-nowrap">
             {getMLSettings().modelType || 'lstm'}
           </span>
         </h3>
         
         {/* Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {hasModel && !isTraining && (
             <>
               <button
                 onClick={loadPrediction}
                 disabled={isLoading}
-                className="text-xs px-3 py-1.5 bg-purple-600/20 text-purple-400 rounded-lg hover:bg-purple-600/30 transition-colors disabled:opacity-50"
+                className="text-[11px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 bg-purple-600/20 text-purple-400 rounded-lg hover:bg-purple-600/30 transition-colors disabled:opacity-50 whitespace-nowrap"
               >
                 {isLoading ? t('ml.loading') : t('ml.refresh')}
               </button>
               <button
                 onClick={deleteModel}
-                className="text-xs px-3 py-1.5 bg-red-600/20 text-red-400 rounded-lg hover:bg-red-600/30 transition-colors"
+                className="text-[11px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 bg-red-600/20 text-red-400 rounded-lg hover:bg-red-600/30 transition-colors whitespace-nowrap"
               >
                 {t('ml.deleteModel')}
               </button>
@@ -330,7 +330,7 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
           {!hasModel && !isTraining && (
             <button
               onClick={startTraining}
-              className="text-xs px-3 py-1.5 bg-blue-600/20 text-blue-400 rounded-lg hover:bg-blue-600/30 transition-colors"
+              className="text-[11px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 bg-blue-600/20 text-blue-400 rounded-lg hover:bg-blue-600/30 transition-colors whitespace-nowrap"
             >
               {t('ml.trainModel')}
             </button>
@@ -379,32 +379,32 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
       {prediction && hasModel && !isTraining && (
         <div className="space-y-4">
           {/* Summary */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-slate-700/50 rounded-lg p-3">
-              <p className="text-xs text-gray-400">{t('ml.currentPrice')}</p>
-              <p className="text-lg font-semibold text-white">{formatCurrency(prediction.current_price)}</p>
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <div className="bg-slate-700/50 rounded-lg p-2 sm:p-3">
+              <p className="text-[10px] sm:text-xs text-gray-400">{t('ml.currentPrice')}</p>
+              <p className="text-sm sm:text-lg font-semibold text-white">{formatCurrency(prediction.current_price)}</p>
             </div>
-            <div className="bg-slate-700/50 rounded-lg p-3">
-              <p className="text-xs text-gray-400">{t('ml.target7day')}</p>
+            <div className="bg-slate-700/50 rounded-lg p-2 sm:p-3">
+              <p className="text-[10px] sm:text-xs text-gray-400">{t('ml.target7day')}</p>
               {prediction.predictions[6] && (
                 <>
-                  <p className="text-lg font-semibold text-white">
+                  <p className="text-sm sm:text-lg font-semibold text-white">
                     {formatCurrency(prediction.predictions[6].predicted_price)}
                   </p>
-                  <p className={`text-xs ${prediction.predictions[6].change_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <p className={`text-[10px] sm:text-xs ${prediction.predictions[6].change_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {prediction.predictions[6].change_pct >= 0 ? '+' : ''}{prediction.predictions[6].change_pct.toFixed(2)}%
                   </p>
                 </>
               )}
             </div>
-            <div className="bg-slate-700/50 rounded-lg p-3">
-              <p className="text-xs text-gray-400">{t('ml.target14day')}</p>
+            <div className="bg-slate-700/50 rounded-lg p-2 sm:p-3">
+              <p className="text-[10px] sm:text-xs text-gray-400">{t('ml.target14day')}</p>
               {prediction.predictions[13] && (
                 <>
-                  <p className="text-lg font-semibold text-white">
+                  <p className="text-sm sm:text-lg font-semibold text-white">
                     {formatCurrency(prediction.predictions[13].predicted_price)}
                   </p>
-                  <p className={`text-xs ${prediction.predictions[13].change_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <p className={`text-[10px] sm:text-xs ${prediction.predictions[13].change_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {prediction.predictions[13].change_pct >= 0 ? '+' : ''}{prediction.predictions[13].change_pct.toFixed(2)}%
                   </p>
                 </>

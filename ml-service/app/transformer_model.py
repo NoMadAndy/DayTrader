@@ -488,10 +488,15 @@ class TransformerStockPredictor:
         sequence_length: Optional[int] = None,
         forecast_days: Optional[int] = None,
         early_stopping_patience: int = 15,
+        progress_callback=None,
     ) -> dict:
         """
         Train the Transformer model on historical data.
         Same interface as StockPredictor.train().
+        
+        Args:
+            progress_callback: Optional callable(epoch, total_epochs, train_loss, val_loss)
+                               for reporting training progress to the API.
         """
         epochs = epochs or settings.epochs
         learning_rate = learning_rate or settings.learning_rate
@@ -580,6 +585,13 @@ class TransformerStockPredictor:
                 }
             )
 
+            # Report progress via callback
+            if progress_callback:
+                try:
+                    progress_callback(epoch + 1, epochs, train_loss.item(), val_loss.item())
+                except Exception:
+                    pass  # Don't let callback errors break training
+
             # Early stopping
             if val_loss < best_val_loss:
                 best_val_loss = val_loss.item()
@@ -664,27 +676,58 @@ class TransformerStockPredictor:
 
         current_price = ohlcv_data[-1]["close"]
 
-        # Sanity-clamp predictions
+        # Progressive sanity-clamp: allow larger moves for longer horizons
+        # Day 1: ±3%, Day 7: ±10%, Day 14: ±15%
         predictions = []
-        for pred in predictions_raw:
+        for i, pred in enumerate(predictions_raw):
+            day = i + 1
+            max_change = min(0.03 + (day - 1) * 0.01, 0.15)  # 3% base + 1% per day, max 15%
             change_pct = (pred - current_price) / current_price
-            if abs(change_pct) > 0.5:
+            if abs(change_pct) > max_change:
                 logger.warning(
-                    f"Prediction {pred:.2f} is {change_pct*100:.1f}% from "
-                    f"current price {current_price:.2f}, clamping"
+                    f"Prediction day {day}: {pred:.2f} is {change_pct*100:.1f}% from "
+                    f"current price {current_price:.2f}, clamping to ±{max_change*100:.0f}%"
                 )
-                max_change = 0.20
                 pred = current_price * (1 + max_change if change_pct > 0 else 1 - max_change)
             predictions.append(pred)
 
-        # Confidence (decreases with horizon, Transformer retains more confidence further out)
+        # Smooth predictions with exponential weighted moving average
+        # This reduces day-to-day oscillation while preserving the overall trend
+        smoothed = [predictions[0]]
+        alpha = 0.4  # Smoothing factor (0=very smooth, 1=no smoothing)
+        for i in range(1, len(predictions)):
+            smoothed.append(alpha * predictions[i] + (1 - alpha) * smoothed[i - 1])
+        predictions = smoothed
+
+        # Monte Carlo Dropout for confidence estimation
+        # Run multiple forward passes with dropout enabled to estimate uncertainty
+        mc_predictions = []
+        self.model.train()  # Enable dropout
+        n_mc_samples = 10
+        with torch.no_grad():
+            for _ in range(n_mc_samples):
+                mc_pred = self.model(X_input).cpu().numpy()[0]
+                mc_raw = self.scaler_y.inverse_transform(
+                    mc_pred.reshape(-1, 1)
+                ).flatten()
+                mc_predictions.append(mc_raw)
+        self.model.eval()  # Disable dropout again
+
+        mc_predictions = np.array(mc_predictions)  # [n_mc, forecast_days]
+        mc_std = mc_predictions.std(axis=0)  # Std per day
+
+        # Confidence based on MC uncertainty + horizon decay
         confidences = []
         for i, pred in enumerate(predictions):
-            # Transformer has better long-range confidence than LSTM
-            base_confidence = max(0.55, 1.0 - (i * 0.025))
-            change_pct = abs(pred - current_price) / current_price
-            change_penalty = min(0.25, change_pct)
-            confidence = max(0.35, base_confidence - change_penalty)
+            # MC-based: lower std relative to price = higher confidence
+            relative_std = mc_std[i] / current_price if current_price > 0 else 0.1
+            mc_confidence = max(0.3, 1.0 - relative_std * 5)  # Scale std to confidence
+            
+            # Horizon decay: Transformer retains more confidence than LSTM
+            horizon_decay = max(0.55, 1.0 - (i * 0.02))
+            
+            # Combined: geometric mean of MC and horizon confidence
+            confidence = max(0.3, min(0.95, (mc_confidence * horizon_decay) ** 0.5))
             confidences.append(confidence)
 
         last_date = pd.to_datetime(ohlcv_data[-1]["timestamp"], unit="ms")

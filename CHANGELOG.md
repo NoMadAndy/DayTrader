@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.38.1] - 2026-02-13
+
+### Fixed
+- **ML-Vorhersage Prediction Smoothing** — Exponential Weighted Moving Average glättet Tages-Oszillationen bei LSTM und Transformer. Vorhersagen schwanken nicht mehr wild zwischen +23% und -15%.
+- **Progressive Sanity-Clamps** — Erlaubte Abweichung steigt progressiv mit dem Vorhersage-Horizont: Tag 1 ±3%, Tag 7 ±10%, Tag 14 ±15% (vorher pauschal ±20% bei >50% Abweichung).
+- **Monte-Carlo Dropout Confidence (Transformer)** — Echte Unsicherheitsschätzung durch 10× Forward-Pass mit aktivem Dropout statt künstlicher linearer Formel.
+- **Training Progress-Callback** — Epochen-weise Progress-Updates für beide Modelltypen (LSTM + Transformer). Frontend zeigt jetzt Epoch-Nummer + Loss statt nur "10% → 90%".
+- **PredictResponse model_type Feld** — API-Response enthält jetzt `model_type` ('lstm'/'transformer') für korrektes Frontend-Badge.
+- **MLForecastPanel Mobile Responsive** — Header, Buttons und Summary-Grid auf iPhone-Breiten optimiert (flex-wrap, text-[10px], kompaktere Padding).
+
 ## [1.38.0] - 2026-02-10
 
 ### Added

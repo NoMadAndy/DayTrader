@@ -108,6 +108,7 @@ class PredictResponse(BaseModel):
     current_price: float
     predictions: List[PredictionResult]
     model_info: dict
+    model_type: Optional[str] = None
     generated_at: str
 
 
@@ -127,6 +128,7 @@ class TrainStatusResponse(BaseModel):
     symbol: str
     status: str
     progress: Optional[float] = None
+    model_type: Optional[str] = None
     message: Optional[str] = None
     result: Optional[dict] = None
 
@@ -329,14 +331,27 @@ async def train_model_background(
         training_status[status_key]["message"] = f"Preparing data ({model_type.upper()}, device: {predictor.device})..."
         training_status[status_key]["progress"] = 10
         
-        # Train with custom parameters
-        result = predictor.train(
-            ohlcv_data,
+        # Progress callback to update training_status with epoch-level data
+        def on_progress(epoch, total_epochs, train_loss, val_loss):
+            # Map epoch progress to 10-90% range (10% = data prep, 90% = saving)
+            pct = 10 + int((epoch / total_epochs) * 80)
+            training_status[status_key]["progress"] = pct
+            training_status[status_key]["message"] = (
+                f"{model_type.upper()} Epoch {epoch}/{total_epochs} — "
+                f"Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}"
+            )
+        
+        # Build train kwargs with progress callback for both model types
+        train_kwargs = dict(
             epochs=epochs,
             learning_rate=learning_rate,
             sequence_length=sequence_length,
-            forecast_days=forecast_days
+            forecast_days=forecast_days,
+            progress_callback=on_progress,
         )
+        
+        # Train with custom parameters
+        result = predictor.train(ohlcv_data, **train_kwargs)
         
         training_status[status_key]["progress"] = 90
         training_status[status_key]["message"] = "Saving model..."

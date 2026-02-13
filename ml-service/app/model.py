@@ -325,7 +325,8 @@ class StockPredictor:
         learning_rate: Optional[float] = None,
         sequence_length: Optional[int] = None,
         forecast_days: Optional[int] = None,
-        early_stopping_patience: int = 10
+        early_stopping_patience: int = 10,
+        progress_callback=None,
     ) -> dict:
         """
         Train the model on historical data
@@ -337,6 +338,7 @@ class StockPredictor:
             sequence_length: Number of time steps in each sequence (default from settings)
             forecast_days: Number of days to forecast (default from settings)
             early_stopping_patience: Epochs to wait before early stopping
+            progress_callback: Optional callable(epoch, total_epochs, train_loss, val_loss)
             
         Returns:
             Training results dict with loss history and metadata
@@ -411,6 +413,13 @@ class StockPredictor:
                 'val_loss': val_loss.item(),
                 'lr': optimizer.param_groups[0]['lr']
             })
+            
+            # Report progress via callback
+            if progress_callback:
+                try:
+                    progress_callback(epoch + 1, epochs, train_loss.item(), val_loss.item())
+                except Exception:
+                    pass  # Don't let callback errors break training
             
             # Early stopping check
             if val_loss < best_val_loss:
@@ -493,31 +502,36 @@ class StockPredictor:
             predictions_scaled.reshape(-1, 1)
         ).flatten()
         
-        # Sanity check: predictions should be within reasonable range of current price
-        # If predictions deviate more than 50% from current price, they are likely wrong
+        # Progressive sanity-clamp: allow larger moves for longer horizons
+        # Day 1: ±3%, Day 7: ±10%, Day 14: ±15%
         current_price = ohlcv_data[-1]['close']
         predictions = []
-        for pred in predictions_raw:
+        for i, pred in enumerate(predictions_raw):
+            day = i + 1
+            max_change = min(0.03 + (day - 1) * 0.01, 0.15)  # 3% base + 1% per day, max 15%
             change_pct = (pred - current_price) / current_price
-            if abs(change_pct) > 0.5:  # More than 50% change is unrealistic for short-term
-                # Clamp to reasonable range (max +/- 20% from current price over forecast period)
-                logger.warning(f"Prediction {pred:.2f} is {change_pct*100:.1f}% from current price {current_price:.2f}, clamping")
-                max_change = 0.20  # 20% max
-                if change_pct > 0:
-                    pred = current_price * (1 + max_change)
-                else:
-                    pred = current_price * (1 - max_change)
+            if abs(change_pct) > max_change:
+                logger.warning(f"Prediction day {day}: {pred:.2f} is {change_pct*100:.1f}% from current price {current_price:.2f}, clamping to ±{max_change*100:.0f}%")
+                pred = current_price * (1 + max_change if change_pct > 0 else 1 - max_change)
             predictions.append(pred)
         
+        # Smooth predictions with exponential weighted moving average
+        # Reduces day-to-day oscillation while preserving overall trend
+        smoothed = [predictions[0]]
+        alpha = 0.4  # Smoothing factor (0=very smooth, 1=no smoothing)
+        for i in range(1, len(predictions)):
+            smoothed.append(alpha * predictions[i] + (1 - alpha) * smoothed[i - 1])
+        predictions = smoothed
+        
         # Calculate prediction confidence based on model uncertainty
-        # Using simple heuristic: confidence decreases with forecast horizon
+        # Confidence decreases with forecast horizon and predicted change magnitude
         confidences = []
         for i, pred in enumerate(predictions):
             # Base confidence decreases linearly with days
             base_confidence = max(0.5, 1.0 - (i * 0.03))
             # Adjust based on predicted change magnitude
             change_pct = abs(pred - current_price) / current_price
-            change_penalty = min(0.3, change_pct)
+            change_penalty = min(0.3, change_pct * 2)
             confidence = max(0.3, base_confidence - change_penalty)
             confidences.append(confidence)
         
