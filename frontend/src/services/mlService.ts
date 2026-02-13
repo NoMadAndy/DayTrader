@@ -234,15 +234,19 @@ class MLServiceClient {
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({ detail: response.statusText }));
+        const detail = typeof error.detail === 'string' ? error.detail : response.statusText;
         log.warn(`Prediction failed for ${symbol}:`, error);
-        return null;
+        throw new Error(detail);
       }
 
       return await response.json();
     } catch (error) {
+      if (error instanceof Error && error.message !== 'Failed to fetch') {
+        throw error; // Re-throw API errors with details
+      }
       log.error('Prediction error:', error);
-      return null;
+      throw new Error('ML Service nicht erreichbar');
     }
   }
 

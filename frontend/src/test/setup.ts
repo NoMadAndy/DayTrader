@@ -13,6 +13,6 @@ Object.defineProperty(import.meta, 'env', {
 });
 
 // Mock build-time defines
-(globalThis as Record<string, unknown>).__BUILD_VERSION__ = '1.39.0';
+(globalThis as Record<string, unknown>).__BUILD_VERSION__ = '1.43.0';
 (globalThis as Record<string, unknown>).__BUILD_COMMIT__ = 'test';
 (globalThis as Record<string, unknown>).__BUILD_TIME__ = new Date().toISOString();

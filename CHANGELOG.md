@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Graduated Risk Checks** — Abgestufte Drawdown-Warnstufen: 25%→75% Sizing, 50%→50%, 75%→30%; `position_scale_factor` in `RiskCheckResult` für automatische Anpassung
 - **Win/Loss Streak Tracking** — Engine trackt Gewinn/Verlust-Serien: 3+ Verluste → Position um 15%/Stufe reduziert (min 30%), 5+ Gewinne → leicht erhöhter Threshold gegen Overtrading
 
+### Fixed
+- **ML-Vorhersage Fehlerbehandlung** — `mlService.predict()` wirft jetzt spezifische Fehlermeldungen statt generisches "Failed to get prediction"; Nutzt `getDataService()` Singleton statt `new DataService()` für zuverlässigere Datenbeschaffung
+- **Frontend Healthcheck** — Docker-Healthcheck nutzt `127.0.0.1` statt `localhost` (Alpine wget versuchte IPv6 `[::1]`, Vite lauscht nur IPv4 → permanent "unhealthy")
+- **Versionsanzeige** — BUILD_VERSION-Defaults in allen Dockerfiles, docker-compose.yml, config.py und package.json auf 1.43.0 aktualisiert
+
 ## [1.42.0] - 2026-02-13
 
 ### Added

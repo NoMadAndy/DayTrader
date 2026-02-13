@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { mlService, type MLPredictResponse, type MLTrainStatus, type MLServiceHealth } from '../services';
-import { DataService } from '../services/dataService';
+import { getDataService } from '../services/dataService';
 import { DEFAULT_ML_SETTINGS, type MLSettings } from '../services/userSettingsService';
 import { useSettings } from '../contexts/SettingsContext';
 import type { OHLCV } from '../types/stock';
@@ -137,7 +137,7 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
     if (stockData.length < requiredLength) {
       log.info(`[ML Predict] Need ${requiredLength} data points, have ${stockData.length}. Fetching more...`);
       try {
-        const dataService = new DataService();
+        const dataService = getDataService();
         // Request extra days to account for weekends/holidays
         const daysToFetch = Math.ceil(requiredLength * 1.5);
         const fetchedData = await dataService.fetchStockData(symbol, daysToFetch);
@@ -158,35 +158,42 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
       }
     }
     
-    const result = await mlService.predict(symbol, dataToUse, getMLSettings().modelType);
+    try {
+      const result = await mlService.predict(symbol, dataToUse, getMLSettings().modelType);
     
-    if (result) {
-      // Validate that the prediction is for the correct symbol
-      if (result.symbol && result.symbol.toUpperCase() !== symbol.toUpperCase()) {
-        log.error(`Prediction symbol mismatch: got ${result.symbol}, expected ${symbol}`);
-        setError(t('ml.modelError').replace('{predSymbol}', result.symbol).replace('{symbol}', symbol));
-        setPrediction(null);
-        onPredictionsChange?.(null);
-      } else {
-        // Also validate that current_price makes sense (within 5% of actual latest price)
-        const actualPrice = stockData[stockData.length - 1]?.close;
-        if (actualPrice && result.current_price) {
-          const priceDiff = Math.abs(result.current_price - actualPrice) / actualPrice;
-          if (priceDiff > 0.05) {
-            log.error(`Price mismatch: prediction has $${result.current_price.toFixed(2)}, actual is $${actualPrice.toFixed(2)}`);
-            setError(t('ml.modelOutdated'));
-            setPrediction(null);
-            onPredictionsChange?.(null);
-            setIsLoading(false);
-            return;
+      if (result) {
+        // Validate that the prediction is for the correct symbol
+        if (result.symbol && result.symbol.toUpperCase() !== symbol.toUpperCase()) {
+          log.error(`Prediction symbol mismatch: got ${result.symbol}, expected ${symbol}`);
+          setError(t('ml.modelError').replace('{predSymbol}', result.symbol).replace('{symbol}', symbol));
+          setPrediction(null);
+          onPredictionsChange?.(null);
+        } else {
+          // Also validate that current_price makes sense (within 5% of actual latest price)
+          const actualPrice = stockData[stockData.length - 1]?.close;
+          if (actualPrice && result.current_price) {
+            const priceDiff = Math.abs(result.current_price - actualPrice) / actualPrice;
+            if (priceDiff > 0.05) {
+              log.error(`Price mismatch: prediction has $${result.current_price.toFixed(2)}, actual is $${actualPrice.toFixed(2)}`);
+              setError(t('ml.modelOutdated'));
+              setPrediction(null);
+              onPredictionsChange?.(null);
+              setIsLoading(false);
+              return;
+            }
           }
+          setPrediction(result);
+          // Notify parent about new predictions
+          onPredictionsChange?.(result.predictions);
         }
-        setPrediction(result);
-        // Notify parent about new predictions
-        onPredictionsChange?.(result.predictions);
+      } else {
+        setError('Vorhersage fehlgeschlagen');
+        onPredictionsChange?.(null);
       }
-    } else {
-      setError('Failed to get prediction');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Vorhersage fehlgeschlagen';
+      log.error('[ML Predict] Prediction error:', err);
+      setError(msg);
       onPredictionsChange?.(null);
     }
     
