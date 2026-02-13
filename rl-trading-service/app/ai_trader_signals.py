@@ -612,7 +612,8 @@ class SignalAggregator:
                 return {'regime': 'range', 'confidence': 0.3}
             
             closes = np.array([p.get('close', 0) for p in prices])
-            returns = np.diff(closes[-30:]) / closes[-31:-1]
+            recent = closes[-31:]  # Need 31 for 30 returns
+            returns = np.diff(recent) / recent[:-1]
             
             # Volatility metrics
             vol_20 = np.std(returns[-20:]) if len(returns) >= 20 else np.std(returns)
@@ -623,21 +624,21 @@ class SignalAggregator:
             adx = technical_result.get('adx', 20)
             
             # Regime classification
-            # Crash: high vol + strong negative returns
-            if vol_5 > vol_20 * 1.5 and avg_return < -0.01:
+            # Crash: strong negative returns (avg < -1%) AND elevated volatility
+            if avg_return < -0.01 and (vol_5 > vol_20 * 1.3 or vol_20 > 0.02):
                 return {
                     'regime': 'crash',
-                    'confidence': min(0.9, vol_5 / vol_20 * 0.3 + 0.3),
+                    'confidence': min(0.9, abs(avg_return) * 10 + 0.3),
                     'volatility': float(vol_20),
                     'recent_volatility': float(vol_5),
                     'avg_return': float(avg_return)
                 }
             
-            # Volatile: vol spike without clear direction
-            if vol_5 > vol_20 * 1.5:
+            # Volatile: high absolute vol (> 2% daily) or vol spike
+            if vol_20 > 0.025 or vol_5 > vol_20 * 1.5:
                 return {
                     'regime': 'volatile',
-                    'confidence': min(0.85, vol_5 / vol_20 * 0.3),
+                    'confidence': min(0.85, vol_20 * 10 + 0.3),
                     'volatility': float(vol_20),
                     'recent_volatility': float(vol_5),
                     'avg_return': float(avg_return)
