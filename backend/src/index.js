@@ -62,12 +62,12 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
-  skip: (req) => req.path === '/health', // Always allow health checks
+  skip: (req) => req.path === '/auth/status', // Always allow auth status checks (path relative to /api mount)
 });
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // 20 attempts per 15 min
+  max: parseInt(process.env.AUTH_RATE_LIMIT_MAX || '50', 10), // auth attempts per 15 min
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many authentication attempts, please try again later.' },

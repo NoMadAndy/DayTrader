@@ -57,6 +57,8 @@ services:
       - CORS_ORIGIN=*
       - ML_SERVICE_URL=http://ml-service:8000
       - DATABASE_URL=postgresql://${POSTGRES_USER:-daytrader}:${POSTGRES_PASSWORD:-daytrader_secret}@postgres:5432/${POSTGRES_DB:-daytrader}
+      - RATE_LIMIT_MAX=300
+      - AUTH_RATE_LIMIT_MAX=100
 
   # Development ml-service (CPU-only, with hot reload)
   ml-service:
