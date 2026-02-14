@@ -661,7 +661,23 @@ app.post('/api/user/symbols/sync', authMiddleware, express.json(), async (req, r
 // Yahoo Finance proxy endpoints
 const YAHOO_CHART_URL = 'https://query1.finance.yahoo.com/v8/finance/chart';
 const YAHOO_SEARCH_URL = 'https://query1.finance.yahoo.com/v1/finance/search';
-const YAHOO_QUOTE_URL = 'https://query2.finance.yahoo.com/v6/finance/quote';
+// v6 quote API is deprecated (404 since ~2025). Quotes now served via v8 chart API.
+
+/**
+ * Normalize symbol for Yahoo Finance API
+ * - Share classes: BRK.B → BRK-B, BF.B → BF-B (Yahoo uses dashes)
+ * - Exchange suffixes kept as-is: BMW.DE, AAPL.L
+ */
+function normalizeYahooSymbol(symbol) {
+  const dotIndex = symbol.indexOf('.');
+  if (dotIndex === -1) return symbol;
+  const suffix = symbol.substring(dotIndex + 1);
+  // Single character suffix = share class (A, B, C) → use dash
+  if (suffix.length === 1 && /^[A-Za-z]$/.test(suffix)) {
+    return symbol.substring(0, dotIndex) + '-' + suffix;
+  }
+  return symbol;
+}
 
 // Import historical prices service for DB caching
 import * as historicalPricesService from './historicalPrices.js';
@@ -811,30 +827,60 @@ app.get('/api/yahoo/quote/:symbols', async (req, res) => {
   }
   
   try {
-    const url = `${YAHOO_QUOTE_URL}?symbols=${encodeURIComponent(symbols)}`;
+    // v6 quote API is deprecated — use v8 chart API and transform response
+    const symbolList = symbols.split(',').map(s => normalizeYahooSymbol(s.trim()));
+    const results = [];
     
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    });
-    
-    if (!response.ok) {
-      logger.error(`Yahoo Finance quote error: ${response.status} ${response.statusText}`);
-      return res.status(response.status).json({ 
-        error: 'Yahoo Finance quote error',
-        status: response.status,
-        message: response.statusText
-      });
+    for (const sym of symbolList) {
+      try {
+        const url = `${YAHOO_CHART_URL}/${encodeURIComponent(sym)}?interval=1d&range=1d`;
+        const response = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; DayTrader/1.0)',
+            'Accept': 'application/json',
+          },
+        });
+        
+        if (!response.ok) {
+          logger.warn(`[Yahoo Quote] ${sym} returned ${response.status}`);
+          continue;
+        }
+        
+        const chartData = await response.json();
+        const meta = chartData?.chart?.result?.[0]?.meta;
+        if (!meta) continue;
+        
+        const previousClose = meta.chartPreviousClose || meta.previousClose;
+        const currentPrice = meta.regularMarketPrice;
+        const change = previousClose ? currentPrice - previousClose : 0;
+        const changePercent = previousClose ? (change / previousClose) * 100 : 0;
+        
+        results.push({
+          symbol: meta.symbol || sym,
+          longName: meta.longName,
+          shortName: meta.shortName,
+          currency: meta.currency,
+          exchange: meta.exchangeName,
+          fullExchangeName: meta.fullExchangeName,
+          regularMarketPrice: currentPrice,
+          regularMarketDayHigh: meta.regularMarketDayHigh,
+          regularMarketDayLow: meta.regularMarketDayLow,
+          regularMarketVolume: meta.regularMarketVolume,
+          regularMarketChange: Math.round(change * 100) / 100,
+          regularMarketChangePercent: Math.round(changePercent * 100) / 100,
+          fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
+          fiftyTwoWeekLow: meta.fiftyTwoWeekLow,
+        });
+      } catch (err) {
+        logger.warn(`[Yahoo Quote] Failed to fetch ${sym}: ${err.message}`);
+      }
     }
     
-    const data = await response.json();
+    const data = { quoteResponse: { result: results, error: null } };
     
     // Cache the response (short TTL for quotes)
-    if (process.env.DATABASE_URL) {
-      await stockCache.setCache(cacheKey, 'quote', symbols.split(',')[0].toUpperCase(), data, 'yahoo', stockCache.CACHE_DURATIONS.quote);
+    if (process.env.DATABASE_URL && results.length > 0) {
+      await stockCache.setCache(cacheKey, 'quote', symbolList[0].toUpperCase(), data, 'yahoo', stockCache.CACHE_DURATIONS.quote);
     }
     
     res.json(data);
@@ -855,7 +901,7 @@ app.get('/api/yahoo/quote/:symbols', async (req, res) => {
  * Uses server-side caching to reduce API calls
  */
 app.get('/api/yahoo/chart/:symbol', async (req, res) => {
-  const { symbol } = req.params;
+  const symbol = normalizeYahooSymbol(req.params.symbol);
   const { interval = '1d', range = '1y', period } = req.query;
   
   // Support both 'range' and 'period' params (period takes precedence)
@@ -1130,6 +1176,8 @@ app.get('/api/finnhub/quote/:symbol', async (req, res) => {
   if (process.env.DATABASE_URL) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
+      // Negative cache: return empty data (200) to avoid console errors
+      if (cached.data._finnhub_unavailable) return res.json({});
       logger.info(`[Finnhub] Cache hit for quote ${symbol}`);
       return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
     }
@@ -1146,6 +1194,12 @@ app.get('/api/finnhub/quote/:symbol', async (req, res) => {
     });
     
     if (!response.ok) {
+      // Cache 403/401 (API key limitation) as negative result to prevent repeated failing requests
+      if ((response.status === 403 || response.status === 401) && process.env.DATABASE_URL) {
+        logger.info(`[Finnhub] ${response.status} for quote ${symbol} — caching negative result`);
+        await stockCache.setCache(cacheKey, 'quote', symbol.toUpperCase(), { _finnhub_unavailable: true }, 'finnhub', 60 * 60 * 1000);
+        return res.json({});
+      }
       return res.status(response.status).json({ error: `Finnhub error: ${response.statusText}` });
     }
     
@@ -1229,6 +1283,7 @@ app.get('/api/finnhub/profile/:symbol', async (req, res) => {
   if (process.env.DATABASE_URL) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
+      if (cached.data._finnhub_unavailable) return res.json({});
       logger.info(`[Finnhub] Cache hit for profile ${symbol}`);
       return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
     }
@@ -1245,6 +1300,11 @@ app.get('/api/finnhub/profile/:symbol', async (req, res) => {
     });
     
     if (!response.ok) {
+      if ((response.status === 403 || response.status === 401) && process.env.DATABASE_URL) {
+        logger.info(`[Finnhub] ${response.status} for profile ${symbol} — caching negative result`);
+        await stockCache.setCache(cacheKey, 'company_info', symbol.toUpperCase(), { _finnhub_unavailable: true }, 'finnhub', 60 * 60 * 1000);
+        return res.json({});
+      }
       return res.status(response.status).json({ error: `Finnhub error: ${response.statusText}` });
     }
     
@@ -1276,6 +1336,7 @@ app.get('/api/finnhub/metrics/:symbol', async (req, res) => {
   if (process.env.DATABASE_URL) {
     const cached = await stockCache.getCached(cacheKey);
     if (cached) {
+      if (cached.data._finnhub_unavailable) return res.json({});
       logger.info(`[Finnhub] Cache hit for metrics ${symbol}`);
       return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
     }
@@ -1292,6 +1353,11 @@ app.get('/api/finnhub/metrics/:symbol', async (req, res) => {
     });
     
     if (!response.ok) {
+      if ((response.status === 403 || response.status === 401) && process.env.DATABASE_URL) {
+        logger.info(`[Finnhub] ${response.status} for metrics ${symbol} — caching negative result`);
+        await stockCache.setCache(cacheKey, 'company_info', symbol.toUpperCase(), { _finnhub_unavailable: true }, 'finnhub', 60 * 60 * 1000);
+        return res.json({});
+      }
       return res.status(response.status).json({ error: `Finnhub error: ${response.statusText}` });
     }
     

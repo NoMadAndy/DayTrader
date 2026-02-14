@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Win/Loss Streak Tracking** — Engine trackt Gewinn/Verlust-Serien: 3+ Verluste → Position um 15%/Stufe reduziert (min 30%), 5+ Gewinne → leicht erhöhter Threshold gegen Overtrading
 
 ### Fixed
+- **Yahoo Finance Quote API Migration** — v6 Quote-API (`query2.finance.yahoo.com/v6/finance/quote`) ist offline (404 für alle Symbole); Endpoint migriert auf v8 Chart-API mit automatischer Response-Transformation in das v6-kompatible `quoteResponse`-Format
+- **Yahoo Symbol-Normalisierung** — Aktienklassen wie `BRK.B` werden automatisch zu `BRK-B` konvertiert (Yahoo nutzt Bindestriche statt Punkte); betrifft sowohl Quote- als auch Chart-Endpoints
+- **Finnhub 403 Negative-Caching** — Finnhub-Free-Tier unterstützt keine internationalen Symbole (.DE etc.) und liefert 403; Backend gibt jetzt 200 mit `{}` statt 403 zurück (keine Browser-Konsolen-Fehler) und cached negative Ergebnisse 1h lang, um wiederholte fehlschlagende Requests zu vermeiden
 - **Rate-Limit 429 bei Auth-Endpoints** — `/api/auth/status` vom globalen Rate-Limiter ausgenommen (leichtgewichtiger Status-Check wie `/health`); Auth-Limiter konfigurierbar via `AUTH_RATE_LIMIT_MAX` (Default 50 statt hartcodiert 20); Dev-Umgebung nutzt 300 req/min statt 100
 - **ML-Vorhersage Fehlerbehandlung** — `mlService.predict()` wirft jetzt spezifische Fehlermeldungen statt generisches "Failed to get prediction"; Nutzt `getDataService()` Singleton statt `new DataService()` für zuverlässigere Datenbeschaffung
 - **Frontend Healthcheck** — Docker-Healthcheck nutzt `127.0.0.1` statt `localhost` (Alpine wget versuchte IPv6 `[::1]`, Vite lauscht nur IPv4 → permanent "unhealthy")
