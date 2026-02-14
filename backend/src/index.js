@@ -56,13 +56,21 @@ if (CORS_ORIGIN === '*' && NODE_ENV === 'production') {
 }
 
 // Rate limiting configuration
+// Paths exempt from rate limiting (relative to /api mount point)
+const RATE_LIMIT_SKIP_PATHS = new Set([
+  '/auth/status',     // Lightweight auth status check
+  '/rl/health',       // RL service health check
+  '/rl/agents',       // RL agent listing
+  '/ml/health',       // ML service health check
+]);
+
 const apiLimiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10), // 1 minute
   max: parseInt(process.env.RATE_LIMIT_MAX || '100', 10), // 100 requests per window
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
-  skip: (req) => req.path === '/auth/status', // Always allow auth status checks (path relative to /api mount)
+  skip: (req) => RATE_LIMIT_SKIP_PATHS.has(req.path),
 });
 
 const authLimiter = rateLimit({

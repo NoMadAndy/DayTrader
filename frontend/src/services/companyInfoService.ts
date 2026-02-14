@@ -364,29 +364,37 @@ export async function fetchCompanyInfo(symbol: string): Promise<CompanyInfo | nu
   if (yahooQuoteData || yahooChartData) dataSources.push('Yahoo');
   
   // Fetch from other providers if API keys are available
-  const additionalFetches: Promise<Partial<CompanyInfo> | null>[] = [];
+  // Use sequential fetches with small delays to avoid hitting backend rate limits
+  const additionalResults: (Partial<CompanyInfo> | null)[] = [];
   const fetchLabels: string[] = [];
   
+  const sequentialFetches: Array<{ fetch: () => Promise<Partial<CompanyInfo> | null>; label: string }> = [];
+  
   if (apiKeys.finnhub) {
-    additionalFetches.push(
-      fetchFinnhubProfile(symbol, apiKeys.finnhub),
-      fetchFinnhubMetrics(symbol, apiKeys.finnhub),
-      fetchFinnhubQuote(symbol, apiKeys.finnhub)
+    sequentialFetches.push(
+      { fetch: () => fetchFinnhubProfile(symbol, apiKeys.finnhub!), label: 'Finnhub Profile' },
+      { fetch: () => fetchFinnhubMetrics(symbol, apiKeys.finnhub!), label: 'Finnhub Metrics' },
+      { fetch: () => fetchFinnhubQuote(symbol, apiKeys.finnhub!), label: 'Finnhub Quote' },
     );
-    fetchLabels.push('Finnhub Profile', 'Finnhub Metrics', 'Finnhub Quote');
   }
   
   if (apiKeys.alphaVantage) {
-    additionalFetches.push(fetchAlphaVantageOverview(symbol, apiKeys.alphaVantage));
-    fetchLabels.push('Alpha Vantage Overview');
+    sequentialFetches.push({ fetch: () => fetchAlphaVantageOverview(symbol, apiKeys.alphaVantage!), label: 'Alpha Vantage Overview' });
   }
   
   if (apiKeys.twelveData) {
-    additionalFetches.push(fetchTwelveDataQuote(symbol, apiKeys.twelveData));
-    fetchLabels.push('Twelve Data Quote');
+    sequentialFetches.push({ fetch: () => fetchTwelveDataQuote(symbol, apiKeys.twelveData!), label: 'Twelve Data Quote' });
   }
   
-  const additionalResults = await Promise.all(additionalFetches);
+  // Execute sequentially with 50ms delay between requests to spread load
+  for (const item of sequentialFetches) {
+    const result = await item.fetch();
+    additionalResults.push(result);
+    fetchLabels.push(item.label);
+    if (sequentialFetches.length > 1) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  }
   
   // Debug: Log what each provider returned
   additionalResults.forEach((result, idx) => {

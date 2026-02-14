@@ -165,8 +165,17 @@ export default function RLAdvisorPanel({
   if (!isAvailable) {
     return (
       <div className={`bg-slate-800 rounded-lg p-4 ${className}`}>
-        <h4 className="text-sm font-medium text-slate-400 mb-2">🤖 RL Advisors</h4>
-        <p className="text-xs text-slate-500">Service unavailable</p>
+        <div className="flex justify-between items-center mb-2">
+          <h4 className="text-sm font-medium text-slate-400">🤖 RL Advisors</h4>
+          <button 
+            onClick={checkServiceAndLoadAgents} 
+            className="text-xs text-blue-400 hover:text-blue-300"
+            title="Erneut versuchen"
+          >
+            ↻ Retry
+          </button>
+        </div>
+        <p className="text-xs text-slate-500">Service nicht erreichbar — wird beim nächsten Laden erneut geprüft</p>
       </div>
     );
   }
