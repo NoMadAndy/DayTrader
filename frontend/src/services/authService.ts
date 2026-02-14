@@ -5,6 +5,7 @@
  * Works both with backend database (when available) and local-only mode.
  */
 
+import { log } from '../utils/logger';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 const AUTH_TOKEN_KEY = 'daytrader_auth_token';
 const AUTH_USER_KEY = 'daytrader_auth_user';
