@@ -2449,21 +2449,22 @@ export async function getLeaderboard(limit = 50, timeframe = 'all', filter = 'al
     // Calculate returns based on snapshots or current state
     const result = await query(
       `WITH portfolio_stats AS (
-        SELECT 
+        SELECT
           p.id as portfolio_id,
           p.name,
           p.initial_capital,
-          u.username,
+          COALESCE(a.name, u.username, p.name) as username,
           COALESCE(
-            (SELECT total_value FROM portfolio_snapshots 
-             WHERE portfolio_id = p.id 
+            (SELECT total_value FROM portfolio_snapshots
+             WHERE portfolio_id = p.id
              ORDER BY recorded_at DESC LIMIT 1),
             p.cash_balance
           ) as current_value,
           (SELECT COUNT(*) FROM positions WHERE portfolio_id = p.id AND is_open = false) as total_trades,
           (SELECT COUNT(*) FROM positions WHERE portfolio_id = p.id AND is_open = false AND realized_pnl > 0) as winning_trades,
           p.ai_trader_id,
-          a.avatar
+          a.avatar,
+          a.name as ai_trader_name
         FROM portfolios p
         LEFT JOIN users u ON p.user_id = u.id
         LEFT JOIN ai_traders a ON p.ai_trader_id = a.id
@@ -2494,8 +2495,8 @@ export async function getLeaderboard(limit = 50, timeframe = 'all', filter = 'al
     return result.rows.map((row, index) => ({
       rank: index + 1,
       portfolioId: row.portfolio_id,
-      name: row.name,
-      username: row.username,
+      name: row.ai_trader_name || row.name,
+      username: row.username || row.ai_trader_name || row.name,
       initialCapital: parseFloat(row.initial_capital),
       currentValue: parseFloat(row.current_value),
       totalReturnPct: parseFloat(row.total_return_pct || 0),
