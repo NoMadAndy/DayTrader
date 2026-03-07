@@ -1240,6 +1240,137 @@ async def analyze_symbol_once(request: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/ai-trader/{trader_id}/enhancements")
+async def get_enhancement_status(trader_id: int):
+    """
+    Get status of all enhancement modules for an AI trader.
+
+    Returns status of: churn filter, graduated TP, market regime,
+    multi-timeframe, correlation filter, smart order routing,
+    earnings calendar, sector rotation, RL ensemble, dynamic confidence.
+    """
+    try:
+        sched = get_scheduler()
+        if trader_id in sched.engines:
+            engine = sched.engines[trader_id]
+            return {
+                "trader_id": trader_id,
+                "enhancements": engine.get_enhancement_status()
+            }
+        else:
+            return {
+                "trader_id": trader_id,
+                "enhancements": None,
+                "message": "Trader not active"
+            }
+    except Exception as e:
+        logger.error(f"Error getting enhancement status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ai-trader/{trader_id}/graduated-tp/check")
+async def check_graduated_take_profit(trader_id: int, request: dict):
+    """
+    Check graduated take-profit levels for a position.
+
+    Args:
+        request: Dict with 'symbol' and 'current_price'
+    """
+    try:
+        sched = get_scheduler()
+        if trader_id not in sched.engines:
+            raise HTTPException(status_code=404, detail="Trader not active")
+
+        engine = sched.engines[trader_id]
+        symbol = request.get('symbol')
+        current_price = request.get('current_price', 0)
+
+        if not symbol or current_price <= 0:
+            raise HTTPException(status_code=400, detail="symbol and current_price required")
+
+        result = engine.check_graduated_take_profit(symbol, current_price)
+        return {
+            "symbol": symbol,
+            "result": result or {"action": "none", "reason": "No graduated TP config for this symbol"}
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking graduated TP: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/ai-trader/market-regime/{symbol}")
+async def detect_market_regime(symbol: str):
+    """
+    Detect current market regime for a symbol.
+
+    Returns regime classification, trend strength, volatility level,
+    and recommended signal weight adjustments.
+    """
+    try:
+        from .market_regime import MarketRegimeDetector
+
+        # Fetch market data
+        sched = get_scheduler()
+        market_data = await sched._fetch_market_data(symbol)
+
+        if not market_data:
+            raise HTTPException(status_code=404, detail=f"No market data for {symbol}")
+
+        prices = market_data.get('prices', [])
+        detector = MarketRegimeDetector()
+        analysis = detector.detect_regime(prices)
+
+        # Get weight recommendations
+        base_weights = {'ml_weight': 0.30, 'rl_weight': 0.30, 'sentiment_weight': 0.20, 'technical_weight': 0.20}
+        regime_weights = detector.get_regime_adjusted_weights(analysis, base_weights)
+
+        return {
+            "symbol": symbol,
+            "regime": analysis.regime.value,
+            "confidence": analysis.confidence,
+            "trend_strength": analysis.trend_strength,
+            "volatility_level": analysis.volatility_level,
+            "volatility_percentile": analysis.volatility_percentile,
+            "momentum": analysis.momentum,
+            "details": analysis.details,
+            "recommended_weights": {
+                "ml": regime_weights.ml_weight,
+                "rl": regime_weights.rl_weight,
+                "sentiment": regime_weights.sentiment_weight,
+                "technical": regime_weights.technical_weight,
+                "reason": regime_weights.adjustment_reason,
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error detecting market regime: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/ai-trader/sector-analysis")
+async def get_sector_analysis():
+    """
+    Get sector rotation analysis and correlation data.
+
+    Returns sector exposure, strongest/weakest sectors,
+    and rotation direction.
+    """
+    try:
+        from .correlation_filter import SECTOR_MAP
+
+        return {
+            "sector_map": SECTOR_MAP,
+            "available_sectors": list(set(SECTOR_MAP.values())),
+            "total_symbols_mapped": len(SECTOR_MAP),
+        }
+    except Exception as e:
+        logger.error(f"Error in sector analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on application shutdown"""
