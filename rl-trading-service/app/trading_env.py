@@ -121,6 +121,17 @@ DEFAULT_REWARD_WEIGHTS = {
     "opportunity_cost_scale": 30.0,
     # Consistency bonus — reward steady positive returns over sporadic big wins
     "consistency_bonus_scale": 5.0,
+    # === NEW: Enhanced reward components ===
+    # Sharpe threshold bonus: extra reward for Sharpe > 1.5
+    "sharpe_threshold": 1.5,
+    "sharpe_threshold_bonus": 3.0,
+    # Over-trading penalty: penalize > N trades per episode relative to steps
+    "overtrade_penalty_threshold": 0.05,  # Max trades as fraction of total steps
+    "overtrade_penalty_scale": 5.0,
+    # Risk-reward ratio bonus: reward trades with good R:R
+    "risk_reward_bonus_scale": 2.0,
+    # Calmar ratio bonus
+    "calmar_bonus_scale": 5.0,
 }
 
 
@@ -791,6 +802,46 @@ class TradingEnvironment(gym.Env):
             bm_ret = (final_price - self._benchmark_start_price) / self._benchmark_start_price
             alpha = total_return - bm_ret
             reward += alpha * 20 if alpha > 0 else alpha * 10
+
+        # === NEW: Enhanced episode rewards ===
+
+        # 6. Sharpe threshold bonus: extra reward for achieving Sharpe > threshold
+        if len(self._daily_returns) > 10:
+            arr = np.array(self._daily_returns)
+            std_r = np.std(arr)
+            if std_r > 1e-8:
+                sharpe = (np.mean(arr) / std_r) * np.sqrt(252)
+                threshold = rw.get("sharpe_threshold", 1.5)
+                if sharpe > threshold:
+                    # Superlinear bonus for exceeding threshold
+                    excess = sharpe - threshold
+                    reward += excess * rw.get("sharpe_threshold_bonus", 3.0)
+
+        # 7. Over-trading penalty: discourage excessive trade frequency
+        steps_elapsed = self.current_step - self._start_step
+        if steps_elapsed > 0 and self.total_trades > 0:
+            trade_frequency = self.total_trades / steps_elapsed
+            max_freq = rw.get("overtrade_penalty_threshold", 0.05)
+            if trade_frequency > max_freq:
+                excess_trades = (trade_frequency - max_freq) * steps_elapsed
+                reward -= excess_trades * rw.get("overtrade_penalty_scale", 5.0) / steps_elapsed
+
+        # 8. Risk-reward ratio bonus
+        if self._trade_profits:
+            wins = [p for p in self._trade_profits if p > 0]
+            losses = [abs(p) for p in self._trade_profits if p < 0]
+            if wins and losses:
+                avg_win = np.mean(wins)
+                avg_loss = np.mean(losses)
+                rr_ratio = avg_win / avg_loss if avg_loss > 0 else 1.0
+                if rr_ratio > 1.5:
+                    reward += (rr_ratio - 1.0) * rw.get("risk_reward_bonus_scale", 2.0)
+
+        # 9. Calmar ratio bonus (return / max drawdown)
+        if self.max_drawdown > 0.01 and total_return > 0:
+            calmar = total_return / self.max_drawdown
+            if calmar > 1.0:
+                reward += min(calmar, 5.0) * rw.get("calmar_bonus_scale", 5.0)
 
         return reward
 

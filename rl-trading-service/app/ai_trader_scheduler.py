@@ -820,6 +820,53 @@ class AITraderScheduler:
                         close_reason = 'take_profit'
                         print(f"🎯 Trader {trader_id}: {symbol} hit TAKE-PROFIT @ ${current_price:.2f} (TP: ${take_profit:.2f})")
                 
+                # === NEW: Check graduated take-profit tiers ===
+                if not should_close and trader_id in self.engines:
+                    engine = self.engines[trader_id]
+                    tp_result = engine.check_graduated_take_profit(symbol, current_price)
+                    if tp_result and tp_result.get('action') != 'none':
+                        close_pct = tp_result.get('close_pct', 1.0)
+                        tier = tp_result.get('tier', 0)
+                        reason_text = tp_result.get('reason', '')
+
+                        if close_pct >= 0.99:
+                            should_close = True
+                            close_reason = f"graduated_tp_tier{tier}"
+                        else:
+                            # Partial close: calculate quantity to sell
+                            partial_qty = max(1, int(quantity * close_pct))
+                            print(f"   Graduated TP Tier {tier}: Closing {close_pct*100:.0f}% ({partial_qty}/{quantity}) of {symbol} - {reason_text}")
+
+                            partial_decision = TradingDecision(
+                                symbol=symbol,
+                                decision_type='close',
+                                confidence=1.0,
+                                weighted_score=0,
+                                ml_score=None, rl_score=None,
+                                sentiment_score=None, technical_score=None,
+                                signal_agreement='strong',
+                                reasoning={
+                                    'trigger': f'graduated_take_profit_tier_{tier}',
+                                    'close_pct': close_pct,
+                                    'reason': reason_text,
+                                    'current_price': current_price,
+                                },
+                                summary_short=f"Graduated TP Tier {tier}: Partial close {close_pct*100:.0f}% of {symbol}",
+                                quantity=partial_qty,
+                                price=current_price,
+                                stop_loss=stop_loss,
+                                take_profit=take_profit,
+                                risk_checks_passed=True,
+                                risk_warnings=[],
+                                risk_blockers=[],
+                                market_context={},
+                                portfolio_snapshot=portfolio_state,
+                                timestamp=datetime.now()
+                            )
+                            await self._log_decision(trader_id, partial_decision)
+                            await self._execute_trade(trader_id, partial_decision)
+                            # Don't add to closed_symbols - position still partially open
+
                 # Execute close if needed
                 if should_close:
                     # === REALISM: Determine realistic execution price ===

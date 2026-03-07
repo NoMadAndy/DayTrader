@@ -3,6 +3,18 @@ AI Trader Decision Engine
 
 Main decision engine that aggregates all signal sources and makes trading decisions.
 Includes adaptive thresholds, risk checks, position sizing, and stop-loss/take-profit calculations.
+
+Enhanced with:
+- Churn filter (trade frequency control)
+- Graduated take-profits (tiered profit-taking)
+- Market regime detection (dynamic weight adjustment)
+- Multi-timeframe analysis (signal confirmation)
+- Correlation filter (position diversification)
+- Smart order routing (optimal timing)
+- Earnings calendar awareness
+- Sector rotation analysis
+- RL ensemble support (majority voting)
+- Improved Kelly criterion
 """
 
 from typing import Optional, Dict, List, Any
@@ -107,6 +119,57 @@ class AITraderConfig:
     # Trading Symbols
     symbols: List[str] = field(default_factory=lambda: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA'])
 
+    # === NEW: Churn Filter (Trade Frequency Control) ===
+    churn_filter_enabled: bool = True
+    churn_cost_multiplier: float = 3.0  # Expected return must be Nx transaction costs
+    churn_max_trades_per_symbol_hour: int = 2
+    churn_max_trades_per_day: int = 20
+    churn_cooldown_minutes: int = 15
+
+    # === NEW: Graduated Take-Profit ===
+    graduated_tp_enabled: bool = True
+    graduated_tp_tier1_close_pct: float = 0.33  # Close 33% at tier 1
+    graduated_tp_tier1_target_pct: float = 0.02  # +2% for tier 1
+    graduated_tp_tier2_close_pct: float = 0.33  # Close 33% at tier 2
+    graduated_tp_tier2_target_pct: float = 0.04  # +4% for tier 2
+    graduated_tp_trailing_distance: float = 0.03  # 3% trailing for remainder
+    graduated_tp_use_atr: bool = True  # Use ATR for tier targets
+
+    # === NEW: Market Regime Detection ===
+    regime_detection_enabled: bool = True
+    regime_weight_adjustment: bool = True  # Auto-adjust weights by regime
+    regime_max_weight_shift: float = 0.15  # Max weight adjustment per regime
+
+    # === NEW: Multi-Timeframe Analysis ===
+    multi_timeframe_enabled: bool = True
+    multi_timeframe_confirmation_required: bool = False  # Require 2+ timeframe confirmation
+
+    # === NEW: Correlation Filter ===
+    correlation_filter_enabled: bool = True
+    max_same_sector_positions: int = 3
+    max_sector_exposure_pct: float = 0.40
+
+    # === NEW: Smart Order Routing ===
+    smart_order_routing_enabled: bool = True
+    prefer_limit_orders: bool = True
+    limit_order_offset_pct: float = 0.05
+
+    # === NEW: Earnings Calendar ===
+    earnings_awareness_enabled: bool = True
+    earnings_pre_days: int = 5  # Days before earnings to reduce size
+    earnings_avoid_day_before: bool = True
+
+    # === NEW: Sector Rotation ===
+    sector_rotation_enabled: bool = True
+
+    # === NEW: RL Ensemble ===
+    ensemble_enabled: bool = False  # Disabled by default (requires multiple agents)
+    ensemble_min_agreement: float = 0.6
+
+    # === NEW: Dynamic Confidence Threshold ===
+    dynamic_confidence_enabled: bool = True
+    confidence_lookback_trades: int = 50  # Trades to consider for dynamic threshold
+
 
 @dataclass
 class TradingDecision:
@@ -146,28 +209,87 @@ class TradingDecision:
 
 class AITraderEngine:
     """Main AI Trading Decision Engine"""
-    
+
     def __init__(self, config: AITraderConfig, backend_url: str = "http://backend:3001"):
         """
         Initialize AI Trader Engine.
-        
+
         Args:
             config: AITraderConfig instance
             backend_url: URL of backend service
         """
         self.config = config
         self.backend_url = backend_url
-        
+
         # Import here to avoid circular imports
         from .ai_trader_signals import SignalAggregator
         from .ai_trader_risk import RiskManager
-        
+
         self.signal_aggregator = SignalAggregator(config)
         self.risk_manager = RiskManager(config)
         self.http_client = httpx.AsyncClient(timeout=30.0)
         self.consecutive_losses = 0
         self.consecutive_wins = 0
         self._trade_history: list = []  # Recent trade outcomes for streak tracking
+
+        # === NEW: Initialize enhancement modules ===
+        from .churn_filter import ChurnFilter
+        from .graduated_take_profit import GraduatedTakeProfitManager
+        from .market_regime import MarketRegimeDetector, MultiTimeframeAnalyzer
+        from .correlation_filter import CorrelationFilter
+        from .smart_order import SmartOrderRouter, EarningsCalendar, SectorRotationAnalyzer
+        from .rl_ensemble import RLEnsemble
+
+        # Churn Filter
+        self.churn_filter = ChurnFilter(
+            cost_multiplier=config.churn_cost_multiplier,
+            max_trades_per_symbol_per_hour=config.churn_max_trades_per_symbol_hour,
+            max_total_trades_per_day=config.churn_max_trades_per_day,
+            rapid_trade_cooldown_minutes=config.churn_cooldown_minutes,
+        ) if config.churn_filter_enabled else None
+
+        # Graduated Take-Profit Manager
+        self.tp_manager = GraduatedTakeProfitManager(
+            default_atr_multiplier=config.atr_sl_multiplier,
+            tier1_close_pct=config.graduated_tp_tier1_close_pct,
+            tier1_target_pct=config.graduated_tp_tier1_target_pct,
+            tier2_close_pct=config.graduated_tp_tier2_close_pct,
+            tier2_target_pct=config.graduated_tp_tier2_target_pct,
+            tier3_trailing_distance=config.graduated_tp_trailing_distance,
+            use_atr_for_tiers=config.graduated_tp_use_atr,
+        ) if config.graduated_tp_enabled else None
+
+        # Market Regime Detector
+        self.regime_detector = MarketRegimeDetector() if config.regime_detection_enabled else None
+
+        # Multi-Timeframe Analyzer
+        self.mtf_analyzer = MultiTimeframeAnalyzer() if config.multi_timeframe_enabled else None
+
+        # Correlation Filter
+        self.correlation_filter = CorrelationFilter(
+            max_same_sector_positions=config.max_same_sector_positions,
+            max_sector_exposure_pct=config.max_sector_exposure_pct,
+        ) if config.correlation_filter_enabled else None
+
+        # Smart Order Router
+        self.order_router = SmartOrderRouter(
+            use_limit_orders=config.prefer_limit_orders,
+            limit_offset_pct=config.limit_order_offset_pct,
+        ) if config.smart_order_routing_enabled else None
+
+        # Earnings Calendar
+        self.earnings_calendar = EarningsCalendar() if config.earnings_awareness_enabled else None
+
+        # Sector Rotation
+        self.sector_rotation = SectorRotationAnalyzer() if config.sector_rotation_enabled else None
+
+        # RL Ensemble
+        self.ensemble = RLEnsemble(
+            min_agreement_ratio=config.ensemble_min_agreement,
+        ) if config.ensemble_enabled else None
+
+        # Dynamic confidence tracking
+        self._confidence_history: List[Dict] = []  # {confidence, was_profitable}
     
     async def analyze_symbol(
         self,
@@ -177,12 +299,27 @@ class AITraderEngine:
     ) -> TradingDecision:
         """
         Analyze a symbol and make a trading decision.
-        
+
+        Enhanced pipeline:
+        1. Aggregate signals from all sources
+        2. Market regime detection & weight adjustment
+        3. Multi-timeframe confirmation
+        4. Calculate adaptive threshold (with dynamic confidence)
+        5. Determine decision type
+        6. Churn filter check
+        7. Correlation filter check
+        8. Earnings calendar check
+        9. Position sizing (with improved Kelly & sector rotation)
+        10. Graduated SL/TP with ATR-based stops
+        11. Smart order routing
+        12. Risk checks
+        13. Build decision
+
         Args:
             symbol: Trading symbol
             market_data: Market data including OHLCV
             portfolio_state: Current portfolio state (optional)
-            
+
         Returns:
             TradingDecision with complete analysis
         """
@@ -198,28 +335,165 @@ class AITraderEngine:
                 'daily_pnl_pct': 0,
                 'max_value': self.config.initial_budget
             }
-        
-        # 1. Aggregate signals from all sources
+
+        prices = market_data.get('prices', [])
+        current_price = market_data.get('current_price', 0)
+        enhancement_details = {}
+
+        # === STEP 1: Market Regime Detection ===
+        regime_analysis = None
+        if self.regime_detector and prices:
+            regime_analysis = self.regime_detector.detect_regime(prices)
+            enhancement_details['market_regime'] = {
+                'regime': regime_analysis.regime.value,
+                'confidence': regime_analysis.confidence,
+                'trend_strength': regime_analysis.trend_strength,
+                'volatility_level': regime_analysis.volatility_level,
+            }
+
+            # Adjust signal weights based on regime
+            if self.config.regime_weight_adjustment and regime_analysis.confidence > 0.5:
+                base_weights = {
+                    'ml_weight': self.config.ml_weight,
+                    'rl_weight': self.config.rl_weight,
+                    'sentiment_weight': self.config.sentiment_weight,
+                    'technical_weight': self.config.technical_weight,
+                }
+                regime_weights = self.regime_detector.get_regime_adjusted_weights(
+                    regime_analysis, base_weights
+                )
+                # Temporarily adjust aggregator weights
+                self.signal_aggregator.config.ml_weight = regime_weights.ml_weight
+                self.signal_aggregator.config.rl_weight = regime_weights.rl_weight
+                self.signal_aggregator.config.sentiment_weight = regime_weights.sentiment_weight
+                self.signal_aggregator.config.technical_weight = regime_weights.technical_weight
+                enhancement_details['regime_weights'] = {
+                    'ml': regime_weights.ml_weight,
+                    'rl': regime_weights.rl_weight,
+                    'sentiment': regime_weights.sentiment_weight,
+                    'technical': regime_weights.technical_weight,
+                    'reason': regime_weights.adjustment_reason,
+                }
+
+        # === STEP 2: Aggregate signals from all sources ===
         aggregated = await self.signal_aggregator.aggregate_signals(
             symbol=symbol,
             market_data=market_data,
             portfolio_state=portfolio_state,
             rl_agent_name=self.config.rl_agent_name
         )
-        
-        # 2. Calculate adaptive threshold
+
+        # Restore original weights if they were adjusted
+        if self.regime_detector and self.config.regime_weight_adjustment:
+            self.signal_aggregator.config.ml_weight = self.config.ml_weight
+            self.signal_aggregator.config.rl_weight = self.config.rl_weight
+            self.signal_aggregator.config.sentiment_weight = self.config.sentiment_weight
+            self.signal_aggregator.config.technical_weight = self.config.technical_weight
+
+        # === STEP 3: Multi-Timeframe Confirmation ===
+        mtf_multiplier = 1.0
+        if self.mtf_analyzer and prices:
+            mtf_analysis = self.mtf_analyzer.analyze_multi_timeframe(prices)
+            mtf_multiplier = self.mtf_analyzer.get_confidence_multiplier(mtf_analysis)
+            enhancement_details['multi_timeframe'] = {
+                'alignment': mtf_analysis['alignment'],
+                'confirmation_level': mtf_analysis['confirmation_level'],
+                'confidence_multiplier': mtf_multiplier,
+            }
+
+            # Boost or reduce confidence based on timeframe alignment
+            aggregated.confidence = min(1.0, aggregated.confidence * mtf_multiplier)
+
+            # If multi-timeframe confirmation is required and not aligned
+            if (self.config.multi_timeframe_confirmation_required and
+                    mtf_analysis['confirmation_level'] < 2):
+                # Reduce score for entries (not exits)
+                positions = portfolio_state.get('positions', {})
+                if symbol not in positions:
+                    aggregated.weighted_score *= 0.5  # Halve score without confirmation
+
+        # === STEP 4: Calculate adaptive threshold (enhanced with dynamic confidence) ===
         threshold = self._calculate_adaptive_threshold(aggregated, portfolio_state)
-        
-        # 3. Determine decision type
+
+        # Dynamic confidence adjustment based on recent trade accuracy
+        if self.config.dynamic_confidence_enabled and self._confidence_history:
+            recent = self._confidence_history[-self.config.confidence_lookback_trades:]
+            if len(recent) >= 10:
+                # Calculate optimal threshold from past trades
+                profitable = [h for h in recent if h.get('was_profitable', False)]
+                if profitable:
+                    avg_profitable_confidence = np.mean([h['confidence'] for h in profitable])
+                    # Blend: 70% current threshold + 30% historical optimal
+                    threshold = threshold * 0.7 + avg_profitable_confidence * 0.3
+                    enhancement_details['dynamic_threshold'] = {
+                        'adjusted_threshold': threshold,
+                        'avg_profitable_confidence': float(avg_profitable_confidence),
+                        'sample_size': len(recent),
+                    }
+
+        # === STEP 5: Determine decision type ===
         decision_type = self._determine_decision_type(
             aggregated,
             threshold,
             portfolio_state,
             symbol
         )
-        
-        # 4. Calculate position size (with drawdown scaling)
-        current_price = market_data.get('current_price', 0)
+
+        # === STEP 6: Churn Filter ===
+        if self.churn_filter and decision_type in ('buy', 'short'):
+            # Estimate expected return from signal score
+            expected_return = abs(aggregated.weighted_score) * 5  # Rough: score * 5%
+            churn_result = self.churn_filter.check_trade(
+                symbol=symbol,
+                expected_return_pct=expected_return,
+                trade_type=decision_type,
+                confidence=aggregated.confidence,
+            )
+            enhancement_details['churn_filter'] = {
+                'allowed': churn_result.allowed,
+                'reason': churn_result.reason,
+                'expected_return': churn_result.expected_return_pct,
+                'min_required': churn_result.min_required_return_pct,
+            }
+            if not churn_result.allowed:
+                decision_type = 'skip'
+
+        # === STEP 7: Correlation Filter ===
+        if self.correlation_filter and decision_type in ('buy', 'short'):
+            positions = portfolio_state.get('positions', {})
+            portfolio_value = portfolio_state.get('total_value', self.config.initial_budget)
+            position_size_est = self.config.initial_budget * (self.config.fixed_position_percent or 0.10)
+
+            corr_result = self.correlation_filter.check_new_position(
+                symbol=symbol,
+                position_value=position_size_est,
+                current_positions=positions,
+                portfolio_value=portfolio_value,
+            )
+            enhancement_details['correlation_filter'] = {
+                'allowed': corr_result.allowed,
+                'reason': corr_result.reason,
+                'same_sector_count': corr_result.same_sector_count,
+                'sector_exposure': corr_result.sector_exposure_pct,
+                'effective_positions': corr_result.effective_positions,
+            }
+            if not corr_result.allowed:
+                decision_type = 'skip'
+
+        # === STEP 8: Earnings Calendar ===
+        earnings_scale = 1.0
+        if self.earnings_calendar and decision_type in ('buy', 'short'):
+            earnings_info = self.earnings_calendar.check_earnings_proximity(symbol)
+            earnings_scale = self.earnings_calendar.get_position_scale_factor(earnings_info)
+            enhancement_details['earnings'] = {
+                'recommendation': earnings_info.recommendation,
+                'days_until': earnings_info.days_until_earnings,
+                'position_scale': earnings_scale,
+            }
+            if earnings_scale == 0.0:
+                decision_type = 'skip'
+
+        # === STEP 9: Position sizing (enhanced with sector rotation & Kelly) ===
         position_size, quantity = self._calculate_position_size(
             decision_type,
             current_price,
@@ -227,15 +501,68 @@ class AITraderEngine:
             portfolio_state,
             market_data=market_data
         )
-        
-        # 5. Calculate stop-loss and take-profit (dynamic ATR or fixed %)
+
+        # Apply earnings scale
+        if earnings_scale < 1.0 and position_size > 0:
+            position_size *= earnings_scale
+            quantity = int(quantity * earnings_scale) if quantity else 0
+
+        # Apply sector rotation preference
+        if self.sector_rotation and decision_type in ('buy', 'short'):
+            from .correlation_filter import SECTOR_MAP
+            sector_pref = self.sector_rotation.get_symbol_preference(symbol, SECTOR_MAP)
+            if sector_pref != 1.0:
+                position_size *= sector_pref
+                quantity = int(quantity * sector_pref) if quantity else 0
+                enhancement_details['sector_rotation'] = {
+                    'preference': sector_pref,
+                    'sector': SECTOR_MAP.get(symbol, 'unknown'),
+                }
+
+        # === STEP 10: Graduated SL/TP ===
         stop_loss, take_profit = self._calculate_sl_tp(
             decision_type,
             current_price,
             market_data
         )
-        
-        # 6. Run risk checks
+
+        # Create graduated TP config for new positions
+        if self.tp_manager and decision_type in ('buy', 'short'):
+            atr_val = self._calculate_atr(prices, self.config.atr_period) if prices else None
+            direction = 'long' if decision_type == 'buy' else 'short'
+            tp_config = self.tp_manager.create_position_config(
+                symbol=symbol,
+                entry_price=current_price,
+                direction=direction,
+                atr=atr_val,
+            )
+            enhancement_details['graduated_tp'] = {
+                'stop_loss': tp_config.stop_loss_price,
+                'tier1_target': tp_config.tiers[0].target_pct * 100 if tp_config.tiers else 0,
+                'tier2_target': tp_config.tiers[1].target_pct * 100 if len(tp_config.tiers) > 1 else 0,
+                'trailing_distance': tp_config.trailing_stop_distance_pct * 100,
+            }
+            # Use graduated SL instead of fixed
+            stop_loss = tp_config.stop_loss_price
+
+        # === STEP 11: Smart Order Routing ===
+        if self.order_router and decision_type in ('buy', 'short'):
+            urgency = 'high' if aggregated.confidence > 0.85 else 'normal'
+            order_advice = self.order_router.get_order_advice(
+                symbol=symbol,
+                current_price=current_price,
+                trade_type=decision_type,
+                urgency=urgency,
+            )
+            enhancement_details['smart_order'] = {
+                'order_type': order_advice.order_type,
+                'limit_price': order_advice.limit_price,
+                'timing_quality': order_advice.timing_quality,
+                'intraday_pattern': order_advice.intraday_pattern,
+                'spread_estimate': order_advice.spread_estimate_pct,
+            }
+
+        # === STEP 12: Risk checks ===
         risk_result = await self.risk_manager.check_all(
             symbol=symbol,
             decision_type=decision_type,
@@ -243,15 +570,15 @@ class AITraderEngine:
             quantity=quantity,
             current_portfolio=portfolio_state
         )
-        
-        # 6b. Apply risk-based position scaling
+
+        # Apply risk-based position scaling
         if risk_result.position_scale_factor < 1.0 and quantity != 0:
             position_size = position_size * risk_result.position_scale_factor
             quantity = int(quantity * risk_result.position_scale_factor)
             if abs(quantity) < 1:
                 quantity = 1 if quantity > 0 else -1 if quantity < 0 else 0
-        
-        # 7. Build reasoning
+
+        # === STEP 13: Build reasoning (enhanced) ===
         reasoning = self._build_reasoning(
             aggregated,
             threshold,
@@ -259,15 +586,17 @@ class AITraderEngine:
             risk_result,
             portfolio_state
         )
-        
-        # 8. Create summary
+        # Add enhancement details to reasoning
+        reasoning['enhancements'] = enhancement_details
+
+        # Create summary
         summary = self._create_summary(
             symbol,
             decision_type,
             aggregated,
             risk_result
         )
-        
+
         # Create decision object
         decision = TradingDecision(
             symbol=symbol,
@@ -292,28 +621,68 @@ class AITraderEngine:
             portfolio_snapshot=portfolio_state,
             timestamp=datetime.now()
         )
-        
+
+        # Record trade in churn filter if executed
+        if self.churn_filter and decision_type in ('buy', 'sell', 'short', 'close'):
+            self.churn_filter.record_trade(
+                symbol=symbol,
+                trade_type=decision_type,
+                price=current_price,
+                quantity=abs(quantity) if quantity else 0,
+            )
+
         return decision
-    
-    def record_trade_outcome(self, profit: float):
+
+    def check_graduated_take_profit(self, symbol: str, current_price: float) -> Optional[Dict]:
         """
-        Record a trade outcome for win/loss streak tracking.
-        
+        Check graduated take-profit levels for an existing position.
+        Should be called periodically for all open positions.
+
+        Args:
+            symbol: Trading symbol
+            current_price: Current market price
+
+        Returns:
+            Dict with action if TP triggered, None otherwise
+        """
+        if not self.tp_manager:
+            return None
+
+        result = self.tp_manager.check_price(symbol, current_price)
+        if result['action'] != 'none':
+            return result
+        return None
+    
+    def record_trade_outcome(self, profit: float, confidence: float = 0.5):
+        """
+        Record a trade outcome for win/loss streak tracking and dynamic confidence.
+
         Args:
             profit: Trade profit (positive = win, negative = loss)
+            confidence: Signal confidence when trade was entered
         """
         if profit is None:
             return
         self._trade_history.append(profit)
         if len(self._trade_history) > 100:
             self._trade_history = self._trade_history[-100:]
-        
+
         if profit > 0:
             self.consecutive_wins += 1
             self.consecutive_losses = 0
         elif profit < 0:
             self.consecutive_losses += 1
             self.consecutive_wins = 0
+
+        # Track confidence for dynamic threshold adjustment
+        self._confidence_history.append({
+            'confidence': confidence,
+            'was_profitable': profit > 0,
+            'profit': profit,
+            'timestamp': datetime.now().isoformat(),
+        })
+        if len(self._confidence_history) > 200:
+            self._confidence_history = self._confidence_history[-200:]
     
     def _calculate_adaptive_threshold(
         self,
@@ -626,15 +995,36 @@ class AITraderEngine:
             position_size = initial_budget * fixed_position_percent
         
         elif self.config.position_sizing == 'kelly':
-            # Kelly Criterion (simplified)
+            # Enhanced Kelly Criterion using rolling trade history
             # Kelly = (p * b - q) / b where p=win prob, q=loss prob, b=win/loss ratio
-            win_prob = (confidence + 1) / 2  # Convert confidence to probability
+            recent_trades = self._trade_history[-50:] if self._trade_history else []
+
+            if len(recent_trades) >= 10:
+                # Use actual win rate and payoff ratio from recent trades
+                wins = [t for t in recent_trades if t > 0]
+                losses = [t for t in recent_trades if t < 0]
+                win_prob = len(wins) / len(recent_trades)
+                avg_win = np.mean(wins) if wins else 1.0
+                avg_loss = abs(np.mean(losses)) if losses else 1.0
+                win_loss_ratio = avg_win / avg_loss if avg_loss > 0 else 2.0
+            else:
+                # Fallback to confidence-based estimate
+                win_prob = (confidence + 1) / 2
+                win_loss_ratio = 2.0
+
             loss_prob = 1 - win_prob
-            win_loss_ratio = 2.0  # Assume 2:1 reward/risk
-            
             kelly_pct = (win_prob * win_loss_ratio - loss_prob) / win_loss_ratio
             kelly_pct = max(0, kelly_pct) * kelly_fraction  # Use fraction
-            
+
+            # Auto Half-Kelly in high volatility (VIX proxy via regime)
+            if (hasattr(self, 'regime_detector') and self.regime_detector and
+                    hasattr(self.regime_detector, '_regime_history') and
+                    self.regime_detector._regime_history):
+                from .market_regime import MarketRegime
+                last_regime = self.regime_detector._regime_history[-1]
+                if last_regime in (MarketRegime.HIGH_VOLATILITY, MarketRegime.CRASH):
+                    kelly_pct *= 0.5  # Half-Kelly in volatile markets
+
             position_size = initial_budget * kelly_pct
         
         elif self.config.position_sizing == 'volatility':
@@ -918,6 +1308,47 @@ class AITraderEngine:
         else:  # hold
             return f"{symbol}: HOLD - No strong signal"
     
+    def get_enhancement_status(self) -> Dict[str, Any]:
+        """Get status of all enhancement modules"""
+        status = {}
+        status['churn_filter'] = {
+            'enabled': self.churn_filter is not None,
+            'stats': self.churn_filter.get_stats() if self.churn_filter else None,
+        }
+        status['graduated_tp'] = {
+            'enabled': self.tp_manager is not None,
+            'active_positions': len(self.tp_manager.get_all_positions()) if self.tp_manager else 0,
+        }
+        status['market_regime'] = {
+            'enabled': self.regime_detector is not None,
+            'current_regime': (
+                self.regime_detector._regime_history[-1].value
+                if self.regime_detector and self.regime_detector._regime_history
+                else None
+            ),
+        }
+        status['multi_timeframe'] = {'enabled': self.mtf_analyzer is not None}
+        status['correlation_filter'] = {'enabled': self.correlation_filter is not None}
+        status['smart_order_routing'] = {'enabled': self.order_router is not None}
+        status['earnings_calendar'] = {'enabled': self.earnings_calendar is not None}
+        status['sector_rotation'] = {
+            'enabled': self.sector_rotation is not None,
+            'analysis': (
+                self.sector_rotation.analyze_rotation().__dict__
+                if self.sector_rotation and self.sector_rotation._sector_returns
+                else None
+            ),
+        }
+        status['ensemble'] = {
+            'enabled': self.ensemble is not None,
+            'member_stats': self.ensemble.get_member_stats() if self.ensemble else None,
+        }
+        status['dynamic_confidence'] = {
+            'enabled': self.config.dynamic_confidence_enabled,
+            'history_size': len(self._confidence_history),
+        }
+        return status
+
     async def close(self):
         """Cleanup resources"""
         await self.http_client.aclose()

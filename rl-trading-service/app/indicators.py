@@ -116,10 +116,68 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     
     # Gap detection
     df['gap'] = (df['open'] - df['close'].shift(1)) / df['close'].shift(1)
-    
+
+    # === NEW: Extended Feature Engineering ===
+
+    # VWAP approximation for daily data
+    typical_price = (df['high'] + df['low'] + df['close']) / 3
+    cum_vol = df['volume'].cumsum()
+    df['vwap'] = np.where(cum_vol > 0, (typical_price * df['volume']).cumsum() / cum_vol, typical_price)
+    df['price_vs_vwap'] = np.where(df['vwap'] > 0, (df['close'] - df['vwap']) / df['vwap'], 0)
+
+    # Keltner Channels
+    keltner_middle = df['ema_12'] if 'ema_12' in df.columns else df['close'].ewm(span=20).mean()
+    atr_val = df['atr'] if 'atr' in df.columns else (df['high'] - df['low']).rolling(14).mean()
+    df['keltner_upper'] = keltner_middle + 2 * atr_val
+    df['keltner_lower'] = keltner_middle - 2 * atr_val
+    keltner_range = df['keltner_upper'] - df['keltner_lower']
+    df['keltner_pct'] = np.where(keltner_range > 0, (df['close'] - df['keltner_lower']) / keltner_range, 0.5)
+
+    # Rate of Change
+    df['roc_5'] = df['close'].pct_change(5)
+    df['roc_10'] = df['close'].pct_change(10)
+
+    # Williams %R
+    high_14 = df['high'].rolling(14).max()
+    low_14 = df['low'].rolling(14).min()
+    hl_range = high_14 - low_14
+    df['williams_r'] = np.where(hl_range > 0, (high_14 - df['close']) / hl_range * -100, -50)
+
+    # Price distance from key MAs (normalized)
+    if 'sma_20' in df.columns:
+        df['dist_sma20'] = np.where(df['sma_20'] > 0, (df['close'] - df['sma_20']) / df['sma_20'], 0)
+    if 'sma_50' in df.columns:
+        df['dist_sma50'] = np.where(df['sma_50'] > 0, (df['close'] - df['sma_50']) / df['sma_50'], 0)
+    if 'sma_200' in df.columns:
+        df['dist_sma200'] = np.where(df['sma_200'] > 0, (df['close'] - df['sma_200']) / df['sma_200'], 0)
+
+    # Higher highs / Lower lows (trend structure)
+    df['higher_high'] = (df['high'] > df['high'].shift(1)).astype(float)
+    df['lower_low'] = (df['low'] < df['low'].shift(1)).astype(float)
+    df['hh_count_5'] = df['higher_high'].rolling(5).sum()
+    df['ll_count_5'] = df['lower_low'].rolling(5).sum()
+
+    # Intraday range relative to ATR
+    df['range_pct'] = np.where(df['close'] > 0, (df['high'] - df['low']) / df['close'], 0)
+    if 'atr' in df.columns:
+        df['range_vs_atr'] = np.where(df['atr'] > 0, (df['high'] - df['low']) / df['atr'], 1)
+
+    # Market regime features
+    if all(col in df.columns for col in ['sma_20', 'sma_50', 'sma_200']):
+        df['sma_alignment'] = (
+            (df['sma_20'] > df['sma_50']).astype(float) +
+            (df['sma_50'] > df['sma_200']).astype(float) +
+            (df['close'] > df['sma_20']).astype(float)
+        ) / 3.0
+
+    # Volatility regime
+    if 'volatility' in df.columns:
+        vol_avg = df['volatility'].rolling(50).mean()
+        df['vol_regime'] = np.where(vol_avg > 0, df['volatility'] / vol_avg, 1)
+
     # Fill NaN values (use bfill() and ffill() methods instead of deprecated fillna method arg)
     df = df.bfill().ffill().fillna(0)
-    
+
     return df
 
 
