@@ -197,7 +197,7 @@ export function LeaderboardPage() {
                         )}
                         <div className="min-w-0">
                           <div className="font-semibold flex items-center gap-1 sm:gap-2 text-sm sm:text-base">
-                            <span className="truncate">{entry.username}</span>
+                            <span className="truncate">{entry.isAITrader && entry.agentName ? entry.agentName : entry.username}</span>
                             {entry.isAITrader && (
                               <span className="text-[10px] sm:text-xs bg-purple-600/30 text-purple-300 px-1.5 sm:px-2 py-0.5 rounded-full flex-shrink-0">
                                 KI
