@@ -2463,7 +2463,8 @@ export async function getLeaderboard(limit = 50, timeframe = 'all', filter = 'al
           (SELECT COUNT(*) FROM positions WHERE portfolio_id = p.id AND is_open = false) as total_trades,
           (SELECT COUNT(*) FROM positions WHERE portfolio_id = p.id AND is_open = false AND realized_pnl > 0) as winning_trades,
           p.ai_trader_id,
-          a.avatar
+          a.avatar,
+          a.name as ai_trader_name
         FROM portfolios p
         LEFT JOIN users u ON p.user_id = u.id
         LEFT JOIN ai_traders a ON p.ai_trader_id = a.id
@@ -2479,6 +2480,7 @@ export async function getLeaderboard(limit = 50, timeframe = 'all', filter = 'al
         winning_trades,
         ai_trader_id,
         avatar,
+        ai_trader_name,
         ((current_value - initial_capital) / initial_capital * 100) as total_return_pct,
         CASE WHEN total_trades > 0 
           THEN (winning_trades::float / total_trades * 100) 
@@ -2505,6 +2507,7 @@ export async function getLeaderboard(limit = 50, timeframe = 'all', filter = 'al
       isAITrader: row.ai_trader_id !== null,
       avatar: row.avatar || (row.ai_trader_id ? '🤖' : undefined),
       aiTraderId: row.ai_trader_id,
+      agentName: row.ai_trader_name || null,
     }));
   } catch (e) {
     logger.error('Get leaderboard error:', e);

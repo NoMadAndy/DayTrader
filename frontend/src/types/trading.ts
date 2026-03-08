@@ -523,6 +523,7 @@ export interface LeaderboardEntry {
   isAITrader: boolean;
   avatar?: string;
   aiTraderId?: number;
+  agentName?: string;
 }
 
 export interface UserRank {
