@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.43.3] - 2026-03-11
+
+### Fixed
+- **GPU Auto-Erkennung** — `USE_CUDA` unterstützt jetzt `auto` Modus (neuer Default). GPU wird automatisch erkannt wenn verfügbar, statt `USE_CUDA=false` als Default, das GPU immer blockierte.
+- **RL-Trading-Service GPU-fähig** — Standard-Dockerfile (`rl-trading-service/Dockerfile`) nutzt jetzt NVIDIA CUDA 13.0.2 Base-Image mit CUDA-PyTorch (cu130), statt CPU-only `python:3.11-slim` mit CPU-PyTorch. GPU-Erkennung funktioniert nun ohne separates GPU-Overlay.
+- **ML-Service GPU-Erkennung** — Standard-ML-Dockerfile hatte bereits CUDA-PyTorch, aber `docker-compose.yml` setzte `USE_CUDA=false` als Default, was GPU-Nutzung verhinderte. Jetzt `auto`.
+
+### Changed
+- **`docker-compose.gpu.yml` vereinfacht** — Enthält nur noch NVIDIA Device-Reservierungen und Env-Vars, keine Dockerfile-Overrides mehr (da Standard-Dockerfiles jetzt GPU-fähig sind).
+- **Config: `use_cuda` Typ geändert** — Von `bool` zu `str` (`"auto"`, `"true"`, `"false"`). `auto` = `torch.cuda.is_available()`.
+
 ## [1.43.2] - 2026-03-11
 
 ### Added

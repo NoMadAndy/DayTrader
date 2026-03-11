@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     
     # Service info
     service_name: str = "daytrader-rl-trading-service"
-    version: str = os.getenv("BUILD_VERSION", "1.43.2")
+    version: str = os.getenv("BUILD_VERSION", "1.43.3")
     commit: str = os.getenv("BUILD_COMMIT", "unknown")
     build_time: str = os.getenv("BUILD_TIME", "unknown")
     
@@ -40,8 +40,8 @@ class Settings(BaseSettings):
     default_lookback_window: int = int(os.getenv("DEFAULT_LOOKBACK_WINDOW", "60"))
     default_initial_balance: float = float(os.getenv("DEFAULT_INITIAL_BALANCE", "100000"))
     
-    # CUDA settings
-    use_cuda: bool = os.getenv("USE_CUDA", "true").lower() == "true"
+    # CUDA settings – "auto" means use GPU when available
+    use_cuda: str = os.getenv("USE_CUDA", "auto")
     
     # Transformer architecture defaults
     default_transformer_d_model: int = int(os.getenv("DEFAULT_TRANSFORMER_D_MODEL", "256"))
@@ -61,9 +61,17 @@ class Settings(BaseSettings):
     backend_url: str = os.getenv("BACKEND_URL", "http://backend:3001")
     
     @property
+    def cuda_effective(self) -> bool:
+        """Resolve USE_CUDA setting: auto -> detect, true/false -> explicit"""
+        val = self.use_cuda.lower().strip()
+        if val == "auto":
+            return torch.cuda.is_available()
+        return val == "true"
+    
+    @property
     def device(self) -> str:
         """Get the compute device (CUDA if available and enabled)"""
-        if self.use_cuda and torch.cuda.is_available():
+        if self.cuda_effective:
             return "cuda"
         return "cpu"
     
@@ -73,7 +81,8 @@ class Settings(BaseSettings):
         info = {
             "device": self.device,
             "cuda_available": torch.cuda.is_available(),
-            "cuda_enabled": self.use_cuda,
+            "cuda_enabled": self.cuda_effective,
+            "cuda_mode": self.use_cuda,
         }
         if torch.cuda.is_available():
             info["cuda_device_name"] = torch.cuda.get_device_name(0)

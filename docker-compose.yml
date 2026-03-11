@@ -20,7 +20,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        BUILD_VERSION: ${BUILD_VERSION:-1.43.1}
+        BUILD_VERSION: ${BUILD_VERSION:-1.43.3}
         BUILD_COMMIT: ${BUILD_COMMIT:-dev}
         BUILD_TIME: ${BUILD_TIME:-}
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
@@ -41,7 +41,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       args:
-        BUILD_VERSION: ${BUILD_VERSION:-1.43.1}
+        BUILD_VERSION: ${BUILD_VERSION:-1.43.3}
         BUILD_COMMIT: ${BUILD_COMMIT:-dev}
         BUILD_TIME: ${BUILD_TIME:-}
     ports:
@@ -68,7 +68,7 @@ services:
       context: ./ml-service
       dockerfile: Dockerfile
       args:
-        BUILD_VERSION: ${BUILD_VERSION:-1.43.1}
+        BUILD_VERSION: ${BUILD_VERSION:-1.43.3}
         BUILD_COMMIT: ${BUILD_COMMIT:-dev}
         BUILD_TIME: ${BUILD_TIME:-}
     ports:
@@ -87,7 +87,7 @@ services:
       retries: 3
       start_period: 30s
     environment:
-      - USE_CUDA=${USE_CUDA:-false}
+      - USE_CUDA=${USE_CUDA:-auto}
       - MODEL_DIR=/app/models
       - SEQUENCE_LENGTH=${ML_SEQUENCE_LENGTH:-60}
       - FORECAST_DAYS=${ML_FORECAST_DAYS:-14}
@@ -105,7 +105,7 @@ services:
       context: ./rl-trading-service
       dockerfile: Dockerfile
       args:
-        BUILD_VERSION: ${BUILD_VERSION:-1.43.1}
+        BUILD_VERSION: ${BUILD_VERSION:-1.43.3}
         BUILD_COMMIT: ${BUILD_COMMIT:-dev}
         BUILD_TIME: ${BUILD_TIME:-}
     ports:
@@ -128,7 +128,7 @@ services:
       retries: 3
       start_period: 30s
     environment:
-      - USE_CUDA=${USE_CUDA:-false}
+      - USE_CUDA=${USE_CUDA:-auto}
       - MODEL_DIR=/app/models
       - CHECKPOINT_DIR=/app/checkpoints
       - DEFAULT_TIMESTEPS=${RL_DEFAULT_TIMESTEPS:-100000}

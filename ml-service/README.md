@@ -170,7 +170,7 @@ The service automatically falls back to CPU if CUDA is not available.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `USE_CUDA` | `true` | Enable GPU acceleration |
+| `USE_CUDA` | `auto` | GPU mode: `auto` (detect), `true` (force), `false` (CPU only) |
 | `MODEL_DIR` | `/app/models` | Directory for saved models |
 | `SEQUENCE_LENGTH` | `60` | Input sequence length (days) |
 | `FORECAST_DAYS` | `14` | Prediction horizon (days) |

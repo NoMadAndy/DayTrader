@@ -8,12 +8,14 @@
 # - NVIDIA GPU with CUDA support
 # - nvidia-container-toolkit installed
 # - Docker configured to use nvidia runtime
+#
+# Note: The standard Dockerfiles already include CUDA-capable PyTorch.
+# This overlay adds NVIDIA device reservations so the GPU is visible inside
+# containers. If nvidia is configured as the default Docker runtime, GPU
+# auto-detection works even without this overlay.
 
 services:
   ml-service:
-    build:
-      context: ./ml-service
-      dockerfile: Dockerfile.gpu
     deploy:
       resources:
         reservations:
@@ -27,9 +29,6 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
   rl-trading-service:
-    build:
-      context: ./rl-trading-service
-      dockerfile: Dockerfile.gpu
     deploy:
       resources:
         reservations:

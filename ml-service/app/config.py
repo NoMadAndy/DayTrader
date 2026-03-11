@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     
     # Service info
     service_name: str = "daytrader-ml-service"
-    version: str = os.getenv("BUILD_VERSION", "1.43.2")
+    version: str = os.getenv("BUILD_VERSION", "1.43.3")
     commit: str = os.getenv("BUILD_COMMIT", "unknown")
     build_time: str = os.getenv("BUILD_TIME", "unknown")
     
@@ -44,16 +44,24 @@ class Settings(BaseSettings):
     transformer_d_ff: int = int(os.getenv("ML_TRANSFORMER_D_FF", "256"))
     transformer_dropout: float = float(os.getenv("ML_TRANSFORMER_DROPOUT", "0.1"))
     
-    # CUDA settings
-    use_cuda: bool = os.getenv("USE_CUDA", "true").lower() == "true"
+    # CUDA settings – "auto" means use GPU when available
+    use_cuda: str = os.getenv("USE_CUDA", "auto")
     
     # FinBERT settings
     preload_finbert: bool = os.getenv("PRELOAD_FINBERT", "false").lower() == "true"
     
     @property
+    def cuda_effective(self) -> bool:
+        """Resolve USE_CUDA setting: auto -> detect, true/false -> explicit"""
+        val = self.use_cuda.lower().strip()
+        if val == "auto":
+            return torch.cuda.is_available()
+        return val == "true"
+    
+    @property
     def device(self) -> torch.device:
         """Get the compute device (CUDA if available and enabled)"""
-        if self.use_cuda and torch.cuda.is_available():
+        if self.cuda_effective:
             return torch.device("cuda")
         return torch.device("cpu")
     
@@ -63,7 +71,8 @@ class Settings(BaseSettings):
         info = {
             "device": str(self.device),
             "cuda_available": torch.cuda.is_available(),
-            "cuda_enabled": self.use_cuda,
+            "cuda_enabled": self.cuda_effective,
+            "cuda_mode": self.use_cuda,
         }
         if torch.cuda.is_available():
             info["cuda_device_name"] = torch.cuda.get_device_name(0)

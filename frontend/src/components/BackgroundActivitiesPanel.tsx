@@ -12,6 +12,7 @@ interface DeviceInfo {
   device: string;
   cuda_available?: boolean;
   cuda_enabled?: boolean;
+  cuda_mode?: string;
   cuda_device_name?: string;
   cuda_memory_total?: string;
   cuda_device_count?: number;
