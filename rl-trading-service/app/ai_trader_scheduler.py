@@ -7,6 +7,7 @@ Includes self-training capability during idle periods.
 """
 
 import asyncio
+import os
 from typing import Dict, Optional, Any
 from datetime import datetime, time, timedelta
 import httpx
@@ -34,6 +35,9 @@ class AITraderScheduler:
         self.last_training_time: Dict[int, datetime] = {}
         self.trainer = TradingAgentTrainer()
         self._shutdown = False
+        
+        # Global training semaphore: only 1 training at a time to limit CPU usage
+        self._training_semaphore = asyncio.Semaphore(int(os.getenv("MAX_CONCURRENT_TRAININGS", "1")))
         
         # Self-training status tracking
         self.self_training_status: Dict[int, Dict[str, Any]] = {}
@@ -327,6 +331,7 @@ class AITraderScheduler:
         """
         Perform self-training during idle periods.
         This runs as a background task and can be cancelled when market opens.
+        Acquires global semaphore to limit concurrent trainings.
         
         Args:
             trader_id: Trader ID
@@ -341,6 +346,16 @@ class AITraderScheduler:
             if minutes_since_train < config.self_training_interval_minutes:
                 return  # Not time yet
         
+        # Acquire global semaphore to limit concurrent trainings
+        print(f"🎓 Trader {trader_id} waiting for training slot...")
+        async with self._training_semaphore:
+            await self._run_self_training(trader_id, config)
+
+    async def _run_self_training(self, trader_id: int, config: AITraderConfig):
+        """Execute the actual self-training (called under semaphore)."""
+        now = datetime.now()
+        agent_name = config.rl_agent_name or f"trader_{trader_id}_agent"
+
         # Start self-training
         print(f"🎓 Trader {trader_id} starting self-training (idle period)...")
         self.last_training_time[trader_id] = now

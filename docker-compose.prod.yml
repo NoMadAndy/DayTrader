@@ -38,8 +38,16 @@ services:
     ports:
       - "${ML_SERVICE_PORT:-8000}:8000"
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '${ML_SERVICE_CPUS:-2.0}'
     environment:
       - USE_CUDA=true
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-2}
+      - MKL_NUM_THREADS=${MKL_NUM_THREADS:-2}
+      - OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-2}
+      - TORCH_NUM_THREADS=${TORCH_NUM_THREADS:-2}
 
   rl-trading-service:
     build:
@@ -48,7 +56,16 @@ services:
     ports:
       - "${RL_SERVICE_PORT:-8001}:8001"
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '${RL_SERVICE_CPUS:-2.0}'
     environment:
       - USE_CUDA=true
       - BACKEND_URL=http://backend:3001
       - ML_SERVICE_URL=http://ml-service:8000
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-2}
+      - MKL_NUM_THREADS=${MKL_NUM_THREADS:-2}
+      - OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-2}
+      - TORCH_NUM_THREADS=${TORCH_NUM_THREADS:-2}
+      - MAX_CONCURRENT_TRAININGS=${MAX_CONCURRENT_TRAININGS:-1}

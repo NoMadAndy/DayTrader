@@ -18,6 +18,12 @@ ENV USE_CUDA=true
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
+# Limit PyTorch/BLAS CPU threads (GPU does heavy lifting)
+ENV OMP_NUM_THREADS=${OMP_NUM_THREADS:-2}
+ENV MKL_NUM_THREADS=${MKL_NUM_THREADS:-2}
+ENV OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-2}
+ENV TORCH_NUM_THREADS=${TORCH_NUM_THREADS:-2}
+
 # Install Python 3.11
 RUN apt-get update && apt-get install -y \
     python3.11 \

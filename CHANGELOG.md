@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **ML-Checkpoint-Kompatibilität** — `ml-service` lädt LSTM-Modelle jetzt mit der im Checkpoint erkannten Output-Horizon (statt nur aktueller `FORECAST_DAYS`-Config), sodass ältere/abweichende Model-Artefakte keinen `state_dict`-Shape-Mismatch-500 mehr auslösen.
 - **Robustes Predictor-Autoloading** — Fehler beim Laden einzelner Modelltypen (z. B. inkompatible Artefakte) werden abgefangen; `/api/ml/predict` fällt sauber auf andere verfügbare Modelle zurück bzw. liefert 404 statt ungefangenen Internal Error.
+- **CPU-Überlastung durch PyTorch-Threads** — `OMP_NUM_THREADS`, `MKL_NUM_THREADS`, `OPENBLAS_NUM_THREADS` und `torch.set_num_threads()` standardmäßig auf 2 begrenzt; verhindert, dass jede PyTorch-Operation alle CPU-Kerne belegt und bei Parallel-Training N×8 Threads entstehen.
+- **Gleichzeitige RL-Trainings begrenzt** — Globales `asyncio.Semaphore` im AI-Trader-Scheduler, Default `MAX_CONCURRENT_TRAININGS=1`; verhindert, dass mehrere Trader gleichzeitig trainieren und alle Kerne sättigen.
+- **Docker CPU-Limits** — `ml-service` und `rl-trading-service` erhalten `deploy.resources.limits.cpus` (Default 2.0) in `docker-compose.yml` und `docker-compose.prod.yml`.
 
 ## [1.43.0] - 2026-02-13
 

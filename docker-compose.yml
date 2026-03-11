@@ -76,6 +76,10 @@ services:
     restart: unless-stopped
     volumes:
       - ml-models:/app/models
+    deploy:
+      resources:
+        limits:
+          cpus: '${ML_SERVICE_CPUS:-2.0}'
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -89,6 +93,10 @@ services:
       - FORECAST_DAYS=${ML_FORECAST_DAYS:-14}
       - EPOCHS=${ML_EPOCHS:-100}
       - LEARNING_RATE=${ML_LEARNING_RATE:-0.001}
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-2}
+      - MKL_NUM_THREADS=${MKL_NUM_THREADS:-2}
+      - OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-2}
+      - TORCH_NUM_THREADS=${TORCH_NUM_THREADS:-2}
 
   # RL Trading Service - Deep Reinforcement Learning for trading agents
   # CPU by default, GPU via docker-compose.gpu.yml
@@ -109,6 +117,10 @@ services:
     volumes:
       - rl-models:/app/models
       - rl-checkpoints:/app/checkpoints
+    deploy:
+      resources:
+        limits:
+          cpus: '${RL_SERVICE_CPUS:-2.0}'
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
@@ -123,6 +135,11 @@ services:
       - DEFAULT_LEARNING_RATE=${RL_LEARNING_RATE:-0.0003}
       - ML_SERVICE_URL=${ML_SERVICE_URL:-http://ml-service:8000}
       - BACKEND_URL=${BACKEND_URL:-http://backend:3001}
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-2}
+      - MKL_NUM_THREADS=${MKL_NUM_THREADS:-2}
+      - OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-2}
+      - TORCH_NUM_THREADS=${TORCH_NUM_THREADS:-2}
+      - MAX_CONCURRENT_TRAININGS=${MAX_CONCURRENT_TRAININGS:-1}
 
 volumes:
   ml-models:

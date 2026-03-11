@@ -5,6 +5,11 @@ import os
 import torch
 from pydantic_settings import BaseSettings
 
+# Limit PyTorch CPU threads early (before any model creation)
+_torch_threads = int(os.getenv("TORCH_NUM_THREADS", "2"))
+torch.set_num_threads(_torch_threads)
+torch.set_num_interop_threads(1)
+
 
 class Settings(BaseSettings):
     """Application settings"""

@@ -61,6 +61,12 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/opt/venv/bin:$PATH"
 
+# Limit PyTorch/BLAS CPU threads to prevent runaway core usage
+ENV OMP_NUM_THREADS=${OMP_NUM_THREADS:-2}
+ENV MKL_NUM_THREADS=${MKL_NUM_THREADS:-2}
+ENV OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-2}
+ENV TORCH_NUM_THREADS=${TORCH_NUM_THREADS:-2}
+
 # Copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
 
