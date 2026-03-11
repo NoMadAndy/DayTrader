@@ -919,6 +919,38 @@ async def real_option_chain_endpoint(request: RealOptionChainRequest):
 
 # ============== Main ==============
 
+@app.get("/api/ml/activities")
+async def get_activities():
+    """
+    Get all currently active ML background activities with hardware info.
+    Returns in-progress training jobs.
+    """
+    activities = []
+    device_info = settings.device_info
+
+    for key, status in training_status.items():
+        if status.get("status") in ("starting", "training"):
+            activities.append({
+                "id": f"ml-train-{key}",
+                "type": "ml_training",
+                "name": f"ML Training: {key.upper()}",
+                "status": status.get("status", "training"),
+                "progress": status.get("progress"),
+                "message": status.get("message", ""),
+                "model_type": status.get("model_type"),
+                "started_at": None,
+                "device": settings.device_info.get("device", "cpu"),
+                "device_info": device_info,
+            })
+
+    return {
+        "service": "ml-service",
+        "device": settings.device_info.get("device", "cpu"),
+        "device_info": device_info,
+        "activities": activities,
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

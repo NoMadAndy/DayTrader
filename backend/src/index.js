@@ -335,6 +335,83 @@ app.post('/api/jobs/update-quotes', async (req, res) => {
   res.json(status);
 });
 
+/**
+ * Get all active background activities across all services with hardware info
+ * GET /api/system/activities
+ */
+app.get('/api/system/activities', async (req, res) => {
+  const activities = [];
+  const services = {};
+
+  // 1) Backend background jobs
+  const jobStatus = backgroundJobs.getJobStatus();
+  services.backend = { status: 'healthy', device: 'CPU (Node.js)' };
+  if (jobStatus.isRunning) {
+    activities.push({
+      id: 'backend-quote-update',
+      type: 'quote_update',
+      service: 'backend',
+      name: 'Kurs-Updates',
+      status: 'running',
+      progress: null,
+      message: `Zyklus ${jobStatus.stats?.cycleCount || 0} – ${jobStatus.stats?.successfulUpdates || 0} Updates`,
+      device: 'CPU',
+      device_info: { device: 'cpu' },
+      details: {
+        interval_seconds: jobStatus.config?.quoteUpdateIntervalSeconds,
+        last_update: jobStatus.lastQuoteUpdate,
+        next_update: jobStatus.nextQuoteUpdate,
+        successful: jobStatus.stats?.successfulUpdates,
+        failed: jobStatus.stats?.failedUpdates,
+      },
+    });
+  }
+
+  // 2) ML Service activities
+  try {
+    const mlServiceUrl = process.env.ML_SERVICE_URL || 'http://ml-service:8000';
+    const mlRes = await fetch(`${mlServiceUrl}/api/ml/activities`);
+    if (mlRes.ok) {
+      const mlData = await mlRes.json();
+      services.ml = {
+        status: 'healthy',
+        device: mlData.device,
+        device_info: mlData.device_info,
+      };
+      for (const act of mlData.activities || []) {
+        activities.push({ ...act, service: 'ml-service' });
+      }
+    } else {
+      services.ml = { status: 'unhealthy', error: `HTTP ${mlRes.status}` };
+    }
+  } catch {
+    services.ml = { status: 'unreachable' };
+  }
+
+  // 3) RL Trading Service activities
+  try {
+    const rlServiceUrl = process.env.RL_SERVICE_URL || 'http://rl-trading-service:8001';
+    const rlRes = await fetch(`${rlServiceUrl}/activities`);
+    if (rlRes.ok) {
+      const rlData = await rlRes.json();
+      services.rl = {
+        status: 'healthy',
+        device: rlData.device,
+        device_info: rlData.device_info,
+      };
+      for (const act of rlData.activities || []) {
+        activities.push({ ...act, service: 'rl-trading-service' });
+      }
+    } else {
+      services.rl = { status: 'unhealthy', error: `HTTP ${rlRes.status}` };
+    }
+  } catch {
+    services.rl = { status: 'unreachable' };
+  }
+
+  res.json({ services, activities, timestamp: new Date().toISOString() });
+});
+
 // ============================================================================
 // Server-Sent Events (SSE) for Real-Time Updates
 // ============================================================================

@@ -33,3 +33,4 @@ export { default as TradeAlertBar } from './TradeAlertBar';
 export { default as SelfTrainingIndicator } from './SelfTrainingIndicator';
 export { default as AITraderTrainingHistory } from './AITraderTrainingHistory';
 export { OptionChainPanel } from './OptionChainPanel';
+export { BackgroundActivitiesPanel } from './BackgroundActivitiesPanel';

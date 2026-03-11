@@ -1371,6 +1371,78 @@ async def get_sector_analysis():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/activities")
+async def get_activities():
+    """
+    Get all currently active background activities with hardware info.
+    Returns training jobs, running AI traders, and self-training sessions.
+    """
+    activities = []
+    device_info = settings.device_info
+
+    # 1) RL Agent training tasks
+    for agent_name, task in training_tasks.items():
+        status = task.get("status", "unknown")
+        if status in ("training", "starting", "preparing"):
+            activities.append({
+                "id": f"rl-train-{agent_name}",
+                "type": "rl_training",
+                "name": f"RL Agent Training: {agent_name}",
+                "status": status,
+                "progress": task.get("progress"),
+                "message": task.get("message", ""),
+                "started_at": task.get("started_at"),
+                "device": settings.device,
+                "device_info": device_info,
+                "details": {
+                    "timesteps": task.get("timesteps"),
+                    "total_timesteps": task.get("total_timesteps"),
+                    "episodes": task.get("episodes"),
+                    "mean_reward": task.get("mean_reward"),
+                },
+            })
+
+    # 2) Running AI traders & self-training
+    try:
+        sched = get_scheduler()
+        for trader_id, engine in sched.engines.items():
+            is_training = False
+            training_detail = None
+            st_status = sched.self_training_status.get(trader_id, {})
+            if st_status.get("is_training"):
+                is_training = True
+                training_detail = {
+                    "progress": st_status.get("progress"),
+                    "message": st_status.get("message", ""),
+                    "timesteps": st_status.get("timesteps"),
+                    "total_timesteps": st_status.get("total_timesteps"),
+                    "symbols": st_status.get("symbols", []),
+                    "started_at": st_status.get("started_at"),
+                }
+
+            activities.append({
+                "id": f"ai-trader-{trader_id}",
+                "type": "ai_trader_self_training" if is_training else "ai_trader_running",
+                "name": f"AI Trader: {engine.config.name}" if hasattr(engine, 'config') else f"AI Trader #{trader_id}",
+                "status": "training" if is_training else "running",
+                "progress": training_detail.get("progress") if training_detail else None,
+                "message": training_detail.get("message", "") if training_detail else "Trading aktiv",
+                "started_at": training_detail.get("started_at") if training_detail else None,
+                "device": settings.device,
+                "device_info": device_info,
+                "details": training_detail,
+            })
+    except Exception as e:
+        logger.warning(f"Could not get AI trader activities: {e}")
+
+    return {
+        "service": "rl-trading-service",
+        "device": settings.device,
+        "device_info": device_info,
+        "activities": activities,
+    }
+
+
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on application shutdown"""

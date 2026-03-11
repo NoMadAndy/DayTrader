@@ -9,6 +9,7 @@ import { useDataService } from '../hooks';
 import { useSettings, type Language, type Currency } from '../contexts';
 import { DataSourceSelector } from '../components/DataSourceSelector';
 import { SignalSourceSettingsPanel } from '../components/SignalSourceSettings';
+import { BackgroundActivitiesPanel } from '../components/BackgroundActivitiesPanel';
 import { subscribeToAuth, getAuthState, getAuthHeaders, logout, checkAuthStatus, type AuthState } from '../services/authService';
 import { getUserSettings, updateUserSettings, DEFAULT_ML_SETTINGS, type MLSettings } from '../services/userSettingsService';
 import { LoginForm } from '../components/LoginForm';
@@ -1402,6 +1403,9 @@ export function SettingsPage() {
                   <div className="text-center py-4 text-gray-400 text-sm">Laden...</div>
                 )}
               </div>
+
+              {/* Background Activities Overview */}
+              <BackgroundActivitiesPanel refreshInterval={10000} />
             </div>
           )}
         </div>
