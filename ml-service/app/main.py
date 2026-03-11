@@ -227,27 +227,33 @@ def _get_predictor_key(symbol: str, model_type: str) -> str:
 def _try_load_predictor(symbol: str, model_type: Optional[str] = None):
     """Try to load a predictor from disk. Returns (predictor, model_type) or (None, None)."""
     symbol = symbol.upper()
+
+    def _safe_load(pred, detected: str):
+        try:
+            if pred.load():
+                return pred, detected
+        except Exception as exc:
+            print(f"Model load failed for {symbol} ({detected}): {exc}")
+        return None, None
     
     # If specific type requested, try that first
     if model_type == "transformer":
         pred = TransformerStockPredictor(symbol)
-        if pred.load():
-            return pred, "transformer"
-        return None, None
+        return _safe_load(pred, "transformer")
     elif model_type == "lstm":
         pred = StockPredictor(symbol)
-        if pred.load():
-            return pred, "lstm"
-        return None, None
+        return _safe_load(pred, "lstm")
     
     # Auto-detect: try transformer first (preferred), then LSTM
     pred_t = TransformerStockPredictor(symbol)
-    if pred_t.load():
-        return pred_t, "transformer"
+    loaded_pred, loaded_type = _safe_load(pred_t, "transformer")
+    if loaded_pred:
+        return loaded_pred, loaded_type
     
     pred_l = StockPredictor(symbol)
-    if pred_l.load():
-        return pred_l, "lstm"
+    loaded_pred, loaded_type = _safe_load(pred_l, "lstm")
+    if loaded_pred:
+        return loaded_pred, loaded_type
     
     return None, None
 

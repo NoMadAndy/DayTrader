@@ -8,7 +8,7 @@ class TestMLServiceConfig:
 
     def test_version(self):
         settings = Settings()
-        assert settings.version == "1.40.0"
+        assert settings.version == "1.43.1"
 
     def test_service_name(self):
         settings = Settings()

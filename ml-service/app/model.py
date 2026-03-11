@@ -576,13 +576,41 @@ class StockPredictor:
             'feature_names': self.feature_names,
             'metadata': self.model_metadata,
             'config': {
-                'sequence_length': settings.sequence_length,
-                'forecast_days': settings.forecast_days
+                'sequence_length': self.model_metadata.get('sequence_length', settings.sequence_length),
+                'forecast_days': self.model_metadata.get('forecast_days', settings.forecast_days)
             }
         }
         
         torch.save(save_dict, path)
         return path
+
+    @staticmethod
+    def _infer_output_size_from_state(model_state: dict) -> Optional[int]:
+        """Infer forecast horizon from the final FC layer in a saved state dict."""
+        if not isinstance(model_state, dict):
+            return None
+
+        out_bias = model_state.get('fc.3.bias')
+        if out_bias is None:
+            return None
+
+        shape = getattr(out_bias, 'shape', None)
+        if shape is None or len(shape) != 1:
+            return None
+
+        return int(shape[0])
+
+    @staticmethod
+    def _resolve_forecast_days(save_dict: dict) -> int:
+        """Resolve forecast horizon from checkpoint metadata/config/state, with safe fallback."""
+        model_state = save_dict.get('model_state', {})
+        inferred = StockPredictor._infer_output_size_from_state(model_state)
+        if inferred is not None:
+            return inferred
+
+        metadata = save_dict.get('metadata', {})
+        config = save_dict.get('config', {})
+        return int(metadata.get('forecast_days', config.get('forecast_days', settings.forecast_days)))
     
     def load(self, path: Optional[str] = None) -> bool:
         """Load model from disk"""
@@ -602,15 +630,26 @@ class StockPredictor:
         
         # Recreate model architecture
         input_size = len(self.feature_names)
+        forecast_days = self._resolve_forecast_days(save_dict)
         self.model = LSTMModel(
             input_size=input_size,
             hidden_size=128,
             num_layers=2,
-            output_size=settings.forecast_days,
+            output_size=forecast_days,
             dropout=0.2
         ).to(self.device)
-        
-        self.model.load_state_dict(save_dict['model_state'])
+
+        try:
+            self.model.load_state_dict(save_dict['model_state'])
+        except RuntimeError as exc:
+            logger.warning(
+                f"Failed to load model for {self.symbol} from {path}: {exc}. "
+                "Checkpoint is likely incompatible with current architecture."
+            )
+            self.model = None
+            self.is_trained = False
+            return False
+
         self.model.eval()
         self.is_trained = True
         

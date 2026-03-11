@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.43.1] - 2026-03-11
+
+### Fixed
+- **ML-Checkpoint-Kompatibilität** — `ml-service` lädt LSTM-Modelle jetzt mit der im Checkpoint erkannten Output-Horizon (statt nur aktueller `FORECAST_DAYS`-Config), sodass ältere/abweichende Model-Artefakte keinen `state_dict`-Shape-Mismatch-500 mehr auslösen.
+- **Robustes Predictor-Autoloading** — Fehler beim Laden einzelner Modelltypen (z. B. inkompatible Artefakte) werden abgefangen; `/api/ml/predict` fällt sauber auf andere verfügbare Modelle zurück bzw. liefert 404 statt ungefangenen Internal Error.
+
 ## [1.43.0] - 2026-02-13
 
 ### Added

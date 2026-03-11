@@ -13,6 +13,7 @@ LSTM & Transformer-based stock price prediction and FinBERT sentiment analysis w
 - **CUDA Support**: GPU acceleration for fast training and inference
 - **REST API**: FastAPI-based endpoints for training, prediction, and sentiment
 - **Model Persistence**: Save/load trained models
+- **Resilient Model Loading**: Incompatible checkpoints are skipped safely instead of crashing prediction requests
 - **Dual-Model Coexistence**: LSTM and Transformer models can exist side-by-side per symbol
 
 ## Architecture
