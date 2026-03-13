@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { isCacheValid, type CachedWatchlistSignals } from '../services/watchlistCacheService';
 
 function makeCachedSignals(overrides: Partial<CachedWatchlistSignals> = {}): CachedWatchlistSignals {

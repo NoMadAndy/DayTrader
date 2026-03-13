@@ -274,14 +274,14 @@ Train virtual traders using Deep Reinforcement Learning that learn from historic
 Both ML and RL services include CUDA-capable PyTorch by default. GPU is auto-detected (`USE_CUDA=auto`).
 
 ```bash
-# Standard start — GPU auto-detected if nvidia runtime is the default
-docker compose up --build
+# Production with GPU (recommended) — includes NVIDIA device reservations
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 
-# Explicit GPU device reservation (recommended for multi-GPU or non-default runtime)
+# Development with GPU
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 
 # Force CPU-only (override auto-detection)
-USE_CUDA=false docker compose up --build
+USE_CUDA=false docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 ```
 
 Requires NVIDIA drivers and nvidia-container-toolkit installed.

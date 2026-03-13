@@ -213,19 +213,29 @@ export function BackgroundActivitiesPanel({ refreshInterval = 10000, compact = f
 
       {/* Service Status Row */}
       <div className="px-4 py-2 border-b border-slate-700/30 flex flex-wrap gap-3">
-        {Object.entries(services).map(([key, svc]) => (
-          <div key={key} className="flex items-center gap-1.5 text-xs">
-            <div className={`w-2 h-2 rounded-full ${getServiceStatusColor(svc.status)}`} />
-            <span className="text-gray-400">
-              {key === 'backend' ? 'Backend' : key === 'ml' ? 'ML Service' : 'RL Service'}
-            </span>
-            {svc.device_info?.cuda_device_name ? (
-              <span className="text-green-400/80 font-mono text-[10px]">GPU</span>
-            ) : (
-              <span className="text-yellow-400/80 font-mono text-[10px]">CPU</span>
-            )}
-          </div>
-        ))}
+        {Object.entries(services).map(([key, svc]) => {
+          const gpuName = svc.device_info?.cuda_device_name;
+          const gpuMem = svc.device_info?.cuda_memory_total;
+          return (
+            <div key={key} className="flex items-center gap-1.5 text-xs">
+              <div className={`w-2 h-2 rounded-full ${getServiceStatusColor(svc.status)}`} />
+              <span className="text-gray-400">
+                {key === 'backend' ? 'Backend' : key === 'ml' ? 'ML Service' : 'RL Service'}
+              </span>
+              {gpuName ? (
+                <span className="text-green-400/80 font-mono text-[10px]" title={gpuMem ? `VRAM: ${gpuMem}` : undefined}>
+                  GPU: {gpuName}
+                </span>
+              ) : svc.device_info?.cuda_available ? (
+                <span className="text-yellow-400/80 font-mono text-[10px]" title="CUDA verfügbar aber nicht aktiviert">
+                  GPU (inaktiv)
+                </span>
+              ) : (
+                <span className="text-yellow-400/80 font-mono text-[10px]">CPU</span>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Activities List */}

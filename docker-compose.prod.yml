@@ -1,6 +1,9 @@
 # Production docker-compose configuration
 # Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 # This explicitly uses production Dockerfile and disables development overrides
+#
+# GPU auto-detected: NVIDIA device reservations are included.
+# On systems without GPU, set USE_CUDA=false or remove the deploy.resources.reservations block.
 services:
   frontend:
     build:
@@ -42,8 +45,15 @@ services:
       resources:
         limits:
           cpus: '${ML_SERVICE_CPUS:-2.0}'
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     environment:
-      - USE_CUDA=true
+      - USE_CUDA=${USE_CUDA:-auto}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - OMP_NUM_THREADS=${OMP_NUM_THREADS:-2}
       - MKL_NUM_THREADS=${MKL_NUM_THREADS:-2}
       - OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-2}
@@ -60,8 +70,15 @@ services:
       resources:
         limits:
           cpus: '${RL_SERVICE_CPUS:-2.0}'
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     environment:
-      - USE_CUDA=true
+      - USE_CUDA=${USE_CUDA:-auto}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - BACKEND_URL=http://backend:3001
       - ML_SERVICE_URL=http://ml-service:8000
       - OMP_NUM_THREADS=${OMP_NUM_THREADS:-2}

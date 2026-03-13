@@ -224,8 +224,8 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
       setError(null);
       
       try {
-        // Create a temporary DataService to fetch more data
-        const dataService = new DataService();
+        // Fetch more data via shared data service
+        const dataService = getDataService();
         // Request extra days to account for weekends/holidays
         const daysToFetch = Math.ceil(minRequired * 1.5);
         const fetchedData = await dataService.fetchStockData(symbol, daysToFetch);

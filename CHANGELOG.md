@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.43.4] - 2026-03-13
+
+### Fixed
+- **Frontend Build** — TypeScript-Fehler behoben: `DataService` → `getDataService()` in MLForecastPanel, ungenutzte Imports in watchlistCacheService.test, fehlende Vitest-Typreferenz in vite.config.ts.
+- **GPU Device Reservations in Production** — `docker-compose.prod.yml` enthält jetzt NVIDIA Device-Reservierungen + `NVIDIA_VISIBLE_DEVICES`. Server-Deployment mit GPU funktioniert ohne separates GPU-Overlay.
+
+### Changed
+- **Vereinfachtes Server-Deployment** — Ein Befehl für Produktion mit GPU: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d`.
+- **Verbesserte GPU-Anzeige** — Service-Status-Zeile zeigt GPU-Name und VRAM-Info statt nur "GPU/CPU".
+
 ## [1.43.3] - 2026-03-11
 
 ### Fixed

@@ -1,18 +1,15 @@
-# GPU override for systems with NVIDIA GPU
-# Usage: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+# GPU overlay — adds NVIDIA device reservations for non-production use
+# Production already includes GPU via docker-compose.prod.yml.
 #
-# For production with GPU:
-# docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d
+# Usage (dev with GPU):
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+#
+# Production (preferred — already includes GPU):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 #
 # Requirements:
 # - NVIDIA GPU with CUDA support
 # - nvidia-container-toolkit installed
-# - Docker configured to use nvidia runtime
-#
-# Note: The standard Dockerfiles already include CUDA-capable PyTorch.
-# This overlay adds NVIDIA device reservations so the GPU is visible inside
-# containers. If nvidia is configured as the default Docker runtime, GPU
-# auto-detection works even without this overlay.
 
 services:
   ml-service:
