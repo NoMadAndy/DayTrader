@@ -28,6 +28,8 @@ import logging
 from datetime import datetime
 
 from .config import settings
+from .cross_asset_features import CrossAssetFeatureProvider
+from .feature_selector import FeatureSelector
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -144,7 +146,9 @@ class StockPredictor:
     - Model persistence (save/load)
     """
     
-    def __init__(self, symbol: str, use_cuda: Optional[bool] = None):
+    def __init__(self, symbol: str, use_cuda: Optional[bool] = None,
+                 use_cross_asset_features: bool = False,
+                 use_feature_selection: bool = False):
         self.symbol = symbol
         
         # Determine device based on use_cuda parameter
@@ -169,6 +173,16 @@ class StockPredictor:
         self.is_trained = False
         self.training_history: List[dict] = []
         self.model_metadata: dict = {}
+
+        # Optional enrichment / pruning flags
+        self.use_cross_asset_features: bool = use_cross_asset_features
+        self.use_feature_selection: bool = use_feature_selection
+        self._cross_asset_provider: Optional[CrossAssetFeatureProvider] = (
+            CrossAssetFeatureProvider(cache_ttl_seconds=settings.cross_asset_cache_ttl)
+            if use_cross_asset_features
+            else None
+        )
+        self._feature_selector: Optional[FeatureSelector] = None
         
     def _calculate_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -259,8 +273,35 @@ class StockPredictor:
         
         # Drop NaN rows
         df_clean = df[feature_columns].dropna()
-        
-        return df_clean.values, feature_columns
+
+        # Optionally enrich with cross-asset features
+        if self._cross_asset_provider is not None:
+            try:
+                # Reconstruct a DatetimeIndex aligned to the cleaned rows
+                if 'timestamp' in df.columns:
+                    dates = pd.to_datetime(df['timestamp']).iloc[df_clean.index]
+                else:
+                    dates = df_clean.index
+                cross_df = self._cross_asset_provider.get_cross_asset_features(
+                    self.symbol, pd.DatetimeIndex(dates)
+                )
+                if cross_df is not None and not cross_df.empty:
+                    # Reset to positional index for safe concatenation
+                    cross_df = cross_df.reset_index(drop=True)
+                    df_clean = df_clean.reset_index(drop=True)
+                    # Align lengths
+                    min_len = min(len(df_clean), len(cross_df))
+                    df_clean = df_clean.iloc[:min_len].copy()
+                    cross_vals = cross_df.iloc[:min_len]
+                    new_cols = {col: cross_vals[col].values for col in cross_df.columns}
+                    df_clean = df_clean.assign(**new_cols)
+                    for col in cross_df.columns:
+                        if col not in feature_columns:
+                            feature_columns.append(col)
+            except Exception as exc:
+                logger.warning(f"StockPredictor: cross-asset feature enrichment failed: {exc}")
+
+        return df_clean.values, [c for c in feature_columns if c in df_clean.columns]
     
     def _create_sequences(
         self,
@@ -328,6 +369,28 @@ class StockPredictor:
         train_end = int(len(X) * 0.8)
         X_train_raw, X_val_raw = X[:train_end], X[train_end:]
         y_train_raw, y_val_raw = y[:train_end], y[train_end:]
+
+        # Optional feature selection (fit on training data only, then transform both)
+        if self.use_feature_selection:
+            try:
+                max_f = settings.feature_selection_max_features or None
+                corr_t = settings.feature_selection_correlation_threshold
+                self._feature_selector = FeatureSelector(
+                    correlation_threshold=corr_t,
+                    max_features=max_f,
+                )
+                X_train_raw, selected_names = self._feature_selector.fit_transform(
+                    X_train_raw, y_train_raw, self.feature_names
+                )
+                X_val_raw, _ = self._feature_selector.transform(X_val_raw, self.feature_names)
+                self.feature_names = selected_names
+                logger.info(
+                    f"StockPredictor: feature selection kept "
+                    f"{len(selected_names)} features: {selected_names}"
+                )
+            except Exception as exc:
+                logger.warning(f"StockPredictor: feature selection failed, using all features: {exc}")
+                self._feature_selector = None
 
         X_train_scaled = self.scaler_X.fit_transform(X_train_raw)
         y_train_scaled = self.scaler_y.fit_transform(
@@ -441,8 +504,31 @@ class StockPredictor:
 
         # Fit scaler on the initial training portion only (no leakage)
         init_train_end = int(len(X) * 0.8)
-        self.scaler_X.fit(X[:init_train_end])
-        self.scaler_y.fit(y[:init_train_end].reshape(-1, 1))
+        X_train_init = X[:init_train_end]
+        y_train_init = y[:init_train_end]
+
+        # Optional feature selection (fit on training portion only)
+        if self.use_feature_selection:
+            try:
+                max_f = settings.feature_selection_max_features or None
+                corr_t = settings.feature_selection_correlation_threshold
+                self._feature_selector = FeatureSelector(
+                    correlation_threshold=corr_t,
+                    max_features=max_f,
+                )
+                X_train_init, selected_names = self._feature_selector.fit_transform(
+                    X_train_init, y_train_init, self.feature_names
+                )
+                X, _ = self._feature_selector.transform(X, self.feature_names)
+                self.feature_names = selected_names
+            except Exception as exc:
+                logger.warning(
+                    f"StockPredictor: walk-forward feature selection failed: {exc}"
+                )
+                self._feature_selector = None
+
+        self.scaler_X.fit(X_train_init)
+        self.scaler_y.fit(y_train_init.reshape(-1, 1))
 
         X_scaled = self.scaler_X.transform(X)
         y_scaled = self.scaler_y.transform(y.reshape(-1, 1)).flatten()
@@ -699,6 +785,13 @@ class StockPredictor:
             'forecast_days': self._train_forecast_days,
             'data_points': len(ohlcv_data),
             'walk_forward': use_walk_forward,
+            'use_cross_asset_features': self.use_cross_asset_features,
+            'use_feature_selection': self.use_feature_selection,
+            'feature_selection_report': (
+                self._feature_selector.get_report()
+                if self._feature_selector is not None
+                else None
+            ),
         }
 
         return {
@@ -730,7 +823,14 @@ class StockPredictor:
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         df = df.sort_values('timestamp').reset_index(drop=True)
 
-        X, _ = self._prepare_features(df)
+        X, feature_names = self._prepare_features(df)
+
+        # Apply feature selection if it was used during training
+        if self._feature_selector is not None and self._feature_selector.selected_features_ is not None:
+            try:
+                X, feature_names = self._feature_selector.transform(X, feature_names)
+            except Exception as exc:
+                logger.warning(f"StockPredictor: feature selector transform failed in predict: {exc}")
 
         # Scale using fitted scaler
         X_scaled = self.scaler_X.transform(X)
@@ -869,7 +969,10 @@ class StockPredictor:
             'config': {
                 'sequence_length': self.model_metadata.get('sequence_length', settings.sequence_length),
                 'forecast_days': self.model_metadata.get('forecast_days', settings.forecast_days)
-            }
+            },
+            'feature_selector': self._feature_selector,
+            'use_cross_asset_features': self.use_cross_asset_features,
+            'use_feature_selection': self.use_feature_selection,
         }
         
         torch.save(save_dict, path)
@@ -918,6 +1021,15 @@ class StockPredictor:
         self.scaler_y = save_dict['scaler_y']
         self.feature_names = save_dict['feature_names']
         self.model_metadata = save_dict['metadata']
+
+        # Restore optional enrichment flags and feature selector
+        self.use_cross_asset_features = save_dict.get('use_cross_asset_features', False)
+        self.use_feature_selection = save_dict.get('use_feature_selection', False)
+        self._feature_selector = save_dict.get('feature_selector', None)
+        if self.use_cross_asset_features and self._cross_asset_provider is None:
+            self._cross_asset_provider = CrossAssetFeatureProvider(
+                cache_ttl_seconds=settings.cross_asset_cache_ttl
+            )
         
         # Recreate model architecture
         input_size = len(self.feature_names)

@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added — Sprint 2: Cross-Asset Features, LSTM+Transformer Ensemble, Concept Drift Detection, Feature Selection
+
+- **`ml-service/app/cross_asset_features.py`** — `CrossAssetFeatureProvider`: fetches S&P 500 returns, VIX level, US 10Y Treasury yield, USD Index return, and sector-ETF return via `yfinance`; in-memory TTL cache (default 1 h); entirely optional — models work unchanged when disabled.
+- **`ml-service/app/ensemble_model.py`** — `EnsemblePredictor`: weighted combination of LSTM + Transformer predictions; weights determined by inverse validation loss (lower loss → higher weight); confidence boosted when models agree on direction, reduced when they disagree; graceful single-model fallback.
+- **`ml-service/app/drift_detector.py`** — `DriftDetector`: monitors per-symbol prediction accuracy (MAPE + directional accuracy) and flags concept drift when recent error ≥ 1.5× baseline; three new REST endpoints (`POST /api/ml/drift/record`, `GET /api/ml/drift/{symbol}`, `GET /api/ml/drift`); predict endpoint includes `drift_warning` field when drift is detected.
+- **`ml-service/app/feature_selector.py`** — `FeatureSelector`: removes near-zero variance features, drops one of any highly-correlated pair (|r| ≥ 0.95, keeps higher MI-scored feature), ranks survivors by mutual information with target, supports `max_features` limit; `always_keep` list prevents removal of `close` and `volume`.
+- **Config** (`config.py`) — new settings: `ML_CROSS_ASSET_FEATURES`, `ML_CROSS_ASSET_CACHE_TTL`, `ML_FEATURE_SELECTION`, `ML_MAX_FEATURES`, `ML_CORRELATION_THRESHOLD`.
+- **API** (`main.py`) — `TrainRequest` gains `use_cross_asset_features` and `use_feature_selection` fields; `PredictResponse` gains optional `drift_warning` and `ensemble_weights` fields; ensemble type auto-detected when both LSTM+Transformer models exist; `_try_load_predictor()` prefers `EnsemblePredictor` when both checkpoints are present.
+- **`.env.example`** — documented all new environment variables.
+- **Tests** — `tests/test_sprint2_modules.py` with 22 tests covering `DriftDetector`, `FeatureSelector`, and new config defaults.
+
+### Changed
+
+- `StockPredictor.__init__()` and `TransformerStockPredictor.__init__()` accept two new optional flags: `use_cross_asset_features` and `use_feature_selection` (both default `False` — backward compatible).
+- `StockPredictor.save()`/`load()` and `TransformerStockPredictor.save()`/`load()` persist the `FeatureSelector` instance and flags so predict uses the same feature subset as training.
+- `model_metadata` for both predictors now includes `use_cross_asset_features`, `use_feature_selection`, and `feature_selection_report`.
+
 ## [1.43.4] - 2026-03-13
 
 ### Fixed

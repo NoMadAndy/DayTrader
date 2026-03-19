@@ -49,6 +49,15 @@ class Settings(BaseSettings):
     
     # FinBERT settings
     preload_finbert: bool = os.getenv("PRELOAD_FINBERT", "false").lower() == "true"
+
+    # Cross-asset features
+    use_cross_asset_features: bool = os.getenv("ML_CROSS_ASSET_FEATURES", "false").lower() == "true"
+    cross_asset_cache_ttl: int = int(os.getenv("ML_CROSS_ASSET_CACHE_TTL", "3600"))
+
+    # Feature selection
+    use_feature_selection: bool = os.getenv("ML_FEATURE_SELECTION", "false").lower() == "true"
+    feature_selection_max_features: int = int(os.getenv("ML_MAX_FEATURES", "0"))  # 0 = auto
+    feature_selection_correlation_threshold: float = float(os.getenv("ML_CORRELATION_THRESHOLD", "0.95"))
     
     @property
     def cuda_effective(self) -> bool:
