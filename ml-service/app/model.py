@@ -17,10 +17,11 @@ CUDA Support:
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Iterator
 import os
 import json
 import logging
@@ -30,6 +31,43 @@ from .config import settings
 
 # Setup logger
 logger = logging.getLogger(__name__)
+
+
+class DirectionalTradingLoss(nn.Module):
+    """
+    Combined MSE + directional-accuracy loss for time-series price forecasting.
+
+    Penalises predictions whose day-over-day sign disagrees with the true
+    direction more heavily than pure MSE, encouraging the model to get
+    trend direction right in addition to minimising absolute error.
+
+    Args:
+        direction_weight: Weight on the directional penalty term (default 0.3).
+        mse_weight: Weight on the standard MSE term (default 0.7).
+    """
+
+    def __init__(self, direction_weight: float = 0.3, mse_weight: float = 0.7):
+        super().__init__()
+        self.direction_weight = direction_weight
+        self.mse_weight = mse_weight
+
+    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        # Standard MSE component
+        mse = F.mse_loss(pred, target)
+
+        # Directional component: compare consecutive-day sign agreement.
+        # pred/target shape: (batch, forecast_days)
+        if pred.shape[1] > 1:
+            pred_changes = pred[:, 1:] - pred[:, :-1]
+            target_changes = target[:, 1:] - target[:, :-1]
+            # +1 when signs agree, -1 when they disagree
+            direction_match = torch.sign(pred_changes) * torch.sign(target_changes)
+            # Normalise to [0, 1]: 0 = perfect, 1 = always wrong
+            direction_loss = (1.0 - direction_match).mean() / 2.0
+        else:
+            direction_loss = torch.tensor(0.0, device=pred.device)
+
+        return self.mse_weight * mse + self.direction_weight * direction_loss
 
 
 class LSTMModel(nn.Module):
@@ -279,45 +317,139 @@ class StockPredictor:
         
         # Prepare features
         X, self.feature_names = self._prepare_features(df)
-        
+
         # Target: future close prices
         close_idx = self.feature_names.index('close')
         y = X[:, close_idx]
-        
-        # Scale features
-        X_scaled = self.scaler_X.fit_transform(X)
-        y_scaled = self.scaler_y.fit_transform(y.reshape(-1, 1)).flatten()
-        
-        # Create sequences
-        X_seq, y_seq = self._create_sequences(
-            X_scaled,
-            y_scaled,
-            seq_len,
-            fc_days
+
+        # --- Scaler fix: split raw data FIRST, then fit scaler on training
+        # portion only.  Fitting on all data (including validation) leaks
+        # future min/max statistics into training. ---
+        train_end = int(len(X) * 0.8)
+        X_train_raw, X_val_raw = X[:train_end], X[train_end:]
+        y_train_raw, y_val_raw = y[:train_end], y[train_end:]
+
+        X_train_scaled = self.scaler_X.fit_transform(X_train_raw)
+        y_train_scaled = self.scaler_y.fit_transform(
+            y_train_raw.reshape(-1, 1)
+        ).flatten()
+        X_val_scaled = self.scaler_X.transform(X_val_raw)
+        y_val_scaled = self.scaler_y.transform(
+            y_val_raw.reshape(-1, 1)
+        ).flatten()
+
+        # Create training sequences
+        X_seq_train, y_seq_train = self._create_sequences(
+            X_train_scaled, y_train_scaled, seq_len, fc_days
         )
-        
-        # Reshape y_seq to (samples, forecast_days)
-        # Each target is the next forecast_days of scaled close prices
-        y_targets = []
-        for i in range(len(X_seq)):
-            start_idx = seq_len + i
-            end_idx = start_idx + fc_days
-            if end_idx <= len(y_scaled):
-                y_targets.append(y_scaled[start_idx:end_idx])
-        
-        y_seq = np.array(y_targets[:len(X_seq)])
-        X_seq = X_seq[:len(y_seq)]
-        
-        # Train/validation split (80/20)
-        split_idx = int(len(X_seq) * 0.8)
-        
-        X_train = torch.FloatTensor(X_seq[:split_idx]).to(self.device)
-        y_train = torch.FloatTensor(y_seq[:split_idx]).to(self.device)
-        X_val = torch.FloatTensor(X_seq[split_idx:]).to(self.device)
-        y_val = torch.FloatTensor(y_seq[split_idx:]).to(self.device)
-        
+
+        # For validation sequences, prefix with the last seq_len training
+        # points so the first validation window has proper historical context.
+        X_val_prefixed = np.concatenate(
+            [X_train_scaled[-seq_len:], X_val_scaled], axis=0
+        )
+        y_val_prefixed = np.concatenate(
+            [y_train_scaled[-seq_len:], y_val_scaled]
+        )
+        X_seq_val, y_seq_val = self._create_sequences(
+            X_val_prefixed, y_val_prefixed, seq_len, fc_days
+        )
+
+        X_train = torch.FloatTensor(X_seq_train).to(self.device)
+        y_train = torch.FloatTensor(y_seq_train).to(self.device)
+        X_val = torch.FloatTensor(X_seq_val).to(self.device)
+        y_val = torch.FloatTensor(y_seq_val).to(self.device)
+
         return X_train, y_train, X_val, y_val
-    
+
+    @staticmethod
+    def walk_forward_split(
+        n_samples: int,
+        n_splits: int = 3,
+        gap: int = 5,
+        min_train_ratio: float = 0.5,
+    ) -> Iterator[Tuple[slice, slice]]:
+        """
+        Purged Walk-Forward Cross-Validation for time series.
+
+        Yields ``(train_slice, val_slice)`` pairs where:
+
+        - Training always starts from index 0 (expanding window).
+        - A ``gap`` (embargo) period separates the end of training from the
+          start of validation to prevent information leakage.
+        - The validation window slides forward with each fold.
+        - Each subsequent fold has more training data.
+
+        Args:
+            n_samples: Total number of sequences (samples).
+            n_splits: Number of cross-validation folds.
+            gap: Number of samples between train end and validation start
+                 (embargo to prevent leakage).
+            min_train_ratio: Minimum fraction of ``n_samples`` each training
+                             set must contain.  Folds with fewer samples are
+                             skipped.
+
+        Yields:
+            Tuple of ``(train_slice, val_slice)`` — both are ``slice`` objects
+            that can be used to index arrays directly.
+        """
+        val_size = int(n_samples * (1 - min_train_ratio) / n_splits)
+        for i in range(n_splits):
+            val_end = n_samples - (n_splits - 1 - i) * val_size
+            val_start = val_end - val_size
+            train_end = val_start - gap
+            if train_end < int(n_samples * 0.3):  # Require at least 30 % of data for training
+                continue
+            yield (slice(0, train_end), slice(val_start, val_end))
+
+    def _prepare_all_sequences(
+        self,
+        ohlcv_data: List[dict],
+        sequence_length: Optional[int] = None,
+        forecast_days: Optional[int] = None,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Prepare ALL sequences from raw OHLCV data without a train/val split.
+
+        Used internally by :meth:`train` when ``use_walk_forward=True`` so
+        that :meth:`walk_forward_split` can define the fold boundaries.
+
+        The scaler is fitted on the initial 80 % of raw data (consistent with
+        the single-split path in :meth:`prepare_data`) so that future data
+        statistics are never visible during fitting.
+
+        Args:
+            ohlcv_data: Historical OHLCV records.
+            sequence_length: Sequence window size (defaults to settings).
+            forecast_days: Forecast horizon (defaults to settings).
+
+        Returns:
+            Tuple ``(X_seq, y_seq)`` of shape
+            ``(n_sequences, sequence_length, n_features)`` and
+            ``(n_sequences, forecast_days)`` respectively.
+        """
+        seq_len = sequence_length or settings.sequence_length
+        fc_days = forecast_days or settings.forecast_days
+
+        df = pd.DataFrame(ohlcv_data)
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df = df.sort_values('timestamp').reset_index(drop=True)
+
+        X, self.feature_names = self._prepare_features(df)
+        close_idx = self.feature_names.index('close')
+        y = X[:, close_idx]
+
+        # Fit scaler on the initial training portion only (no leakage)
+        init_train_end = int(len(X) * 0.8)
+        self.scaler_X.fit(X[:init_train_end])
+        self.scaler_y.fit(y[:init_train_end].reshape(-1, 1))
+
+        X_scaled = self.scaler_X.transform(X)
+        y_scaled = self.scaler_y.transform(y.reshape(-1, 1)).flatten()
+
+        X_seq, y_seq = self._create_sequences(X_scaled, y_scaled, seq_len, fc_days)
+        return X_seq, y_seq
+
     def train(
         self,
         ohlcv_data: List[dict],
@@ -327,10 +459,11 @@ class StockPredictor:
         forecast_days: Optional[int] = None,
         early_stopping_patience: int = 10,
         progress_callback=None,
+        use_walk_forward: bool = False,
     ) -> dict:
         """
         Train the model on historical data
-        
+
         Args:
             ohlcv_data: Historical OHLCV data
             epochs: Number of training epochs (default from settings)
@@ -339,106 +472,218 @@ class StockPredictor:
             forecast_days: Number of days to forecast (default from settings)
             early_stopping_patience: Epochs to wait before early stopping
             progress_callback: Optional callable(epoch, total_epochs, train_loss, val_loss)
-            
+            use_walk_forward: When True, use purged walk-forward cross-validation
+                              (3 folds) and keep the model with the best average
+                              validation loss.  Defaults to False (single 80/20 split).
+
         Returns:
             Training results dict with loss history and metadata
         """
         epochs = epochs or settings.epochs
         learning_rate = learning_rate or settings.learning_rate
-        
+
         # Store custom parameters for this training session
         self._train_sequence_length = sequence_length or settings.sequence_length
         self._train_forecast_days = forecast_days or settings.forecast_days
-        
+
         print(f"[ML Training] Parameters: epochs={epochs}, lr={learning_rate}, "
-              f"seq_len={self._train_sequence_length}, forecast_days={self._train_forecast_days}")
-        
-        # Prepare data with custom parameters
-        X_train, y_train, X_val, y_val = self.prepare_data(
-            ohlcv_data,
-            sequence_length=self._train_sequence_length,
-            forecast_days=self._train_forecast_days
-        )
-        
-        # Initialize model with custom forecast_days
-        input_size = X_train.shape[2]  # Number of features
-        self.model = LSTMModel(
-            input_size=input_size,
-            hidden_size=128,
-            num_layers=2,
-            output_size=self._train_forecast_days,
-            dropout=0.2
-        ).to(self.device)
-        
-        # Loss and optimizer
-        criterion = nn.MSELoss()
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', factor=0.5, patience=5
-        )
-        
-        # Training loop
-        self.training_history = []
-        best_val_loss = float('inf')
-        patience_counter = 0
-        best_model_state = None
-        
+              f"seq_len={self._train_sequence_length}, forecast_days={self._train_forecast_days}, "
+              f"walk_forward={use_walk_forward}")
+
+        # Shared loss function (directional-aware MSE)
+        criterion = DirectionalTradingLoss(direction_weight=0.3, mse_weight=0.7)
+
         training_start = datetime.now()
-        
-        for epoch in range(epochs):
-            # Training phase
-            self.model.train()
-            optimizer.zero_grad()
-            
-            train_pred = self.model(X_train)
-            train_loss = criterion(train_pred, y_train)
-            
-            train_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-            optimizer.step()
-            
-            # Validation phase
+        self.training_history = []
+
+        if use_walk_forward:
+            # ----------------------------------------------------------------
+            # Walk-forward cross-validation path
+            # ----------------------------------------------------------------
+            X_seq, y_seq = self._prepare_all_sequences(
+                ohlcv_data,
+                sequence_length=self._train_sequence_length,
+                forecast_days=self._train_forecast_days,
+            )
+            input_size = X_seq.shape[2]
+
+            best_overall_val_loss = float('inf')
+            best_overall_model_state = None
+            fold_results = []
+
+            for fold_idx, (train_sl, val_sl) in enumerate(
+                self.walk_forward_split(len(X_seq))
+            ):
+                X_train_f = torch.FloatTensor(X_seq[train_sl]).to(self.device)
+                y_train_f = torch.FloatTensor(y_seq[train_sl]).to(self.device)
+                X_val_f = torch.FloatTensor(X_seq[val_sl]).to(self.device)
+                y_val_f = torch.FloatTensor(y_seq[val_sl]).to(self.device)
+
+                fold_model = LSTMModel(
+                    input_size=input_size,
+                    hidden_size=128,
+                    num_layers=2,
+                    output_size=self._train_forecast_days,
+                    dropout=0.2,
+                ).to(self.device)
+
+                fold_optimizer = torch.optim.Adam(
+                    fold_model.parameters(), lr=learning_rate
+                )
+                fold_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                    fold_optimizer, mode='min', factor=0.5, patience=5
+                )
+
+                best_fold_loss = float('inf')
+                fold_patience = 0
+                best_fold_state = None
+
+                for epoch in range(epochs):
+                    fold_model.train()
+                    fold_optimizer.zero_grad()
+                    train_pred = fold_model(X_train_f)
+                    train_loss = criterion(train_pred, y_train_f)
+                    train_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(
+                        fold_model.parameters(), max_norm=1.0
+                    )
+                    fold_optimizer.step()
+
+                    fold_model.eval()
+                    with torch.no_grad():
+                        val_pred = fold_model(X_val_f)
+                        val_loss = criterion(val_pred, y_val_f)
+
+                    fold_scheduler.step(val_loss)
+
+                    self.training_history.append({
+                        'fold': fold_idx + 1,
+                        'epoch': epoch + 1,
+                        'train_loss': train_loss.item(),
+                        'val_loss': val_loss.item(),
+                        'lr': fold_optimizer.param_groups[0]['lr'],
+                    })
+
+                    if val_loss < best_fold_loss:
+                        best_fold_loss = val_loss.item()
+                        fold_patience = 0
+                        best_fold_state = fold_model.state_dict().copy()
+                    else:
+                        fold_patience += 1
+
+                    if fold_patience >= early_stopping_patience:
+                        print(f"Fold {fold_idx + 1}: early stopping at epoch {epoch + 1}")
+                        break
+
+                fold_results.append({
+                    'fold': fold_idx + 1,
+                    'best_val_loss': best_fold_loss,
+                    'train_size': train_sl.stop,
+                    'val_size': val_sl.stop - val_sl.start,
+                })
+
+                if best_fold_loss < best_overall_val_loss:
+                    best_overall_val_loss = best_fold_loss
+                    best_overall_model_state = best_fold_state
+                    input_size_best = input_size
+
+            # Build final model from best fold's weights
+            self.model = LSTMModel(
+                input_size=input_size_best,
+                hidden_size=128,
+                num_layers=2,
+                output_size=self._train_forecast_days,
+                dropout=0.2,
+            ).to(self.device)
+            if best_overall_model_state is not None:
+                self.model.load_state_dict(best_overall_model_state)
             self.model.eval()
-            with torch.no_grad():
-                val_pred = self.model(X_val)
-                val_loss = criterion(val_pred, y_val)
-            
-            # Learning rate scheduling
-            scheduler.step(val_loss)
-            
-            # Record history
-            self.training_history.append({
-                'epoch': epoch + 1,
-                'train_loss': train_loss.item(),
-                'val_loss': val_loss.item(),
-                'lr': optimizer.param_groups[0]['lr']
-            })
-            
-            # Report progress via callback
-            if progress_callback:
-                try:
-                    progress_callback(epoch + 1, epochs, train_loss.item(), val_loss.item())
-                except Exception:
-                    pass  # Don't let callback errors break training
-            
-            # Early stopping check
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss.item()
-                patience_counter = 0
-                best_model_state = self.model.state_dict().copy()
-            else:
-                patience_counter += 1
-                
-            if patience_counter >= early_stopping_patience:
-                print(f"Early stopping at epoch {epoch + 1}")
-                break
-        
-        # Restore best model
-        if best_model_state is not None:
-            self.model.load_state_dict(best_model_state)
-        
+
+            best_val_loss = best_overall_val_loss
+
+        else:
+            # ----------------------------------------------------------------
+            # Default single 80/20 split path
+            # ----------------------------------------------------------------
+            X_train, y_train, X_val, y_val = self.prepare_data(
+                ohlcv_data,
+                sequence_length=self._train_sequence_length,
+                forecast_days=self._train_forecast_days,
+            )
+
+            # Initialize model with custom forecast_days
+            input_size = X_train.shape[2]  # Number of features
+            self.model = LSTMModel(
+                input_size=input_size,
+                hidden_size=128,
+                num_layers=2,
+                output_size=self._train_forecast_days,
+                dropout=0.2,
+            ).to(self.device)
+
+            optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, mode='min', factor=0.5, patience=5
+            )
+
+            best_val_loss = float('inf')
+            patience_counter = 0
+            best_model_state = None
+
+            for epoch in range(epochs):
+                # Training phase
+                self.model.train()
+                optimizer.zero_grad()
+
+                train_pred = self.model(X_train)
+                train_loss = criterion(train_pred, y_train)
+
+                train_loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                optimizer.step()
+
+                # Validation phase
+                self.model.eval()
+                with torch.no_grad():
+                    val_pred = self.model(X_val)
+                    val_loss = criterion(val_pred, y_val)
+
+                # Learning rate scheduling
+                scheduler.step(val_loss)
+
+                # Record history
+                self.training_history.append({
+                    'epoch': epoch + 1,
+                    'train_loss': train_loss.item(),
+                    'val_loss': val_loss.item(),
+                    'lr': optimizer.param_groups[0]['lr'],
+                })
+
+                # Report progress via callback
+                if progress_callback:
+                    try:
+                        progress_callback(epoch + 1, epochs, train_loss.item(), val_loss.item())
+                    except Exception:
+                        pass  # Don't let callback errors break training
+
+                # Early stopping check
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss.item()
+                    patience_counter = 0
+                    best_model_state = self.model.state_dict().copy()
+                else:
+                    patience_counter += 1
+
+                if patience_counter >= early_stopping_patience:
+                    print(f"Early stopping at epoch {epoch + 1}")
+                    break
+
+            # Restore best model
+            if best_model_state is not None:
+                self.model.load_state_dict(best_model_state)
+
         training_end = datetime.now()
-        
+
         self.is_trained = True
         self.model_metadata = {
             'symbol': self.symbol,
@@ -452,96 +697,142 @@ class StockPredictor:
             'input_features': self.feature_names,
             'sequence_length': self._train_sequence_length,
             'forecast_days': self._train_forecast_days,
-            'data_points': len(ohlcv_data)
+            'data_points': len(ohlcv_data),
+            'walk_forward': use_walk_forward,
         }
-        
+
         return {
             'success': True,
             'metadata': self.model_metadata,
-            'history': self.training_history
+            'history': self.training_history,
         }
     
-    def predict(self, ohlcv_data: List[dict]) -> dict:
+    def predict(self, ohlcv_data: List[dict], smooth_predictions: bool = False) -> dict:
         """
-        Generate price predictions for the next N days
-        
+        Generate price predictions for the next N days.
+
         Args:
-            ohlcv_data: Recent OHLCV data (at least sequence_length points)
-            
+            ohlcv_data: Recent OHLCV data (at least sequence_length points).
+            smooth_predictions: When True, apply an exponential moving average
+                                (alpha=0.4) over the raw predictions to reduce
+                                day-to-day oscillation.  Defaults to False
+                                because smoothing introduces a mean-reversion
+                                bias that pulls multi-day forecasts toward day 1.
+
         Returns:
-            Prediction results with forecasted prices and confidence
+            Prediction results with forecasted prices and confidence.
         """
         if not self.is_trained or self.model is None:
             raise ValueError("Model not trained. Call train() first.")
-        
+
         # Prepare features
         df = pd.DataFrame(ohlcv_data)
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         df = df.sort_values('timestamp').reset_index(drop=True)
-        
+
         X, _ = self._prepare_features(df)
-        
+
         # Scale using fitted scaler
         X_scaled = self.scaler_X.transform(X)
-        
+
         # Get the last sequence
         seq_len = self.model_metadata.get('sequence_length', settings.sequence_length)
         if len(X_scaled) < seq_len:
             raise ValueError(f"Need at least {seq_len} data points")
-        
+
         last_sequence = X_scaled[-seq_len:]
         X_input = torch.FloatTensor(last_sequence).unsqueeze(0).to(self.device)
-        
-        # Predict
+
+        # Deterministic forward pass for point estimates
         self.model.eval()
         with torch.no_grad():
             predictions_scaled = self.model(X_input).cpu().numpy()[0]
-        
+
         # Inverse transform to get actual prices
         predictions_raw = self.scaler_y.inverse_transform(
             predictions_scaled.reshape(-1, 1)
         ).flatten()
-        
-        # Progressive sanity-clamp: allow larger moves for longer horizons
-        # Day 1: ±3%, Day 7: ±10%, Day 14: ±15%
+
+        # ----------------------------------------------------------------
+        # Volatility-adaptive clamping
+        # Historical volatility (60-day rolling std of returns) determines
+        # how far each day's forecast may deviate from current price.
+        # Bound grows with sqrt(t) for multi-day horizons.
+        # ----------------------------------------------------------------
         current_price = ohlcv_data[-1]['close']
+        closes = pd.Series([d['close'] for d in ohlcv_data])
+        returns = closes.pct_change().dropna()
+        if len(returns) > 5:
+            # 60-day window matches the default sequence_length; shorter histories use all available data
+            hist_vol = returns.rolling(min(60, len(returns))).std().iloc[-1]
+            if pd.isna(hist_vol):
+                hist_vol = returns.std()
+        else:
+            hist_vol = 0.02  # Fallback: ~2 % daily vol (typical equity assumption)
+
         predictions = []
         for i, pred in enumerate(predictions_raw):
             day = i + 1
-            max_change = min(0.03 + (day - 1) * 0.01, 0.15)  # 3% base + 1% per day, max 15%
+            # 2.5-sigma (≈99 %) bound that widens with sqrt(horizon).
+            # Floor at 2 % (minimum meaningful move), cap at 25 % (extreme event ceiling).
+            max_change = float(np.clip(hist_vol * 2.5 * np.sqrt(day), 0.02, 0.25))
             change_pct = (pred - current_price) / current_price
             if abs(change_pct) > max_change:
-                logger.warning(f"Prediction day {day}: {pred:.2f} is {change_pct*100:.1f}% from current price {current_price:.2f}, clamping to ±{max_change*100:.0f}%")
+                logger.warning(
+                    f"Prediction day {day}: {pred:.2f} is {change_pct*100:.1f}% "
+                    f"from current price {current_price:.2f}, clamping to "
+                    f"±{max_change*100:.1f}%"
+                )
                 pred = current_price * (1 + max_change if change_pct > 0 else 1 - max_change)
             predictions.append(pred)
-        
-        # Smooth predictions with exponential weighted moving average
-        # Reduces day-to-day oscillation while preserving overall trend
-        smoothed = [predictions[0]]
-        alpha = 0.4  # Smoothing factor (0=very smooth, 1=no smoothing)
-        for i in range(1, len(predictions)):
-            smoothed.append(alpha * predictions[i] + (1 - alpha) * smoothed[i - 1])
-        predictions = smoothed
-        
-        # Calculate prediction confidence based on model uncertainty
-        # Confidence decreases with forecast horizon and predicted change magnitude
+
+        # Optional EMA smoothing (off by default to avoid mean-reversion bias)
+        if smooth_predictions:
+            smoothed = [predictions[0]]
+            alpha = 0.4  # Smoothing factor (0=very smooth, 1=no smoothing)
+            for i in range(1, len(predictions)):
+                smoothed.append(alpha * predictions[i] + (1 - alpha) * smoothed[i - 1])
+            predictions = smoothed
+
+        # ----------------------------------------------------------------
+        # Monte Carlo Dropout for uncertainty estimation
+        # Run n_mc_samples stochastic forward passes with dropout active to
+        # measure prediction variance, replacing the previous heuristic.
+        # 20 samples balance confidence accuracy vs. inference latency.
+        # ----------------------------------------------------------------
+        mc_predictions = []
+        self.model.train()  # Enable dropout
+        n_mc_samples = 20  # Stochastic forward passes for uncertainty estimation
+        with torch.no_grad():
+            for _ in range(n_mc_samples):
+                mc_pred = self.model(X_input).cpu().numpy()[0]
+                mc_raw = self.scaler_y.inverse_transform(
+                    mc_pred.reshape(-1, 1)
+                ).flatten()
+                mc_predictions.append(mc_raw)
+        self.model.eval()
+
+        mc_preds = np.array(mc_predictions)  # (n_mc_samples, forecast_days)
+        mc_std = mc_preds.std(axis=0)       # per-day std
+
         confidences = []
         for i, pred in enumerate(predictions):
-            # Base confidence decreases linearly with days
-            base_confidence = max(0.5, 1.0 - (i * 0.03))
-            # Adjust based on predicted change magnitude
-            change_pct = abs(pred - current_price) / current_price
-            change_penalty = min(0.3, change_pct * 2)
-            confidence = max(0.3, base_confidence - change_penalty)
+            # Scale relative std to [0, 1]: std/price * 5 ≈ 1 when vol is 20 %
+            relative_std = mc_std[i] / current_price if current_price > 0 else 0.1
+            mc_confidence = max(0.3, 1.0 - relative_std * 5)
+            # Horizon decay: confidence drops 3 %/day, floor at 0.5
+            horizon_decay = max(0.5, 1.0 - (i * 0.03))
+            # Geometric mean of MC and horizon confidence, clipped to [0.3, 0.95]
+            confidence = max(0.3, min(0.95, (mc_confidence * horizon_decay) ** 0.5))
             confidences.append(confidence)
-        
+
         # Generate dates for predictions
         last_date = pd.to_datetime(ohlcv_data[-1]['timestamp'], unit='ms')
         prediction_dates = [
-            (last_date + pd.Timedelta(days=i+1)).isoformat()
+            (last_date + pd.Timedelta(days=i + 1)).isoformat()
             for i in range(len(predictions))
         ]
-        
+
         return {
             'symbol': self.symbol,
             'current_price': current_price,
@@ -551,14 +842,14 @@ class StockPredictor:
                     'day': i + 1,
                     'predicted_price': float(pred),
                     'confidence': float(conf),
-                    'change_pct': float((pred - current_price) / current_price * 100)
+                    'change_pct': float((pred - current_price) / current_price * 100),
                 }
                 for i, (date, pred, conf) in enumerate(zip(
                     prediction_dates, predictions, confidences
                 ))
             ],
             'model_info': self.model_metadata,
-            'generated_at': datetime.now().isoformat()
+            'generated_at': datetime.now().isoformat(),
         }
     
     def save(self, path: Optional[str] = None) -> str:
