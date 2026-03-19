@@ -20,11 +20,16 @@ from contextlib import asynccontextmanager
 from .config import settings
 from .model import StockPredictor
 from .transformer_model import TransformerStockPredictor
+from .ensemble_model import EnsemblePredictor
+from .drift_detector import DriftDetector
 from . import sentiment as finbert
 
 # Store for active predictors (keyed by "SYMBOL" for LSTM, "SYMBOL_transformer" for Transformer)
-predictors: Dict[str, object] = {}  # StockPredictor | TransformerStockPredictor
+predictors: Dict[str, object] = {}  # StockPredictor | TransformerStockPredictor | EnsemblePredictor
 training_status: Dict[str, dict] = {}
+
+# Global concept drift detector
+drift_detector = DriftDetector()
 
 
 @asynccontextmanager
@@ -83,7 +88,9 @@ class TrainRequest(BaseModel):
     sequence_length: Optional[int] = Field(None, description="Sequence length for LSTM input")
     forecast_days: Optional[int] = Field(None, description="Number of days to forecast")
     use_cuda: Optional[bool] = Field(None, description="Force CUDA usage (requires GPU container)")
-    model_type: Optional[str] = Field(None, description="Model type: 'lstm' or 'transformer' (default from config)")
+    model_type: Optional[str] = Field(None, description="Model type: 'lstm', 'transformer', or 'ensemble' (default from config)")
+    use_cross_asset_features: Optional[bool] = Field(None, description="Enrich features with cross-asset market data")
+    use_feature_selection: Optional[bool] = Field(None, description="Automatically prune redundant features before training")
 
 
 class PredictRequest(BaseModel):
@@ -110,6 +117,8 @@ class PredictResponse(BaseModel):
     model_info: dict
     model_type: Optional[str] = None
     generated_at: str
+    drift_warning: Optional[dict] = None
+    ensemble_weights: Optional[dict] = None
 
 
 class HealthResponse(BaseModel):
@@ -221,7 +230,12 @@ async def list_models():
 
 def _get_predictor_key(symbol: str, model_type: str) -> str:
     """Get cache key for a predictor."""
-    return f"{symbol.upper()}_{model_type}" if model_type == "transformer" else symbol.upper()
+    symbol = symbol.upper()
+    if model_type == "transformer":
+        return f"{symbol}_transformer"
+    elif model_type == "ensemble":
+        return f"{symbol}_ensemble"
+    return symbol
 
 
 def _try_load_predictor(symbol: str, model_type: Optional[str] = None):
@@ -235,7 +249,14 @@ def _try_load_predictor(symbol: str, model_type: Optional[str] = None):
         except Exception as exc:
             print(f"Model load failed for {symbol} ({detected}): {exc}")
         return None, None
-    
+
+    # If ensemble explicitly requested, try to build one
+    if model_type == "ensemble":
+        ens = EnsemblePredictor(symbol)
+        if ens.load():
+            return ens, "ensemble"
+        return None, None
+
     # If specific type requested, try that first
     if model_type == "transformer":
         pred = TransformerStockPredictor(symbol)
@@ -243,18 +264,28 @@ def _try_load_predictor(symbol: str, model_type: Optional[str] = None):
     elif model_type == "lstm":
         pred = StockPredictor(symbol)
         return _safe_load(pred, "lstm")
-    
-    # Auto-detect: try transformer first (preferred), then LSTM
+
+    # Auto-detect: check whether both models exist → prefer ensemble
+    import os
+    lstm_path = os.path.join(settings.model_dir, f"{symbol}_model.pt")
+    transformer_path = os.path.join(settings.model_dir, f"{symbol}_transformer.pt")
+
+    if os.path.exists(lstm_path) and os.path.exists(transformer_path):
+        ens = EnsemblePredictor(symbol)
+        if ens.load():
+            return ens, "ensemble"
+
+    # Fall back to single-model preference (transformer > lstm)
     pred_t = TransformerStockPredictor(symbol)
     loaded_pred, loaded_type = _safe_load(pred_t, "transformer")
     if loaded_pred:
         return loaded_pred, loaded_type
-    
+
     pred_l = StockPredictor(symbol)
     loaded_pred, loaded_type = _safe_load(pred_l, "lstm")
     if loaded_pred:
         return loaded_pred, loaded_type
-    
+
     return None, None
 
 
@@ -313,7 +344,9 @@ async def train_model_background(
     sequence_length: int,
     forecast_days: int,
     use_cuda: Optional[bool] = None,
-    model_type: str = "lstm"
+    model_type: str = "lstm",
+    use_cross_asset_features: bool = False,
+    use_feature_selection: bool = False,
 ):
     """Background task for model training (LSTM or Transformer)"""
     status_key = f"{symbol}_{model_type}" if model_type == "transformer" else symbol
@@ -327,9 +360,19 @@ async def train_model_background(
         
         # Create predictor based on model_type
         if model_type == "transformer":
-            predictor = TransformerStockPredictor(symbol, use_cuda=use_cuda)
+            predictor = TransformerStockPredictor(
+                symbol,
+                use_cuda=use_cuda,
+                use_cross_asset_features=use_cross_asset_features,
+                use_feature_selection=use_feature_selection,
+            )
         else:
-            predictor = StockPredictor(symbol, use_cuda=use_cuda)
+            predictor = StockPredictor(
+                symbol,
+                use_cuda=use_cuda,
+                use_cross_asset_features=use_cross_asset_features,
+                use_feature_selection=use_feature_selection,
+            )
         
         # Convert data
         ohlcv_data = [d for d in data]
@@ -398,6 +441,15 @@ async def train_model(request: TrainRequest, background_tasks: BackgroundTasks):
     symbol = request.symbol.upper()
     model_type = (request.model_type or settings.default_model_type).lower()
     if model_type not in ("lstm", "transformer"):
+        if model_type == "ensemble":
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "model_type 'ensemble' cannot be trained directly. "
+                    "Train 'lstm' and 'transformer' separately — the ensemble will be "
+                    "automatically available for predictions when both checkpoints exist."
+                )
+            )
         raise HTTPException(status_code=400, detail=f"Invalid model_type: {model_type}. Use 'lstm' or 'transformer'.")
     
     # Use request params or fall back to settings defaults
@@ -427,6 +479,18 @@ async def train_model(request: TrainRequest, background_tasks: BackgroundTasks):
     use_cuda = request.use_cuda
     device_info = "cuda" if use_cuda else ("cpu" if use_cuda is False else "auto")
     
+    # Determine feature flags (request overrides config defaults)
+    use_cross_asset = (
+        request.use_cross_asset_features
+        if request.use_cross_asset_features is not None
+        else settings.use_cross_asset_features
+    )
+    use_feature_sel = (
+        request.use_feature_selection
+        if request.use_feature_selection is not None
+        else settings.use_feature_selection
+    )
+
     # Start training in background with all parameters
     background_tasks.add_task(
         train_model_background,
@@ -437,7 +501,9 @@ async def train_model(request: TrainRequest, background_tasks: BackgroundTasks):
         seq_length,
         fc_days,
         use_cuda,
-        model_type
+        model_type,
+        use_cross_asset,
+        use_feature_sel,
     )
     
     training_status[status_key] = {
@@ -496,8 +562,8 @@ async def predict(request: PredictRequest):
             predictor = predictors[key]
             detected_type = model_type
     else:
-        # Auto-detect from cache
-        for mt in ["transformer", "lstm"]:
+        # Auto-detect from cache (prefer ensemble if both are cached, then transformer, then lstm)
+        for mt in ["ensemble", "transformer", "lstm"]:
             key = _get_predictor_key(symbol, mt)
             if key in predictors and predictors[key].is_trained:
                 predictor = predictors[key]
@@ -518,14 +584,22 @@ async def predict(request: PredictRequest):
         )
     
     # Verify the loaded model is for the correct symbol
-    if predictor.model_metadata.get('symbol', '').upper() != symbol:
+    # Ensemble predictor's model_metadata uses 'symbol' key directly
+    model_symbol = predictor.model_metadata.get('symbol', '').upper()
+    if model_symbol and model_symbol != symbol:
         raise HTTPException(
             status_code=400,
             detail=f"Model mismatch: loaded model is for {predictor.model_metadata.get('symbol')}, not {symbol}"
         )
     
-    # Validate data
-    seq_len = predictor.model_metadata.get('sequence_length', settings.sequence_length)
+    # Validate data (for ensemble, use sequence_length from lstm sub-model metadata)
+    if detected_type == "ensemble":
+        lstm_meta = predictor.model_metadata.get("lstm", {})
+        transformer_meta = predictor.model_metadata.get("transformer", {})
+        seq_len = lstm_meta.get("sequence_length") or transformer_meta.get("sequence_length") or settings.sequence_length
+    else:
+        seq_len = predictor.model_metadata.get('sequence_length', settings.sequence_length)
+
     if len(request.data) < seq_len:
         raise HTTPException(
             status_code=400,
@@ -538,6 +612,16 @@ async def predict(request: PredictRequest):
     try:
         result = predictor.predict(data)
         result["model_type"] = detected_type
+
+        # Check for concept drift and attach warning if detected
+        drift_status = drift_detector.check_drift(symbol)
+        if drift_status.get("drift_detected"):
+            result["drift_warning"] = {
+                "message": drift_status["reason"],
+                "should_retrain": drift_status["should_retrain"],
+                "metrics": drift_status["metrics"],
+            }
+
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -575,6 +659,50 @@ async def delete_model(symbol: str, model_type: Optional[str] = None):
         return {"message": f"Deleted for {symbol}: {', '.join(deleted)}"}
     
     raise HTTPException(status_code=404, detail=f"Model not found for {symbol}")
+
+
+# ============== Drift Detection Endpoints ==============
+
+class DriftRecordRequest(BaseModel):
+    """Request to record a prediction-actual pair for drift monitoring"""
+    symbol: str = Field(..., description="Stock symbol")
+    predicted_price: float = Field(..., description="Predicted price")
+    actual_price: float = Field(..., description="Actual observed price")
+    timestamp: Optional[str] = Field(None, description="ISO timestamp of the prediction (defaults to now)")
+
+
+@app.post("/api/ml/drift/record")
+async def record_drift_data(request: DriftRecordRequest):
+    """
+    Record a prediction–actual price pair for concept drift monitoring.
+    
+    Call this endpoint when actual prices become known (e.g., from the RL service
+    or backend) so the drift detector can track prediction accuracy over time.
+    """
+    drift_detector.record_prediction(
+        symbol=request.symbol,
+        predicted_price=request.predicted_price,
+        actual_price=request.actual_price,
+        timestamp=request.timestamp,
+    )
+    return {
+        "message": f"Drift data recorded for {request.symbol.upper()}",
+        "symbol": request.symbol.upper(),
+    }
+
+
+@app.get("/api/ml/drift/{symbol}")
+async def get_drift_status(symbol: str):
+    """Get concept drift status for a specific symbol."""
+    symbol = symbol.upper()
+    status = drift_detector.check_drift(symbol)
+    return {"symbol": symbol, **status}
+
+
+@app.get("/api/ml/drift")
+async def get_all_drift_status():
+    """Get concept drift status for all tracked symbols."""
+    return {"drift_status": drift_detector.get_all_status()}
 
 
 # ============== Sentiment Endpoints ==============

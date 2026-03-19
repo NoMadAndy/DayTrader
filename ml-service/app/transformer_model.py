@@ -36,6 +36,8 @@ import logging
 from datetime import datetime
 
 from .config import settings
+from .cross_asset_features import CrossAssetFeatureProvider
+from .feature_selector import FeatureSelector
 
 logger = logging.getLogger(__name__)
 
@@ -312,7 +314,9 @@ class TransformerStockPredictor:
     so consumers can distinguish model types.
     """
 
-    def __init__(self, symbol: str, use_cuda: Optional[bool] = None):
+    def __init__(self, symbol: str, use_cuda: Optional[bool] = None,
+                 use_cross_asset_features: bool = False,
+                 use_feature_selection: bool = False):
         self.symbol = symbol
         self.model_type = "transformer"
 
@@ -346,6 +350,16 @@ class TransformerStockPredictor:
         self.transformer_dropout = float(
             os.getenv("ML_TRANSFORMER_DROPOUT", "0.1")
         )
+
+        # Optional enrichment / pruning flags
+        self.use_cross_asset_features: bool = use_cross_asset_features
+        self.use_feature_selection: bool = use_feature_selection
+        self._cross_asset_provider: Optional[CrossAssetFeatureProvider] = (
+            CrossAssetFeatureProvider(cache_ttl_seconds=settings.cross_asset_cache_ttl)
+            if use_cross_asset_features
+            else None
+        )
+        self._feature_selector: Optional[FeatureSelector] = None
 
     def _calculate_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -421,7 +435,33 @@ class TransformerStockPredictor:
         feature_columns = [c for c in feature_columns if c in df.columns]
         df_clean = df[feature_columns].dropna()
 
-        return df_clean.values, feature_columns
+        # Optionally enrich with cross-asset features
+        if self._cross_asset_provider is not None:
+            try:
+                if "timestamp" in df.columns:
+                    dates = pd.to_datetime(df["timestamp"]).iloc[df_clean.index]
+                else:
+                    dates = df_clean.index
+                cross_df = self._cross_asset_provider.get_cross_asset_features(
+                    self.symbol, pd.DatetimeIndex(dates)
+                )
+                if cross_df is not None and not cross_df.empty:
+                    cross_df = cross_df.reset_index(drop=True)
+                    df_clean = df_clean.reset_index(drop=True)
+                    min_len = min(len(df_clean), len(cross_df))
+                    df_clean = df_clean.iloc[:min_len].copy()
+                    cross_vals = cross_df.iloc[:min_len]
+                    new_cols = {col: cross_vals[col].values for col in cross_df.columns}
+                    df_clean = df_clean.assign(**new_cols)
+                    for col in cross_df.columns:
+                        if col not in feature_columns:
+                            feature_columns.append(col)
+            except Exception as exc:
+                logger.warning(
+                    f"TransformerStockPredictor: cross-asset enrichment failed: {exc}"
+                )
+
+        return df_clean.values, [c for c in feature_columns if c in df_clean.columns]
 
     def _create_sequences(
         self,
@@ -456,27 +496,72 @@ class TransformerStockPredictor:
         close_idx = self.feature_names.index("close")
         y = X[:, close_idx]
 
-        X_scaled = self.scaler_X.fit_transform(X)
+        # Split before fitting scalers/selector (no future leakage)
+        train_end = int(len(X) * 0.8)
+        X_train_raw, X_val_raw = X[:train_end], X[train_end:]
+        y_train_raw = y[:train_end]
+
+        # Optional feature selection (fit on training data only)
+        if self.use_feature_selection:
+            try:
+                max_f = settings.feature_selection_max_features or None
+                corr_t = settings.feature_selection_correlation_threshold
+                self._feature_selector = FeatureSelector(
+                    correlation_threshold=corr_t,
+                    max_features=max_f,
+                )
+                X_train_raw, selected_names = self._feature_selector.fit_transform(
+                    X_train_raw, y_train_raw, self.feature_names
+                )
+                X_val_raw, _ = self._feature_selector.transform(X_val_raw, self.feature_names)
+                self.feature_names = selected_names
+                logger.info(
+                    f"TransformerStockPredictor: feature selection kept "
+                    f"{len(selected_names)} features"
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"TransformerStockPredictor: feature selection failed, using all: {exc}"
+                )
+                self._feature_selector = None
+
+        X_scaled = self.scaler_X.fit_transform(
+            np.concatenate([X_train_raw, X_val_raw], axis=0)
+        )
+        # Re-split after scaling
+        n_train = len(X_train_raw)
+        X_train_scaled = X_scaled[:n_train]
+        X_val_scaled = X_scaled[n_train:]
+
         y_scaled = self.scaler_y.fit_transform(y.reshape(-1, 1)).flatten()
 
-        X_seq, _ = self._create_sequences(X_scaled, y_scaled, seq_len, fc_days)
+        # Re-align y to the (possibly shorter after feature selection) X splits
+        y_train_scaled = y_scaled[:n_train]
+        y_val_scaled = y_scaled[n_train:]
 
-        y_targets = []
-        for i in range(len(X_seq)):
-            start_idx = seq_len + i
-            end_idx = start_idx + fc_days
-            if end_idx <= len(y_scaled):
-                y_targets.append(y_scaled[start_idx:end_idx])
+        X_seq_train, _ = self._create_sequences(X_train_scaled, y_train_scaled, seq_len, fc_days)
+        X_seq_val, _ = self._create_sequences(X_val_scaled, y_val_scaled, seq_len, fc_days)
 
-        y_seq = np.array(y_targets[: len(X_seq)])
-        X_seq = X_seq[: len(y_seq)]
+        def _build_targets(y_vals, seq_l, fc_d):
+            targets = []
+            for i in range(len(y_vals) - seq_l - fc_d + 1):
+                targets.append(y_vals[seq_l + i: seq_l + i + fc_d])
+            return np.array(targets)
 
-        split_idx = int(len(X_seq) * 0.8)
+        y_seq_train = _build_targets(y_train_scaled, seq_len, fc_days)
+        y_seq_val = _build_targets(y_val_scaled, seq_len, fc_days)
 
-        X_train = torch.FloatTensor(X_seq[:split_idx]).to(self.device)
-        y_train = torch.FloatTensor(y_seq[:split_idx]).to(self.device)
-        X_val = torch.FloatTensor(X_seq[split_idx:]).to(self.device)
-        y_val = torch.FloatTensor(y_seq[split_idx:]).to(self.device)
+        min_train = min(len(X_seq_train), len(y_seq_train))
+        min_val = min(len(X_seq_val), len(y_seq_val))
+        X_seq_train = X_seq_train[:min_train]
+        y_seq_train = y_seq_train[:min_train]
+        X_seq_val = X_seq_val[:min_val]
+        y_seq_val = y_seq_val[:min_val]
+
+        X_train = torch.FloatTensor(X_seq_train).to(self.device)
+        y_train = torch.FloatTensor(y_seq_train).to(self.device)
+        X_val = torch.FloatTensor(X_seq_val).to(self.device)
+        y_val = torch.FloatTensor(y_seq_val).to(self.device)
 
         return X_train, y_train, X_val, y_val
 
@@ -635,6 +720,13 @@ class TransformerStockPredictor:
                 "dropout": self.transformer_dropout,
                 "parameters": self.model.get_parameter_count(),
             },
+            "use_cross_asset_features": self.use_cross_asset_features,
+            "use_feature_selection": self.use_feature_selection,
+            "feature_selection_report": (
+                self._feature_selector.get_report()
+                if self._feature_selector is not None
+                else None
+            ),
         }
 
         return {
@@ -655,7 +747,17 @@ class TransformerStockPredictor:
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
         df = df.sort_values("timestamp").reset_index(drop=True)
 
-        X, _ = self._prepare_features(df)
+        X, feature_names = self._prepare_features(df)
+
+        # Apply feature selection if it was used during training
+        if self._feature_selector is not None and self._feature_selector.selected_features_ is not None:
+            try:
+                X, feature_names = self._feature_selector.transform(X, feature_names)
+            except Exception as exc:
+                logger.warning(
+                    f"TransformerStockPredictor: feature selector transform failed in predict: {exc}"
+                )
+
         X_scaled = self.scaler_X.transform(X)
 
         seq_len = self.model_metadata.get("sequence_length", settings.sequence_length)
@@ -786,6 +888,9 @@ class TransformerStockPredictor:
                 "d_ff": self.d_ff,
                 "dropout": self.transformer_dropout,
             },
+            "feature_selector": self._feature_selector,
+            "use_cross_asset_features": self.use_cross_asset_features,
+            "use_feature_selection": self.use_feature_selection,
         }
 
         torch.save(save_dict, path)
@@ -805,6 +910,15 @@ class TransformerStockPredictor:
         self.scaler_y = save_dict["scaler_y"]
         self.feature_names = save_dict["feature_names"]
         self.model_metadata = save_dict["metadata"]
+
+        # Restore optional enrichment flags and feature selector
+        self.use_cross_asset_features = save_dict.get("use_cross_asset_features", False)
+        self.use_feature_selection = save_dict.get("use_feature_selection", False)
+        self._feature_selector = save_dict.get("feature_selector", None)
+        if self.use_cross_asset_features and self._cross_asset_provider is None:
+            self._cross_asset_provider = CrossAssetFeatureProvider(
+                cache_ttl_seconds=settings.cross_asset_cache_ttl
+            )
 
         # Restore architecture params
         arch = save_dict.get("architecture", {})
