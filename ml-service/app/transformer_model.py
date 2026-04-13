@@ -500,6 +500,7 @@ class TransformerStockPredictor:
         train_end = int(len(X) * 0.8)
         X_train_raw, X_val_raw = X[:train_end], X[train_end:]
         y_train_raw = y[:train_end]
+        y_val_raw = y[train_end:]
 
         # Optional feature selection (fit on training data only)
         if self.use_feature_selection:
@@ -525,19 +526,15 @@ class TransformerStockPredictor:
                 )
                 self._feature_selector = None
 
-        X_scaled = self.scaler_X.fit_transform(
-            np.concatenate([X_train_raw, X_val_raw], axis=0)
-        )
-        # Re-split after scaling
-        n_train = len(X_train_raw)
-        X_train_scaled = X_scaled[:n_train]
-        X_val_scaled = X_scaled[n_train:]
+        # Fit scalers on train only — concat+fit leaked validation stats into
+        # the scaler parameters and inflated val metrics (Sprint B P0 fix).
+        self.scaler_X.fit(X_train_raw)
+        X_train_scaled = self.scaler_X.transform(X_train_raw)
+        X_val_scaled = self.scaler_X.transform(X_val_raw)
 
-        y_scaled = self.scaler_y.fit_transform(y.reshape(-1, 1)).flatten()
-
-        # Re-align y to the (possibly shorter after feature selection) X splits
-        y_train_scaled = y_scaled[:n_train]
-        y_val_scaled = y_scaled[n_train:]
+        self.scaler_y.fit(y_train_raw.reshape(-1, 1))
+        y_train_scaled = self.scaler_y.transform(y_train_raw.reshape(-1, 1)).flatten()
+        y_val_scaled = self.scaler_y.transform(y_val_raw.reshape(-1, 1)).flatten()
 
         X_seq_train, _ = self._create_sequences(X_train_scaled, y_train_scaled, seq_len, fc_days)
         X_seq_val, _ = self._create_sequences(X_val_scaled, y_val_scaled, seq_len, fc_days)

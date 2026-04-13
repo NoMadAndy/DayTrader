@@ -38,10 +38,13 @@ Motivation: News-Signale sollen tradable sein, nicht nur Noise. Ausgangslage sie
 - Strukturierte Tool-Calls statt Freitext bei Signalgenerierung
 
 ### Backtest- & Evaluations-Hygiene
-- Walk-Forward-CV als Default überall wo noch Random-Split läuft
+- 🟡 Walk-Forward-CV: LSTM hat Walk-Forward (jetzt API-Default `use_walk_forward=True`), Transformer nutzt korrekt train-only-Scaler aber noch Single-Split (Sprint B P0c offen). Scaler-Leakage in Transformer behoben 2026-04-13.
 - Transaktionskosten (Spread + Slippage + Fees) in allen Backtests
 - Regime-aufgeteilte Performance-Metriken (Bull/Bear/Flat)
 - Baseline-Vergleich (Buy-and-Hold, Random) in jedem Report
+- Walk-Forward für Transformer implementieren (P0c, Parität zu `model.py`)
+- IC / Rank-IC des Sentiment-Signals tracken (Sprint B P1, `aiTraderSignalAccuracy.js`)
+- RL-Eval auf Hard-Hold-out (letzte 20 %) statt Train-Window (Sprint B P1, `trainer.py`)
 
 ---
 

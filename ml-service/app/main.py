@@ -91,6 +91,7 @@ class TrainRequest(BaseModel):
     model_type: Optional[str] = Field(None, description="Model type: 'lstm', 'transformer', or 'ensemble' (default from config)")
     use_cross_asset_features: Optional[bool] = Field(None, description="Enrich features with cross-asset market data")
     use_feature_selection: Optional[bool] = Field(None, description="Automatically prune redundant features before training")
+    use_walk_forward: Optional[bool] = Field(True, description="Purged walk-forward CV on LSTM (default True). Transformer ignores this for now and uses a single chronological split with train-only scaling.")
 
 
 class PredictRequest(BaseModel):
@@ -347,6 +348,7 @@ async def train_model_background(
     model_type: str = "lstm",
     use_cross_asset_features: bool = False,
     use_feature_selection: bool = False,
+    use_walk_forward: bool = True,
 ):
     """Background task for model training (LSTM or Transformer)"""
     status_key = f"{symbol}_{model_type}" if model_type == "transformer" else symbol
@@ -390,7 +392,6 @@ async def train_model_background(
                 f"Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}"
             )
         
-        # Build train kwargs with progress callback for both model types
         train_kwargs = dict(
             epochs=epochs,
             learning_rate=learning_rate,
@@ -398,8 +399,11 @@ async def train_model_background(
             forecast_days=forecast_days,
             progress_callback=on_progress,
         )
-        
-        # Train with custom parameters
+        # Walk-forward CV supported only by LSTM today; Transformer leakage-free
+        # single-split path is fine until WF parity is implemented (Sprint B P0c).
+        if model_type != "transformer":
+            train_kwargs["use_walk_forward"] = use_walk_forward
+
         result = predictor.train(ohlcv_data, **train_kwargs)
         
         training_status[status_key]["progress"] = 90
@@ -491,7 +495,8 @@ async def train_model(request: TrainRequest, background_tasks: BackgroundTasks):
         else settings.use_feature_selection
     )
 
-    # Start training in background with all parameters
+    use_wf = request.use_walk_forward if request.use_walk_forward is not None else True
+
     background_tasks.add_task(
         train_model_background,
         symbol,
@@ -504,6 +509,7 @@ async def train_model(request: TrainRequest, background_tasks: BackgroundTasks):
         model_type,
         use_cross_asset,
         use_feature_sel,
+        use_wf,
     )
     
     training_status[status_key] = {
