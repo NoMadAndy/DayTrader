@@ -29,7 +29,7 @@ Motivation: News-Signale sollen tradable sein, nicht nur Noise. Ausgangslage sie
 - ~~FinBERT-Chunking~~ ✓ 2026-04-13 (Sprint C5): Texte > 512 Token werden via `return_overflowing_tokens=True, stride=64` in überlappende Fenster zerlegt; pro-Chunk-Probabilities werden konfidenz-gewichtet aggregiert. Short-Text-Batch-Pfad bleibt für Headlines (heute fast ausschließlich der Fall) erhalten — Long-Text-Pfad ist Per-Text. Siehe [sentiment.py](../ml-service/app/sentiment.py).
 - ~~Marketaux/FMP/Tiingo/Mediastack-Keys aus Frontend entfernen~~ ✓ 2026-04-13 (Sprint C4): jetzt ebenfalls über `resolveProviderKey` (env: MARKETAUX/FMP/TIINGO/MEDIASTACK_API_KEY oder user_settings.api_keys.{marketaux,fmp,tiingo,mediastack}). Vorher landete der Key als URL-Query-Param in Browser- und Server-Access-Logs.
 - Quellen-Diversität: Reddit, SEC EDGAR 8-K, Earnings-Transcripts, X
-- IC / Rank-IC des Sentiment-Signals gegen Next-Bar-Return tracken
+- ~~IC / Rank-IC des Sentiment-Signals tracken~~ ✓ 2026-04-13 (Sprint C6 Teil B): Tabelle `signal_ic`, Logger-Hook in `/api/ml/sentiment`, Daily-Backfill-Job 18:05 via historical_prices, Endpoint `GET /api/ml/sentiment/ic?source=&days=&by_symbol=`. Siehe [signalIC.js](../backend/src/signalIC.js). Frontend-IC-Anzeige noch offen.
 - Event-Typ-Separation (Earnings vs Upgrade vs M&A vs Rumor)
 
 ### Claude-Verhalten / LLM-Integration

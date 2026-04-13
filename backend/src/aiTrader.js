@@ -487,6 +487,24 @@ export async function initializeAITraderSchema() {
       END $$;
     `);
 
+    // Sprint C6B: raw signal scores logged independently of decisions,
+    // to track IC degradation over the full universe (not just traded symbols).
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS signal_ic (
+        id SERIAL PRIMARY KEY,
+        signal_source VARCHAR(20) NOT NULL,
+        symbol VARCHAR(20) NOT NULL,
+        score DECIMAL(8,4) NOT NULL,
+        score_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        return_horizon_bars INTEGER NOT NULL DEFAULT 1,
+        realized_return DECIMAL(10,6),
+        computed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_signal_ic_source_time ON signal_ic(signal_source, score_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_signal_ic_symbol_time ON signal_ic(symbol, score_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_signal_ic_pending ON signal_ic(realized_return) WHERE realized_return IS NULL;
+    `);
+
     // Create ai_trader_weight_history table for tracking adaptive learning
     await client.query(`
       CREATE TABLE IF NOT EXISTS ai_trader_weight_history (

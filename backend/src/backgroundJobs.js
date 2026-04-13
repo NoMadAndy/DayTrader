@@ -13,6 +13,7 @@
 import { query } from './db.js';
 import stockCache from './stockCache.js';
 import logger from './logger.js';
+import signalIC from './signalIC.js';
 
 // Configuration
 const CONFIG = {
@@ -507,6 +508,7 @@ let outcomeTrackingTimer = null;
 let adaptiveWeightsTimer = null;
 let adaptiveLearningCheckTimer = null;
 let warrantJobTimer = null;
+let signalICBackfillTimer = null;
 
 /**
  * Run daily warrant maintenance jobs:
@@ -625,6 +627,23 @@ function scheduleAITraderJobs() {
   }, msUntilWarrantJob);
 
   logger.info(`[BackgroundJobs] Warrant jobs (theta decay + expiry) scheduled for ${nextWarrantRun.toISOString()}`);
+
+  // =========================================
+  // SIGNAL-IC BACKFILL (Sprint C6B)
+  // Täglich 18:05 — 1-Bar-Return für pending signal_ic-Einträge auflösen.
+  // =========================================
+  const nextICRun = new Date(now);
+  nextICRun.setHours(18, 5, 0, 0);
+  if (nextICRun <= now) nextICRun.setDate(nextICRun.getDate() + 1);
+  const msUntilIC = nextICRun.getTime() - now.getTime();
+  signalICBackfillTimer = setTimeout(() => {
+    signalIC.backfillRealizedReturns();
+    signalICBackfillTimer = setInterval(
+      () => signalIC.backfillRealizedReturns(),
+      24 * 60 * 60 * 1000,
+    );
+  }, msUntilIC);
+  logger.info(`[BackgroundJobs] Signal-IC backfill scheduled for ${nextICRun.toISOString()}`);
 }
 
 /**

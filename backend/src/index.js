@@ -18,6 +18,7 @@ import db from './db.js';
 import stockCache from './stockCache.js';
 import backgroundJobs from './backgroundJobs.js';
 import * as sentimentArchive from './sentimentArchive.js';
+import signalIC from './signalIC.js';
 import { registerUser, loginUser, logoutUser, authMiddleware, optionalAuthMiddleware } from './auth.js';
 import { getUserSettings, updateUserSettings, getCustomSymbols, addCustomSymbol, removeCustomSymbol, syncCustomSymbols } from './userSettings.js';
 import * as trading from './trading.js';
@@ -2343,9 +2344,41 @@ app.post('/api/ml/sentiment/analyze/batch', express.json({ limit: '5mb' }), asyn
  * Fetches news for a symbol and analyzes sentiment using FinBERT.
  * Used by AI Trader for sentiment signals.
  * Falls back to sentiment archive if no fresh data available.
- * 
+ *
  * GET /api/ml/sentiment/:symbol
  */
+
+/**
+ * GET /api/ml/sentiment/ic — Rank-IC-Aggregation über gespeicherte Scores.
+ * MUSS vor /:symbol stehen, sonst fängt der Symbol-Handler "ic" ab.
+ * Query: source, days (default 30), by_symbol (true/false)
+ */
+app.get('/api/ml/sentiment/ic', async (req, res) => {
+  try {
+    const days = Math.min(365, Math.max(1, parseInt(req.query.days) || 30));
+    const source = typeof req.query.source === 'string' ? req.query.source : null;
+    const bySymbol = req.query.by_symbol === 'true' || req.query.by_symbol === '1';
+    const result = await signalIC.getIC({ source, days, bySymbol });
+    res.json(result);
+  } catch (error) {
+    logger.error('[SignalIC] endpoint error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/ml/sentiment/ic/backfill — Manual trigger; daily job läuft 18:05.
+ */
+app.post('/api/ml/sentiment/ic/backfill', authMiddleware, async (_req, res) => {
+  try {
+    const result = await signalIC.backfillRealizedReturns();
+    res.json(result);
+  } catch (error) {
+    logger.error('[SignalIC] backfill endpoint error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/ml/sentiment/:symbol', async (req, res) => {
   const { symbol } = req.params;
   
@@ -2723,7 +2756,10 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
     } catch (archiveError) {
       logger.warn(`[Sentiment] Failed to archive sentiment: ${archiveError.message}`);
     }
-    
+
+    // Log raw score for IC-Tracking (Sprint C6B). Fire-and-forget.
+    signalIC.logSignalScore('sentiment', symbol, avgScore);
+
     res.json(result);
     
   } catch (error) {
@@ -2802,6 +2838,7 @@ app.get('/api/sentiment/symbols', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 
 // ============================================================================
 // RL Trading Service proxy endpoints
