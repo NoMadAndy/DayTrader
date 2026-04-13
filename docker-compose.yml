@@ -66,6 +66,8 @@ services:
       - FMP_API_KEY=${FMP_API_KEY:-}
       - TIINGO_API_KEY=${TIINGO_API_KEY:-}
       - MEDIASTACK_API_KEY=${MEDIASTACK_API_KEY:-}
+      - ENABLE_SEMANTIC_DEDUP=${ENABLE_SEMANTIC_DEDUP:-false}
+      - SEMANTIC_DEDUP_THRESHOLD=${SEMANTIC_DEDUP_THRESHOLD:-0.92}
 
   # ML service - CPU by default, GPU via docker-compose.gpu.yml
   ml-service:
