@@ -23,7 +23,7 @@ Zentrale Aufgabenliste. Format und Regeln siehe [CLAUDE.md](../CLAUDE.md) Abschn
 
 ### Scraping- & Sentiment-Pipeline härten
 Motivation: News-Signale sollen tradable sein, nicht nur Noise. Ausgangslage siehe erste Analyse in dieser Session.
-- News-API-Keys vom Frontend ins Backend verlagern (Proxy + Redis-Cache)
+- ~~News-API-Keys vom Frontend ins Backend verlagern~~ ✓ 2026-04-13 (A.3): Server-Default + User-Override (DB) via `resolveProviderKey`, Bundle key-frei, alle News-Routen mit korrekter `stockCache.setCache`-Signatur (TTL 15 min). NewsAPI/NewsData haben nun Cache (vorher buggy Call-Signature, Cache nie geschrieben).
 - Semantic-Deduplikation via Embeddings vor Sentiment-Aggregation
 - Freshness-Decay (`exp(-Δt/τ)`) auf News-Sentiment anwenden
 - FinBERT-Chunking für Artikel > 512 Token statt hartem Truncate
@@ -75,3 +75,4 @@ Frontend-Lint wurde am 2026-04-13 entschärft, damit CI grün wird. Folgende Kla
 | Version | Datum | Highlight |
 |---|---|---|
 | — | 2026-04-13 | Claude-Setup: CLAUDE.md, .mcp.json (Playwright, Chrome-DevTools, Context7, Fetch, Postgres, Sequential-Thinking, Filesystem), 4 Subagents (trade-safety, scraper-auditor, backtest-reviewer, ui-smoke-tester), 2 Slash-Commands, docs/ToDo.md mit Eingangskorb |
+| — | 2026-04-13 | Sprint A: CI grün (RL-Tests + Frontend-Lint-Config), Frontend-Healthcheck gefixt (IPv6→IPv4), Provider-Keys ins Backend mit User-Override aus DB, News-Cache-Bugs behoben, Deploy-Pfad dokumentiert (docs/deploy.md) |

@@ -2056,6 +2056,12 @@ app.get('/api/news/everything', optionalAuthMiddleware, async (req, res) => {
   if (!q) {
     return res.status(400).json({ error: 'Search query (q) is required' });
   }
+
+  const cacheKey = `newsapi:everything:${q}:${language}:${sortBy}:${pageSize}`;
+  if (process.env.DATABASE_URL) {
+    const cached = await stockCache.getCached(cacheKey);
+    if (cached) return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
+  }
   
   try {
     const url = new URL(`${NEWS_API_BASE_URL}/everything`);
@@ -2076,13 +2082,16 @@ app.get('/api/news/everything', optionalAuthMiddleware, async (req, res) => {
     
     if (!response.ok) {
       logger.error(`NewsAPI error: ${response.status} ${data.message || response.statusText}`);
-      return res.status(response.status).json({ 
+      return res.status(response.status).json({
         error: 'NewsAPI error',
         status: response.status,
         message: data.message || response.statusText
       });
     }
-    
+
+    if (process.env.DATABASE_URL && data?.status === 'ok') {
+      await stockCache.setCache(cacheKey, 'news', String(q).toUpperCase(), data, 'newsapi', stockCache.CACHE_DURATIONS.news);
+    }
     res.json(data);
   } catch (error) {
     logger.error('NewsAPI proxy error:', error);
@@ -6134,8 +6143,7 @@ app.get('/api/rss/feed/:feedId', async (req, res) => {
       fetchedAt: new Date().toISOString()
     };
     
-    // Cache the result
-    await stockCache.setCache(cacheKey, result, RSS_CACHE_TTL);
+    await stockCache.setCache(cacheKey, 'news', 'RSS', result, 'rss', RSS_CACHE_TTL);
     
     res.json(result);
   } catch (error) {
@@ -6200,8 +6208,7 @@ app.get('/api/rss/all', async (req, res) => {
       fetchedAt: new Date().toISOString()
     };
     
-    // Cache the result
-    await stockCache.setCache(cacheKey, result, RSS_CACHE_TTL);
+    await stockCache.setCache(cacheKey, 'news', 'RSS', result, 'rss', RSS_CACHE_TTL);
     
     res.json(result);
   } catch (error) {
@@ -6282,7 +6289,7 @@ app.get('/api/marketaux/news', async (req, res) => {
     };
     
     // Cache for 5 minutes
-    await stockCache.setCache(cacheKey, normalizedData, 300);
+    await stockCache.setCache(cacheKey, 'news', String(symbols || 'all').toUpperCase(), normalizedData, 'marketaux', stockCache.CACHE_DURATIONS.news);
     
     res.json(normalizedData);
   } catch (error) {
@@ -6360,7 +6367,7 @@ app.get('/api/fmp/news/stock', async (req, res) => {
     };
     
     // Cache for 5 minutes
-    await stockCache.setCache(cacheKey, normalizedData, 300);
+    await stockCache.setCache(cacheKey, 'news', String(tickers || 'all').toUpperCase(), normalizedData, 'fmp', stockCache.CACHE_DURATIONS.news);
     
     res.json(normalizedData);
   } catch (error) {
@@ -6429,7 +6436,7 @@ app.get('/api/fmp/news/general', async (req, res) => {
     };
     
     // Cache for 5 minutes
-    await stockCache.setCache(cacheKey, normalizedData, 300);
+    await stockCache.setCache(cacheKey, 'news', 'ALL', normalizedData, 'fmp', stockCache.CACHE_DURATIONS.news);
     
     res.json(normalizedData);
   } catch (error) {
@@ -6507,7 +6514,7 @@ app.get('/api/tiingo/news', async (req, res) => {
     };
     
     // Cache for 5 minutes
-    await stockCache.setCache(cacheKey, normalizedData, 300);
+    await stockCache.setCache(cacheKey, 'news', String(tickers || 'all').toUpperCase(), normalizedData, 'tiingo', stockCache.CACHE_DURATIONS.news);
     
     res.json(normalizedData);
   } catch (error) {
@@ -6587,7 +6594,7 @@ app.get('/api/mediastack/news', async (req, res) => {
     };
     
     // Cache for 5 minutes
-    await stockCache.setCache(cacheKey, normalizedData, 300);
+    await stockCache.setCache(cacheKey, 'news', String(keywords || 'all').toUpperCase(), normalizedData, 'mediastack', stockCache.CACHE_DURATIONS.news);
     
     res.json(normalizedData);
   } catch (error) {
@@ -6668,7 +6675,7 @@ app.get('/api/newsdata/news', optionalAuthMiddleware, async (req, res) => {
     };
     
     // Cache for 5 minutes
-    await stockCache.setCache(cacheKey, normalizedData, 300);
+    await stockCache.setCache(cacheKey, 'news', String(q || 'all').toUpperCase(), normalizedData, 'newsdata', stockCache.CACHE_DURATIONS.news);
     
     res.json(normalizedData);
   } catch (error) {
