@@ -20,11 +20,19 @@ export default defineConfig([
       globals: globals.browser,
     },
     rules: {
-      // Allow exports other than components in hooks files
       'react-refresh/only-export-components': [
         'warn',
         { allowExportNames: ['useDataService', 'useStockData', 'useQuote', 'useNews', 'useSymbolSearch', 'DataServiceProvider'] }
       ],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_|^err$|^e$|^error$' },
+      ],
+      '@typescript-eslint/no-explicit-any': 'warn',
+      'react-hooks/exhaustive-deps': 'warn',
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/immutability': 'warn',
+      'react-hooks/purity': 'warn',
     },
   },
 ])

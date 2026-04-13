@@ -801,9 +801,9 @@ function extractDerivativeInfo(name?: string, _symbol?: string): DerivativeInfo 
   // Extract expiration date
   // Patterns: "12/2026", "DEC 2026", "OPEN END"
   const expiryPatterns = [
-    /(\d{1,2})[\/\-](\d{4})/,
+    /(\d{1,2})[/-](\d{4})/,
     /(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s*(\d{4})/i,
-    /VERFALL\s*[:\s]*(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/i,
+    /VERFALL\s*[:\s]*(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})/i,
   ];
   
   if (nameUpper.includes('OPEN END') || nameUpper.includes('OPEN-END') || nameUpper.includes('ENDLOS')) {
