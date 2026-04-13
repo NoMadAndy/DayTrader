@@ -9,20 +9,17 @@
 
 import type { NewsItem } from './types';
 import { log } from '../utils/logger';
+import { getAuthHeaders } from './authService';
 
 // Backend proxy endpoint
 const TIINGO_API_BASE = '/api/tiingo';
 
 export class TiingoProvider {
   name = 'Tiingo';
-  private apiKey: string;
-
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
-  }
+  constructor(_apiKey?: string) {}
 
   isConfigured(): boolean {
-    return !!this.apiKey && this.apiKey.length > 0;
+    return true;
   }
 
   /**
@@ -36,11 +33,10 @@ export class TiingoProvider {
     try {
       const tickerParam = Array.isArray(tickers) ? tickers.join(',') : tickers;
       const url = new URL(`${TIINGO_API_BASE}/news`, window.location.origin);
-      url.searchParams.set('apiKey', this.apiKey);
       url.searchParams.set('tickers', tickerParam);
       url.searchParams.set('limit', '15');
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), { headers: { ...getAuthHeaders() } });
       
       if (!response.ok) {
         log.error(`Tiingo error: ${response.status}`);
@@ -65,10 +61,9 @@ export class TiingoProvider {
 
     try {
       const url = new URL(`${TIINGO_API_BASE}/news`, window.location.origin);
-      url.searchParams.set('apiKey', this.apiKey);
       url.searchParams.set('limit', '20');
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), { headers: { ...getAuthHeaders() } });
       
       if (!response.ok) {
         log.error(`Tiingo error: ${response.status}`);
@@ -85,6 +80,6 @@ export class TiingoProvider {
 }
 
 // Factory function
-export function createTiingoProvider(apiKey: string): TiingoProvider {
-  return new TiingoProvider(apiKey);
+export function createTiingoProvider(_apiKey?: string): TiingoProvider {
+  return new TiingoProvider();
 }

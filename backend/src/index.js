@@ -1244,6 +1244,10 @@ const PROVIDER_KEYS = {
   twelvedata: process.env.TWELVE_DATA_API_KEY || process.env.VITE_TWELVE_DATA_API_KEY || '',
   newsapi: process.env.NEWSAPI_KEY || process.env.NEWS_API_KEY || process.env.VITE_NEWS_API_KEY || '',
   newsdata: process.env.NEWSDATA_API_KEY || '',
+  marketaux: process.env.MARKETAUX_API_KEY || '',
+  fmp: process.env.FMP_API_KEY || '',
+  tiingo: process.env.TIINGO_API_KEY || '',
+  mediastack: process.env.MEDIASTACK_API_KEY || '',
 };
 for (const [name, val] of Object.entries(PROVIDER_KEYS)) {
   if (!val) logger.warn(`[providers] ${name} API key not set — endpoint will return 503`);
@@ -1256,6 +1260,10 @@ const USER_KEY_NAMES = {
   twelvedata: 'twelveData',
   newsapi: 'newsApi',
   newsdata: 'newsdata',
+  marketaux: 'marketaux',
+  fmp: 'fmp',
+  tiingo: 'tiingo',
+  mediastack: 'mediastack',
 };
 
 // User-supplied key (DB) overrides server-default. Falls auf Server-Default
@@ -6257,11 +6265,12 @@ const MARKETAUX_API_BASE = 'https://api.marketaux.com/v1';
  * GET /api/marketaux/news
  * Query params: symbols, language, limit, apiKey
  */
-app.get('/api/marketaux/news', async (req, res) => {
-  const { symbols, language = 'en', limit = '10', apiKey } = req.query;
-  
+app.get('/api/marketaux/news', optionalAuthMiddleware, async (req, res) => {
+  const { symbols, language = 'en', limit = '10' } = req.query;
+  const apiKey = await resolveProviderKey(req, 'marketaux');
+
   if (!apiKey) {
-    return res.status(400).json({ error: 'API key is required' });
+    return res.status(503).json({ error: 'Marketaux not configured on server' });
   }
   
   const cacheKey = `marketaux:news:${symbols || 'all'}:${language}`;
@@ -6338,11 +6347,12 @@ const FMP_API_BASE = 'https://financialmodelingprep.com/api/v3';
  * GET /api/fmp/news/stock
  * Query params: tickers, limit, apiKey
  */
-app.get('/api/fmp/news/stock', async (req, res) => {
-  const { tickers, limit = '10', apiKey } = req.query;
-  
+app.get('/api/fmp/news/stock', optionalAuthMiddleware, async (req, res) => {
+  const { tickers, limit = '10' } = req.query;
+  const apiKey = await resolveProviderKey(req, 'fmp');
+
   if (!apiKey) {
-    return res.status(400).json({ error: 'API key is required' });
+    return res.status(503).json({ error: 'FMP not configured on server' });
   }
   
   const cacheKey = `fmp:stocknews:${tickers || 'all'}`;
@@ -6410,11 +6420,12 @@ app.get('/api/fmp/news/stock', async (req, res) => {
  * GET /api/fmp/news/general
  * Query params: limit, apiKey
  */
-app.get('/api/fmp/news/general', async (req, res) => {
-  const { limit = '20', apiKey } = req.query;
-  
+app.get('/api/fmp/news/general', optionalAuthMiddleware, async (req, res) => {
+  const { limit = '20' } = req.query;
+  const apiKey = await resolveProviderKey(req, 'fmp');
+
   if (!apiKey) {
-    return res.status(400).json({ error: 'API key is required' });
+    return res.status(503).json({ error: 'FMP not configured on server' });
   }
   
   const cacheKey = `fmp:generalnews`;
@@ -6485,11 +6496,12 @@ const TIINGO_API_BASE = 'https://api.tiingo.com';
  * GET /api/tiingo/news
  * Query params: tickers, limit, apiKey
  */
-app.get('/api/tiingo/news', async (req, res) => {
-  const { tickers, limit = '10', apiKey } = req.query;
-  
+app.get('/api/tiingo/news', optionalAuthMiddleware, async (req, res) => {
+  const { tickers, limit = '10' } = req.query;
+  const apiKey = await resolveProviderKey(req, 'tiingo');
+
   if (!apiKey) {
-    return res.status(400).json({ error: 'API key is required' });
+    return res.status(503).json({ error: 'Tiingo not configured on server' });
   }
   
   const cacheKey = `tiingo:news:${tickers || 'all'}`;
@@ -6563,11 +6575,12 @@ const MEDIASTACK_API_BASE = 'http://api.mediastack.com/v1';
  * GET /api/mediastack/news
  * Query params: apiKey, keywords, language, limit
  */
-app.get('/api/mediastack/news', async (req, res) => {
-  const { apiKey, keywords = '', language = 'en', limit = '20' } = req.query;
-  
+app.get('/api/mediastack/news', optionalAuthMiddleware, async (req, res) => {
+  const { keywords = '', language = 'en', limit = '20' } = req.query;
+  const apiKey = await resolveProviderKey(req, 'mediastack');
+
   if (!apiKey) {
-    return res.status(400).json({ error: 'API key is required' });
+    return res.status(503).json({ error: 'Mediastack not configured on server' });
   }
   
   const cacheKey = `mediastack:news:${keywords || 'all'}:${language}`;

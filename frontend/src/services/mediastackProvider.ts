@@ -9,20 +9,17 @@
 
 import type { NewsItem } from './types';
 import { log } from '../utils/logger';
+import { getAuthHeaders } from './authService';
 
 // Backend proxy endpoint
 const MEDIASTACK_API_BASE = '/api/mediastack';
 
 export class MediastackProvider {
   name = 'MediaStack';
-  private apiKey: string;
-
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
-  }
+  constructor(_apiKey?: string) {}
 
   isConfigured(): boolean {
-    return !!this.apiKey && this.apiKey.length > 0;
+    return true;
   }
 
   /**
@@ -35,12 +32,11 @@ export class MediastackProvider {
 
     try {
       const url = new URL(`${MEDIASTACK_API_BASE}/news`, window.location.origin);
-      url.searchParams.set('apiKey', this.apiKey);
       url.searchParams.set('keywords', symbol);
       url.searchParams.set('language', 'en');
       url.searchParams.set('limit', '15');
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), { headers: { ...getAuthHeaders() } });
       
       if (!response.ok) {
         log.error(`mediastack error: ${response.status}`);
@@ -65,12 +61,11 @@ export class MediastackProvider {
 
     try {
       const url = new URL(`${MEDIASTACK_API_BASE}/news`, window.location.origin);
-      url.searchParams.set('apiKey', this.apiKey);
       url.searchParams.set('keywords', 'stock,market,finance,trading');
       url.searchParams.set('language', 'en');
       url.searchParams.set('limit', '20');
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), { headers: { ...getAuthHeaders() } });
       
       if (!response.ok) {
         log.error(`mediastack error: ${response.status}`);
@@ -87,6 +82,6 @@ export class MediastackProvider {
 }
 
 // Factory function
-export function createMediastackProvider(apiKey: string): MediastackProvider {
-  return new MediastackProvider(apiKey);
+export function createMediastackProvider(_apiKey?: string): MediastackProvider {
+  return new MediastackProvider();
 }

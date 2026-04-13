@@ -9,6 +9,7 @@
 
 import type { NewsItem } from './types';
 import { log } from '../utils/logger';
+import { getAuthHeaders } from './authService';
 
 // Backend proxy endpoint
 const MARKETAUX_API_BASE = '/api/marketaux';
@@ -20,14 +21,10 @@ export interface MarketauxNewsItem extends NewsItem {
 
 export class MarketauxProvider {
   name = 'Marketaux';
-  private apiKey: string;
-
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
-  }
+  constructor(_apiKey?: string) {}
 
   isConfigured(): boolean {
-    return !!this.apiKey && this.apiKey.length > 0;
+    return true;
   }
 
   /**
@@ -41,12 +38,11 @@ export class MarketauxProvider {
     try {
       const symbolParam = Array.isArray(symbols) ? symbols.join(',') : symbols;
       const url = new URL(`${MARKETAUX_API_BASE}/news`, window.location.origin);
-      url.searchParams.set('apiKey', this.apiKey);
       url.searchParams.set('symbols', symbolParam);
       url.searchParams.set('language', language);
       url.searchParams.set('limit', '15');
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), { headers: { ...getAuthHeaders() } });
       
       if (!response.ok) {
         log.error(`Marketaux error: ${response.status}`);
@@ -77,11 +73,10 @@ export class MarketauxProvider {
 
     try {
       const url = new URL(`${MARKETAUX_API_BASE}/news`, window.location.origin);
-      url.searchParams.set('apiKey', this.apiKey);
       url.searchParams.set('language', language);
       url.searchParams.set('limit', '20');
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), { headers: { ...getAuthHeaders() } });
       
       if (!response.ok) {
         log.error(`Marketaux error: ${response.status}`);
@@ -105,6 +100,6 @@ export class MarketauxProvider {
 }
 
 // Factory function
-export function createMarketauxProvider(apiKey: string): MarketauxProvider {
-  return new MarketauxProvider(apiKey);
+export function createMarketauxProvider(_apiKey?: string): MarketauxProvider {
+  return new MarketauxProvider();
 }

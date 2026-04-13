@@ -122,22 +122,12 @@ export class DataService {
 
     this.newsProvider = new NewsApiProvider();
 
-    // Initialize new news providers
-    if (config.marketauxApiKey) {
-      this.marketauxProvider = new MarketauxProvider(config.marketauxApiKey);
-    }
-
-    if (config.fmpApiKey) {
-      this.fmpProvider = new FMPProvider(config.fmpApiKey);
-    }
-
-    if (config.tiingoApiKey) {
-      this.tiingoProvider = new TiingoProvider(config.tiingoApiKey);
-    }
-
-    if (config.mediastackApiKey) {
-      this.mediastackProvider = new MediastackProvider(config.mediastackApiKey);
-    }
+    // Marketaux/FMP/Tiingo/Mediastack gehen ebenfalls durch den Backend-Proxy.
+    // Server resolved Keys über env oder user_settings.api_keys.
+    this.marketauxProvider = new MarketauxProvider();
+    this.fmpProvider = new FMPProvider();
+    this.tiingoProvider = new TiingoProvider();
+    this.mediastackProvider = new MediastackProvider();
 
     this.newsdataProvider = new NewsdataProvider();
 

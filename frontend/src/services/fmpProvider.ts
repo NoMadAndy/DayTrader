@@ -9,20 +9,17 @@
 
 import type { NewsItem } from './types';
 import { log } from '../utils/logger';
+import { getAuthHeaders } from './authService';
 
 // Backend proxy endpoint
 const FMP_API_BASE = '/api/fmp';
 
 export class FMPProvider {
   name = 'Financial Modeling Prep';
-  private apiKey: string;
-
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
-  }
+  constructor(_apiKey?: string) {}
 
   isConfigured(): boolean {
-    return !!this.apiKey && this.apiKey.length > 0;
+    return true;
   }
 
   /**
@@ -36,11 +33,10 @@ export class FMPProvider {
     try {
       const tickerParam = Array.isArray(tickers) ? tickers.join(',') : tickers;
       const url = new URL(`${FMP_API_BASE}/news/stock`, window.location.origin);
-      url.searchParams.set('apiKey', this.apiKey);
       url.searchParams.set('tickers', tickerParam);
       url.searchParams.set('limit', '15');
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), { headers: { ...getAuthHeaders() } });
       
       if (!response.ok) {
         log.error(`FMP error: ${response.status}`);
@@ -65,10 +61,9 @@ export class FMPProvider {
 
     try {
       const url = new URL(`${FMP_API_BASE}/news/general`, window.location.origin);
-      url.searchParams.set('apiKey', this.apiKey);
       url.searchParams.set('limit', '20');
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), { headers: { ...getAuthHeaders() } });
       
       if (!response.ok) {
         log.error(`FMP error: ${response.status}`);
@@ -85,6 +80,6 @@ export class FMPProvider {
 }
 
 // Factory function
-export function createFMPProvider(apiKey: string): FMPProvider {
-  return new FMPProvider(apiKey);
+export function createFMPProvider(_apiKey?: string): FMPProvider {
+  return new FMPProvider();
 }
