@@ -1233,6 +1233,27 @@ app.get('/api/yahoo/search', async (req, res) => {
 });
 
 // ============================================================================
+// Provider API keys — read from server env only.
+// Falls back to the legacy VITE_* names so the existing root .env works
+// without rename. Frontend no longer ships keys; client headers/query are
+// ignored.
+// ============================================================================
+const PROVIDER_KEYS = {
+  finnhub: process.env.FINNHUB_API_KEY || process.env.VITE_FINNHUB_API_KEY || '',
+  alphavantage: process.env.ALPHA_VANTAGE_API_KEY || process.env.VITE_ALPHA_VANTAGE_API_KEY || '',
+  twelvedata: process.env.TWELVE_DATA_API_KEY || process.env.VITE_TWELVE_DATA_API_KEY || '',
+  newsapi: process.env.NEWSAPI_KEY || process.env.NEWS_API_KEY || process.env.VITE_NEWS_API_KEY || '',
+  newsdata: process.env.NEWSDATA_API_KEY || '',
+};
+for (const [name, val] of Object.entries(PROVIDER_KEYS)) {
+  if (!val) logger.warn(`[providers] ${name} API key not set — endpoint will return 503`);
+}
+
+app.get('/api/providers/status', (_req, res) => {
+  res.json(Object.fromEntries(Object.entries(PROVIDER_KEYS).map(([k, v]) => [k, !!v])));
+});
+
+// ============================================================================
 // Finnhub Proxy Endpoints (with shared caching)
 // ============================================================================
 const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
@@ -1246,7 +1267,7 @@ const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
  */
 app.get('/api/finnhub/quote/:symbol', async (req, res) => {
   const { symbol } = req.params;
-  const apiKey = req.headers['x-finnhub-token'];
+  const apiKey = PROVIDER_KEYS.finnhub;
   const cacheKey = `finnhub:quote:${symbol.toUpperCase()}`;
   
   // Check cache first (shared across all users)
@@ -1304,7 +1325,7 @@ app.get('/api/finnhub/quote/:symbol', async (req, res) => {
 app.get('/api/finnhub/candles/:symbol', async (req, res) => {
   const { symbol } = req.params;
   const { resolution = 'D', from, to } = req.query;
-  const apiKey = req.headers['x-finnhub-token'];
+  const apiKey = PROVIDER_KEYS.finnhub;
   const cacheKey = `finnhub:candles:${symbol.toUpperCase()}:${resolution}:${from}:${to}`;
   
   // Check cache first
@@ -1353,7 +1374,7 @@ app.get('/api/finnhub/candles/:symbol', async (req, res) => {
  */
 app.get('/api/finnhub/profile/:symbol', async (req, res) => {
   const { symbol } = req.params;
-  const apiKey = req.headers['x-finnhub-token'];
+  const apiKey = PROVIDER_KEYS.finnhub;
   const cacheKey = `finnhub:profile:${symbol.toUpperCase()}`;
   
   // Check cache first (company info cached for 24h)
@@ -1407,7 +1428,7 @@ app.get('/api/finnhub/profile/:symbol', async (req, res) => {
  */
 app.get('/api/finnhub/metrics/:symbol', async (req, res) => {
   const { symbol } = req.params;
-  const apiKey = req.headers['x-finnhub-token'];
+  const apiKey = PROVIDER_KEYS.finnhub;
   const cacheKey = `finnhub:metrics:${symbol.toUpperCase()}`;
   
   if (process.env.DATABASE_URL) {
@@ -1460,7 +1481,7 @@ app.get('/api/finnhub/metrics/:symbol', async (req, res) => {
  */
 app.get('/api/finnhub/news/:symbol', async (req, res) => {
   const { symbol } = req.params;
-  const apiKey = req.headers['x-finnhub-token'];
+  const apiKey = PROVIDER_KEYS.finnhub;
   
   // Default to last 7 days if from/to not provided
   const now = new Date();
@@ -1515,7 +1536,7 @@ app.get('/api/finnhub/news/:symbol', async (req, res) => {
  */
 app.get('/api/finnhub/search', async (req, res) => {
   const { q } = req.query;
-  const apiKey = req.headers['x-finnhub-token'];
+  const apiKey = PROVIDER_KEYS.finnhub;
   const cacheKey = `finnhub:search:${q?.toLowerCase()}`;
   
   if (process.env.DATABASE_URL && q) {
@@ -1571,7 +1592,7 @@ const ALPHA_VANTAGE_BASE_URL = 'https://www.alphavantage.co/query';
  */
 app.get('/api/alphavantage/quote/:symbol', async (req, res) => {
   const { symbol } = req.params;
-  const apiKey = req.headers['x-alphavantage-key'];
+  const apiKey = PROVIDER_KEYS.alphavantage;
   const cacheKey = `alphavantage:quote:${symbol.toUpperCase()}`;
   
   if (process.env.DATABASE_URL) {
@@ -1624,7 +1645,7 @@ app.get('/api/alphavantage/quote/:symbol', async (req, res) => {
 app.get('/api/alphavantage/daily/:symbol', async (req, res) => {
   const { symbol } = req.params;
   const { outputsize = 'compact' } = req.query;
-  const apiKey = req.headers['x-alphavantage-key'];
+  const apiKey = PROVIDER_KEYS.alphavantage;
   const cacheKey = `alphavantage:daily:${symbol.toUpperCase()}:${outputsize}`;
   
   if (process.env.DATABASE_URL) {
@@ -1676,7 +1697,7 @@ app.get('/api/alphavantage/daily/:symbol', async (req, res) => {
 app.get('/api/alphavantage/intraday/:symbol', async (req, res) => {
   const { symbol } = req.params;
   const { interval = '5min', outputsize = 'compact' } = req.query;
-  const apiKey = req.headers['x-alphavantage-key'];
+  const apiKey = PROVIDER_KEYS.alphavantage;
   const cacheKey = `alphavantage:intraday:${symbol.toUpperCase()}:${interval}:${outputsize}`;
   
   if (process.env.DATABASE_URL) {
@@ -1726,7 +1747,7 @@ app.get('/api/alphavantage/intraday/:symbol', async (req, res) => {
  */
 app.get('/api/alphavantage/overview/:symbol', async (req, res) => {
   const { symbol } = req.params;
-  const apiKey = req.headers['x-alphavantage-key'];
+  const apiKey = PROVIDER_KEYS.alphavantage;
   const cacheKey = `alphavantage:overview:${symbol.toUpperCase()}`;
   
   if (process.env.DATABASE_URL) {
@@ -1778,7 +1799,7 @@ app.get('/api/alphavantage/overview/:symbol', async (req, res) => {
  */
 app.get('/api/alphavantage/search', async (req, res) => {
   const { keywords } = req.query;
-  const apiKey = req.headers['x-alphavantage-key'];
+  const apiKey = PROVIDER_KEYS.alphavantage;
   const cacheKey = `alphavantage:search:${keywords?.toLowerCase()}`;
   
   if (process.env.DATABASE_URL && keywords) {
@@ -1837,7 +1858,7 @@ const TWELVE_DATA_BASE_URL = 'https://api.twelvedata.com';
  */
 app.get('/api/twelvedata/quote/:symbol', async (req, res) => {
   const { symbol } = req.params;
-  const apiKey = req.headers['x-twelvedata-key'];
+  const apiKey = PROVIDER_KEYS.twelvedata;
   const cacheKey = `twelvedata:quote:${symbol.toUpperCase()}`;
   
   if (process.env.DATABASE_URL) {
@@ -1889,7 +1910,7 @@ app.get('/api/twelvedata/quote/:symbol', async (req, res) => {
 app.get('/api/twelvedata/timeseries/:symbol', async (req, res) => {
   const { symbol } = req.params;
   const { interval = '1day', outputsize = '100' } = req.query;
-  const apiKey = req.headers['x-twelvedata-key'];
+  const apiKey = PROVIDER_KEYS.twelvedata;
   const cacheKey = `twelvedata:timeseries:${symbol.toUpperCase()}:${interval}:${outputsize}`;
   
   if (process.env.DATABASE_URL) {
@@ -1943,7 +1964,7 @@ app.get('/api/twelvedata/timeseries/:symbol', async (req, res) => {
  */
 app.get('/api/twelvedata/search', async (req, res) => {
   const { symbol } = req.query;
-  const apiKey = req.headers['x-twelvedata-key'];
+  const apiKey = PROVIDER_KEYS.twelvedata;
   const cacheKey = `twelvedata:search:${symbol?.toLowerCase()}`;
   
   if (process.env.DATABASE_URL && symbol) {
@@ -1997,12 +2018,12 @@ const NEWS_API_BASE_URL = 'https://newsapi.org/v2';
  * NewsAPI requires server-side requests for free tier (426 error from browser)
  */
 app.get('/api/news/everything', async (req, res) => {
-  const { q, language = 'en', sortBy = 'publishedAt', pageSize = '10', apiKey } = req.query;
-  
+  const { q, language = 'en', sortBy = 'publishedAt', pageSize = '10' } = req.query;
+  const apiKey = PROVIDER_KEYS.newsapi;
+
   if (!apiKey) {
-    return res.status(400).json({ error: 'API key is required' });
+    return res.status(503).json({ error: 'NewsAPI not configured on server' });
   }
-  
   if (!q) {
     return res.status(400).json({ error: 'Search query (q) is required' });
   }
@@ -6558,10 +6579,11 @@ const NEWSDATA_API_BASE = 'https://newsdata.io/api/1';
  * Query params: apiKey, q, language, category
  */
 app.get('/api/newsdata/news', async (req, res) => {
-  const { apiKey, q = '', language = 'en', category = 'business' } = req.query;
-  
+  const { q = '', language = 'en', category = 'business' } = req.query;
+  const apiKey = PROVIDER_KEYS.newsdata;
+
   if (!apiKey) {
-    return res.status(400).json({ error: 'API key is required' });
+    return res.status(503).json({ error: 'NewsData.io not configured on server' });
   }
   
   const cacheKey = `newsdata:news:${q || 'all'}:${language}:${category}`;
