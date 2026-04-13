@@ -2431,12 +2431,27 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
       searchTerms.push(baseSymbol);
     }
     
+    // Cross-Provider Dedup: normierte URL schlägt gleiche Wire-Story aus verschiedenen
+    // Quellen aus. Fallback Headline-Dedup für Quellen ohne URL.
+    const seenUrls = new Set();
+    const seenHeadlines = new Set();
+    const pushItem = (item) => {
+      if (!item.headline) return false;
+      const normUrl = item.url ? String(item.url).split('?')[0].replace(/\/+$/, '').toLowerCase() : null;
+      if (normUrl && seenUrls.has(normUrl)) return false;
+      if (seenHeadlines.has(item.headline)) return false;
+      if (normUrl) seenUrls.add(normUrl);
+      seenHeadlines.add(item.headline);
+      newsTexts.push(item.headline);
+      sources.push(item);
+      return true;
+    };
+
     // Try Finnhub first
     if (finnhubApiKey) {
       const to = new Date().toISOString().split('T')[0];
       const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      
-      // Try each search term until we find news
+
       for (const term of searchTerms) {
         if (newsTexts.length >= 5) break;
         try {
@@ -2447,10 +2462,12 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
             if (Array.isArray(news) && news.length > 0) {
               logger.info(`[Sentiment] Finnhub found ${news.length} news for term "${term}"`);
               news.slice(0, 10).forEach(item => {
-                if (item.headline && !newsTexts.includes(item.headline)) {
-                  newsTexts.push(item.headline);
-                  sources.push({ source: 'finnhub', headline: item.headline });
-                }
+                pushItem({
+                  source: 'finnhub',
+                  headline: item.headline,
+                  url: item.url,
+                  publishedAt: item.datetime ? item.datetime * 1000 : null,
+                });
               });
             }
           }
@@ -2459,37 +2476,33 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
         }
       }
     }
-    
+
     // Try Marketaux as backup (supports company name search)
     if (marketauxApiKey && newsTexts.length < 5) {
-      // Marketaux can search by symbol or by search query
       const marketauxSearches = [symbol.toUpperCase()];
-      if (baseSymbol !== symbol.toUpperCase()) {
-        marketauxSearches.push(baseSymbol);
-      }
-      if (companyName && companyName.length > 2) {
-        marketauxSearches.push(companyName);
-      }
-      
+      if (baseSymbol !== symbol.toUpperCase()) marketauxSearches.push(baseSymbol);
+      if (companyName && companyName.length > 2) marketauxSearches.push(companyName);
+
       for (const term of marketauxSearches) {
         if (newsTexts.length >= 10) break;
         try {
-          // Use symbols parameter for ticker, search parameter for company name
           const isCompanyName = term === companyName;
           const marketauxUrl = isCompanyName
             ? `https://api.marketaux.com/v1/news/all?search=${encodeURIComponent(term)}&filter_entities=true&language=en&api_token=${marketauxApiKey}`
             : `https://api.marketaux.com/v1/news/all?symbols=${encodeURIComponent(term)}&filter_entities=true&language=en&api_token=${marketauxApiKey}`;
-          
+
           const response = await fetch(marketauxUrl);
           if (response.ok) {
             const data = await response.json();
             if (data.data && Array.isArray(data.data) && data.data.length > 0) {
               logger.info(`[Sentiment] Marketaux found ${data.data.length} news for term "${term}"`);
               data.data.slice(0, 10).forEach(item => {
-                if (item.title && !newsTexts.includes(item.title)) {
-                  newsTexts.push(item.title);
-                  sources.push({ source: 'marketaux', headline: item.title });
-                }
+                pushItem({
+                  source: 'marketaux',
+                  headline: item.title,
+                  url: item.url,
+                  publishedAt: item.published_at ? new Date(item.published_at).getTime() : null,
+                });
               });
             }
           }
@@ -2590,23 +2603,39 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
       return res.json(neutralResult);
     }
     
-    // Aggregate sentiment scores
-    let totalScore = 0;
-    let totalConfidence = 0;
+    // Konfidenz- UND Freshness-gewichtete Aggregation. Unwichtige Artikel (niedrige
+    // FinBERT-Confidence) und alte Artikel (>6h τ-Halbwertszeit) erhalten weniger
+    // Gewicht. Ohne Freshness-Decay zieht eine 5-Tage-alte Headline den Score
+    // gleich stark wie eine vor 10 Minuten publizierte.
+    const SENTIMENT_TAU_HOURS = 6;
+    const now = Date.now();
+    let weightedScoreSum = 0;
+    let weightSum = 0;
+    let confidenceWeightedSum = 0;
     let positiveCount = 0;
     let negativeCount = 0;
     let neutralCount = 0;
-    
-    results.forEach(r => {
-      totalScore += r.score || 0;
-      totalConfidence += r.confidence || 0;
+
+    results.forEach((r, idx) => {
+      const conf = Number(r.confidence) || 0;
+      const src = sources[idx] || {};
+      const ageHours = src.publishedAt
+        ? Math.max(0, (now - src.publishedAt) / (1000 * 60 * 60))
+        : 0; // No timestamp → treat as fresh (don't double-penalise)
+      const freshness = Math.exp(-ageHours / SENTIMENT_TAU_HOURS);
+      const weight = conf * freshness;
+
+      weightedScoreSum += (Number(r.score) || 0) * weight;
+      weightSum += weight;
+      confidenceWeightedSum += conf * freshness;
+
       if (r.sentiment === 'positive') positiveCount++;
       else if (r.sentiment === 'negative') negativeCount++;
       else neutralCount++;
     });
-    
-    const avgScore = results.length > 0 ? totalScore / results.length : 0;
-    const avgConfidence = results.length > 0 ? totalConfidence / results.length : 0;
+
+    const avgScore = weightSum > 0 ? weightedScoreSum / weightSum : 0;
+    const avgConfidence = results.length > 0 ? confidenceWeightedSum / results.length : 0;
     
     // Determine overall sentiment
     let overallSentiment = 'neutral';

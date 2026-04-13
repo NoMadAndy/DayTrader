@@ -24,9 +24,9 @@ Zentrale Aufgabenliste. Format und Regeln siehe [CLAUDE.md](../CLAUDE.md) Abschn
 ### Scraping- & Sentiment-Pipeline härten
 Motivation: News-Signale sollen tradable sein, nicht nur Noise. Ausgangslage siehe erste Analyse in dieser Session.
 - ~~News-API-Keys vom Frontend ins Backend verlagern~~ ✓ 2026-04-13 (A.3): Server-Default + User-Override (DB) via `resolveProviderKey`, Bundle key-frei, alle News-Routen mit korrekter `stockCache.setCache`-Signatur (TTL 15 min). NewsAPI/NewsData haben nun Cache (vorher buggy Call-Signature, Cache nie geschrieben).
-- Semantic-Deduplikation via Embeddings vor Sentiment-Aggregation
-- Freshness-Decay (`exp(-Δt/τ)`) auf News-Sentiment anwenden
-- FinBERT-Chunking für Artikel > 512 Token statt hartem Truncate
+- 🟡 Semantic-Deduplikation via Embeddings vor Sentiment-Aggregation (URL+Headline-Dedup ✓ 2026-04-13, Embedding-Dedup offen als Sprint D)
+- ~~Freshness-Decay~~ ✓ 2026-04-13 (Sprint C2): Live-Aggregation mit τ=6h in [/api/ml/sentiment](../backend/src/index.js), Trend-Aggregation mit τ=24h in [getSentimentTrend](../backend/src/sentimentArchive.js).
+- FinBERT-Chunking für Artikel > 512 Token statt hartem Truncate (Sprint C5, heute low-risk weil nur Headlines verarbeitet werden)
 - Quellen-Diversität: Reddit, SEC EDGAR 8-K, Earnings-Transcripts, X
 - IC / Rank-IC des Sentiment-Signals gegen Next-Bar-Return tracken
 - Event-Typ-Separation (Earnings vs Upgrade vs M&A vs Rumor)

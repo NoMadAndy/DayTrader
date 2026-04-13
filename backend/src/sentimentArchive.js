@@ -204,22 +204,41 @@ export async function getLatestSentiment(symbol) {
  */
 export async function getSentimentTrend(symbol, days = 7) {
   try {
+    // τ = 24h Halbwertszeit für Trend-Aggregation (länger als die 6h für die
+    // Live-Aggregation in /api/ml/sentiment, weil hier mehrere Tage betrachtet
+    // werden). avg_score ist freshness-decayed; avg_score_unweighted bleibt für
+    // Vergleichbarkeit mit alten Reports erhalten.
+    const TAU_HOURS = 24;
     const result = await query(
-      `SELECT 
-         COUNT(*) as total_entries,
-         AVG(score) as avg_score,
-         AVG(confidence) as avg_confidence,
-         SUM(positive_count) as total_positive,
-         SUM(negative_count) as total_negative,
-         SUM(neutral_count) as total_neutral,
-         MIN(score) as min_score,
-         MAX(score) as max_score,
-         MIN(analyzed_at) as earliest,
-         MAX(analyzed_at) as latest
-       FROM sentiment_archive
-       WHERE symbol = $1 
-         AND analyzed_at >= NOW() - INTERVAL '1 day' * $2`,
-      [symbol.toUpperCase(), days]
+      `WITH w AS (
+         SELECT score, confidence,
+                EXP(-EXTRACT(EPOCH FROM (NOW() - analyzed_at)) / 3600.0 / $3) AS freshness
+           FROM sentiment_archive
+          WHERE symbol = $1
+            AND analyzed_at >= NOW() - INTERVAL '1 day' * $2
+       )
+       SELECT
+         (SELECT COUNT(*) FROM sentiment_archive
+            WHERE symbol = $1 AND analyzed_at >= NOW() - INTERVAL '1 day' * $2) AS total_entries,
+         (SELECT AVG(score) FROM sentiment_archive
+            WHERE symbol = $1 AND analyzed_at >= NOW() - INTERVAL '1 day' * $2) AS avg_score_unweighted,
+         (SELECT SUM(score * freshness) / NULLIF(SUM(freshness), 0) FROM w) AS avg_score,
+         (SELECT SUM(confidence * freshness) / NULLIF(SUM(freshness), 0) FROM w) AS avg_confidence,
+         (SELECT SUM(positive_count) FROM sentiment_archive
+            WHERE symbol = $1 AND analyzed_at >= NOW() - INTERVAL '1 day' * $2) AS total_positive,
+         (SELECT SUM(negative_count) FROM sentiment_archive
+            WHERE symbol = $1 AND analyzed_at >= NOW() - INTERVAL '1 day' * $2) AS total_negative,
+         (SELECT SUM(neutral_count) FROM sentiment_archive
+            WHERE symbol = $1 AND analyzed_at >= NOW() - INTERVAL '1 day' * $2) AS total_neutral,
+         (SELECT MIN(score) FROM sentiment_archive
+            WHERE symbol = $1 AND analyzed_at >= NOW() - INTERVAL '1 day' * $2) AS min_score,
+         (SELECT MAX(score) FROM sentiment_archive
+            WHERE symbol = $1 AND analyzed_at >= NOW() - INTERVAL '1 day' * $2) AS max_score,
+         (SELECT MIN(analyzed_at) FROM sentiment_archive
+            WHERE symbol = $1 AND analyzed_at >= NOW() - INTERVAL '1 day' * $2) AS earliest,
+         (SELECT MAX(analyzed_at) FROM sentiment_archive
+            WHERE symbol = $1 AND analyzed_at >= NOW() - INTERVAL '1 day' * $2) AS latest`,
+      [symbol.toUpperCase(), days, TAU_HOURS]
     );
     
     if (result.rows.length === 0 || result.rows[0].total_entries === '0') {
@@ -240,6 +259,7 @@ export async function getSentimentTrend(symbol, days = 7) {
       days,
       totalEntries: parseInt(row.total_entries),
       avgScore: parseFloat(avgScore.toFixed(4)),
+      avgScoreUnweighted: parseFloat((parseFloat(row.avg_score_unweighted) || 0).toFixed(4)),
       avgConfidence: parseFloat((parseFloat(row.avg_confidence) || 0).toFixed(4)),
       minScore: parseFloat(row.min_score),
       maxScore: parseFloat(row.max_score),
