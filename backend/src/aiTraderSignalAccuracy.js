@@ -9,6 +9,57 @@ import { query } from './db.js';
 import logger from './logger.js';
 
 // ============================================================================
+// Rank-IC helpers
+// ============================================================================
+
+// Fractional ranks with tie handling (average rank for ties) — mirrors
+// scipy.stats.rankdata(method='average'). Returns ranks starting at 1.
+function rankWithTies(values) {
+  const n = values.length;
+  const indexed = values.map((v, i) => ({ v, i })).sort((a, b) => a.v - b.v);
+  const ranks = new Array(n);
+  let k = 0;
+  while (k < n) {
+    let j = k;
+    while (j + 1 < n && indexed[j + 1].v === indexed[k].v) j += 1;
+    const avgRank = (k + j) / 2 + 1; // 1-based average
+    for (let m = k; m <= j; m += 1) ranks[indexed[m].i] = avgRank;
+    k = j + 1;
+  }
+  return ranks;
+}
+
+// Spearman rank correlation between two numeric arrays. Returns null when
+// fewer than 3 valid pairs or when variance is zero on either side (signal
+// is noise-free of informative variation).
+export function rankIC(scores, returns) {
+  if (!Array.isArray(scores) || !Array.isArray(returns)) return null;
+  const xs = [];
+  const ys = [];
+  for (let i = 0; i < scores.length; i += 1) {
+    const x = Number(scores[i]);
+    const y = Number(returns[i]);
+    if (Number.isFinite(x) && Number.isFinite(y)) { xs.push(x); ys.push(y); }
+  }
+  if (xs.length < 3) return null;
+  const rx = rankWithTies(xs);
+  const ry = rankWithTies(ys);
+  const n = rx.length;
+  const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+  const mx = mean(rx);
+  const my = mean(ry);
+  let num = 0, dx = 0, dy = 0;
+  for (let i = 0; i < n; i += 1) {
+    const a = rx[i] - mx;
+    const b = ry[i] - my;
+    num += a * b; dx += a * a; dy += b * b;
+  }
+  const denom = Math.sqrt(dx * dy);
+  if (denom === 0) return null;
+  return num / denom;
+}
+
+// ============================================================================
 // Signal Accuracy Calculation
 // ============================================================================
 
@@ -86,24 +137,28 @@ export async function calculateSignalAccuracy(traderId, days = 30) {
         totalSignals: mlStats.total,
         correct: mlStats.correct,
         incorrect: mlStats.incorrect,
+        ic: mlStats.ic,
       },
       rl: {
         accuracy: rlStats.accuracy,
         totalSignals: rlStats.total,
         correct: rlStats.correct,
         incorrect: rlStats.incorrect,
+        ic: rlStats.ic,
       },
       sentiment: {
         accuracy: sentimentStats.accuracy,
         totalSignals: sentimentStats.total,
         correct: sentimentStats.correct,
         incorrect: sentimentStats.incorrect,
+        ic: sentimentStats.ic,
       },
       technical: {
         accuracy: technicalStats.accuracy,
         totalSignals: technicalStats.total,
         correct: technicalStats.correct,
         incorrect: technicalStats.incorrect,
+        ic: technicalStats.ic,
       },
       overall: {
         accuracy: overallAccuracy,
@@ -126,19 +181,26 @@ export async function calculateSignalAccuracy(traderId, days = 30) {
  */
 function calculateSignalStats(signals, scoreField) {
   if (signals.length === 0) {
-    return { accuracy: null, total: 0, correct: 0, incorrect: 0 };
+    return { accuracy: null, total: 0, correct: 0, incorrect: 0, ic: null };
   }
 
-  // Use outcome_was_correct as the primary indicator
   const correct = signals.filter(s => s.outcome_was_correct === true).length;
   const incorrect = signals.filter(s => s.outcome_was_correct === false).length;
   const accuracy = signals.length > 0 ? (correct / signals.length) : null;
+
+  // Rank-IC: wie stark korreliert der rohe Score mit dem tatsächlichen Return?
+  // Win-Rate (binär, schwellen-abhängig) fängt keine Degradation ab, solange
+  // die Schwelle die Hälfte der Trades korrekt klassifiziert. IC tut das.
+  const scores = signals.map(s => s[scoreField]);
+  const pnls = signals.map(s => s.outcome_pnl);
+  const ic = rankIC(scores, pnls);
 
   return {
     accuracy,
     total: signals.length,
     correct,
     incorrect,
+    ic,
   };
 }
 
@@ -184,13 +246,14 @@ export async function getSignalAccuracyTrend(traderId, days = 30, interval = 7) 
  */
 async function calculateSignalAccuracyForPeriod(traderId, startDate, endDate) {
   const result = await query(
-    `SELECT 
+    `SELECT
       decision_type,
       ml_score,
       rl_score,
       sentiment_score,
       technical_score,
-      outcome_was_correct
+      outcome_was_correct,
+      outcome_pnl
      FROM ai_trader_decisions
      WHERE ai_trader_id = $1
      AND timestamp >= $2
@@ -204,44 +267,28 @@ async function calculateSignalAccuracyForPeriod(traderId, startDate, endDate) {
 
   if (decisions.length === 0) {
     return {
-      ml: null,
-      rl: null,
-      sentiment: null,
-      technical: null,
+      ml: { accuracy: null, ic: null },
+      rl: { accuracy: null, ic: null },
+      sentiment: { accuracy: null, ic: null },
+      technical: { accuracy: null, ic: null },
       overall: null,
     };
   }
 
-  const mlSignals = decisions.filter(d => d.ml_score !== null);
-  const rlSignals = decisions.filter(d => d.rl_score !== null);
-  const sentimentSignals = decisions.filter(d => d.sentiment_score !== null);
-  const technicalSignals = decisions.filter(d => d.technical_score !== null);
-
-  const mlAccuracy = mlSignals.length > 0
-    ? mlSignals.filter(s => s.outcome_was_correct === true).length / mlSignals.length
-    : null;
-  
-  const rlAccuracy = rlSignals.length > 0
-    ? rlSignals.filter(s => s.outcome_was_correct === true).length / rlSignals.length
-    : null;
-  
-  const sentimentAccuracy = sentimentSignals.length > 0
-    ? sentimentSignals.filter(s => s.outcome_was_correct === true).length / sentimentSignals.length
-    : null;
-  
-  const technicalAccuracy = technicalSignals.length > 0
-    ? technicalSignals.filter(s => s.outcome_was_correct === true).length / technicalSignals.length
-    : null;
+  const mlStats = calculateSignalStats(decisions.filter(d => d.ml_score !== null), 'ml_score');
+  const rlStats = calculateSignalStats(decisions.filter(d => d.rl_score !== null), 'rl_score');
+  const sentimentStats = calculateSignalStats(decisions.filter(d => d.sentiment_score !== null), 'sentiment_score');
+  const technicalStats = calculateSignalStats(decisions.filter(d => d.technical_score !== null), 'technical_score');
 
   const overallAccuracy = decisions.length > 0
     ? decisions.filter(d => d.outcome_was_correct === true).length / decisions.length
     : null;
 
   return {
-    ml: mlAccuracy,
-    rl: rlAccuracy,
-    sentiment: sentimentAccuracy,
-    technical: technicalAccuracy,
+    ml: { accuracy: mlStats.accuracy, ic: mlStats.ic },
+    rl: { accuracy: rlStats.accuracy, ic: rlStats.ic },
+    sentiment: { accuracy: sentimentStats.accuracy, ic: sentimentStats.ic },
+    technical: { accuracy: technicalStats.accuracy, ic: technicalStats.ic },
     overall: overallAccuracy,
   };
 }
