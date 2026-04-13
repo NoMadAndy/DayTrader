@@ -12,20 +12,17 @@
 import type { OHLCV } from '../types/stock';
 import type { DataProvider, QuoteData, StockSearchResult } from './types';
 import { log } from '../utils/logger';
+import { getAuthHeaders } from './authService';
 
-// Use backend proxy (relative URLs work with nginx/vite proxy)
 const API_BASE_URL = '/api/alphavantage';
 
 export class AlphaVantageProvider implements DataProvider {
   name = 'Alpha Vantage';
-  private apiKey: string;
 
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
-  }
+  constructor(_apiKey?: string) {}
 
   isConfigured(): boolean {
-    return !!this.apiKey && this.apiKey.length > 0;
+    return true;
   }
 
   private async fetch<T>(url: string): Promise<T | null> {
@@ -33,7 +30,7 @@ export class AlphaVantageProvider implements DataProvider {
       const response = await fetch(url, {
         headers: {
           'Accept': 'application/json',
-          'X-AlphaVantage-Key': this.apiKey,
+          ...getAuthHeaders(),
         }
       });
       

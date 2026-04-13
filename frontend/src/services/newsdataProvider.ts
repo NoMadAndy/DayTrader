@@ -9,38 +9,27 @@
 
 import type { NewsItem } from './types';
 import { log } from '../utils/logger';
+import { getAuthHeaders } from './authService';
 
-// Backend proxy endpoint
 const NEWSDATA_API_BASE = '/api/newsdata';
 
 export class NewsdataProvider {
   name = 'NewsData.io';
-  private apiKey: string;
 
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
-  }
+  constructor(_apiKey?: string) {}
 
   isConfigured(): boolean {
-    return !!this.apiKey && this.apiKey.length > 0;
+    return true;
   }
 
-  /**
-   * Fetch news for specific stock symbols
-   */
   async fetchStockNews(symbol: string): Promise<NewsItem[]> {
-    if (!this.isConfigured()) {
-      return [];
-    }
-
     try {
       const url = new URL(`${NEWSDATA_API_BASE}/news`, window.location.origin);
-      url.searchParams.set('apiKey', this.apiKey);
       url.searchParams.set('q', symbol);
       url.searchParams.set('language', 'en');
       url.searchParams.set('category', 'business');
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), { headers: { ...getAuthHeaders() } });
       
       if (!response.ok) {
         log.error(`NewsData.io error: ${response.status}`);
@@ -59,18 +48,13 @@ export class NewsdataProvider {
    * Fetch general market news
    */
   async fetchMarketNews(): Promise<NewsItem[]> {
-    if (!this.isConfigured()) {
-      return [];
-    }
-
     try {
       const url = new URL(`${NEWSDATA_API_BASE}/news`, window.location.origin);
-      url.searchParams.set('apiKey', this.apiKey);
       url.searchParams.set('q', 'stock OR market OR finance');
       url.searchParams.set('language', 'en');
       url.searchParams.set('category', 'business');
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), { headers: { ...getAuthHeaders() } });
       
       if (!response.ok) {
         log.error(`NewsData.io error: ${response.status}`);
@@ -86,7 +70,6 @@ export class NewsdataProvider {
   }
 }
 
-// Factory function
-export function createNewsdataProvider(apiKey: string): NewsdataProvider {
-  return new NewsdataProvider(apiKey);
+export function createNewsdataProvider(_apiKey?: string): NewsdataProvider {
+  return new NewsdataProvider();
 }

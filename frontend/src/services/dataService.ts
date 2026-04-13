@@ -108,28 +108,19 @@ export class DataService {
     this.rateLimiter = getRateLimiter();
     this.enableRateLimiting = config.enableRateLimiting ?? true;
 
-    // Initialize providers based on available API keys
-    if (config.finnhubApiKey) {
-      this.providers.set('finnhub', new FinnhubProvider(config.finnhubApiKey));
-    }
-    
-    if (config.alphaVantageApiKey) {
-      this.providers.set('alphaVantage', new AlphaVantageProvider(config.alphaVantageApiKey));
-    }
-    
-    if (config.twelveDataApiKey) {
-      this.providers.set('twelveData', new TwelveDataProvider(config.twelveDataApiKey));
-    }
+    // finnhub/alphaVantage/twelveData/newsApi/newsdata gehen durch den Backend-Proxy.
+    // Keys werden serverseitig aufgelöst (Server-Default oder per-User aus DB), daher
+    // immer instanziieren — die Provider senden keinen Key mehr aus dem Bundle.
+    this.providers.set('finnhub', new FinnhubProvider());
+    this.providers.set('alphaVantage', new AlphaVantageProvider());
+    this.providers.set('twelveData', new TwelveDataProvider());
 
-    // Yahoo Finance doesn't require API key
     this.providers.set('yahoo', new YahooFinanceProvider({
       useCorsProxy: config.useCorsProxy,
       corsProxyUrl: config.corsProxyUrl
     }));
 
-    if (config.newsApiKey) {
-      this.newsProvider = new NewsApiProvider(config.newsApiKey);
-    }
+    this.newsProvider = new NewsApiProvider();
 
     // Initialize new news providers
     if (config.marketauxApiKey) {
@@ -148,9 +139,7 @@ export class DataService {
       this.mediastackProvider = new MediastackProvider(config.mediastackApiKey);
     }
 
-    if (config.newsdataApiKey) {
-      this.newsdataProvider = new NewsdataProvider(config.newsdataApiKey);
-    }
+    this.newsdataProvider = new NewsdataProvider();
 
     // RSS feeds don't require API key
     if (config.enableRssFeeds !== false) {

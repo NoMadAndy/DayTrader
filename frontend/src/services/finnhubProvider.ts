@@ -12,20 +12,19 @@
 import type { OHLCV } from '../types/stock';
 import type { DataProvider, QuoteData, NewsItem, StockSearchResult } from './types';
 import { log } from '../utils/logger';
+import { getAuthHeaders } from './authService';
 
-// Use backend proxy (relative URLs work with nginx/vite proxy)
 const API_BASE_URL = '/api/finnhub';
 
 export class FinnhubProvider implements DataProvider {
   name = 'Finnhub';
-  private apiKey: string;
 
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
-  }
+  // Constructor signature kept for backward compat; key is now resolved server-side
+  // (server-default or per-user from DB). See backend/src/index.js resolveProviderKey.
+  constructor(_apiKey?: string) {}
 
   isConfigured(): boolean {
-    return !!this.apiKey && this.apiKey.length > 0;
+    return true;
   }
 
   private async fetch<T>(url: string): Promise<T | null> {
@@ -33,7 +32,7 @@ export class FinnhubProvider implements DataProvider {
       const response = await fetch(url, {
         headers: {
           'Accept': 'application/json',
-          'X-Finnhub-Token': this.apiKey,
+          ...getAuthHeaders(),
         }
       });
       

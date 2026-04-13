@@ -22,10 +22,6 @@ interface ServiceWorkerRegistration {
 }
 
 interface ImportMetaEnv {
-  readonly VITE_FINNHUB_API_KEY?: string;
-  readonly VITE_ALPHA_VANTAGE_API_KEY?: string;
-  readonly VITE_TWELVE_DATA_API_KEY?: string;
-  readonly VITE_NEWS_API_KEY?: string;
   readonly VITE_PREFERRED_DATA_SOURCE?: 'finnhub' | 'alphaVantage' | 'twelveData' | 'yahoo';
 }
 

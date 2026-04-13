@@ -9,32 +9,27 @@
 
 import type { NewsItem } from './types';
 import { log } from '../utils/logger';
+import { getAuthHeaders } from './authService';
 
-// Use backend proxy API endpoint (relative URLs work with nginx proxy in prod, vite proxy in dev)
 const NEWS_API_PROXY_URL = '/api/news';
 
 export class NewsApiProvider {
   name = 'NewsAPI';
-  private apiKey: string;
 
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
-  }
+  constructor(_apiKey?: string) {}
 
   isConfigured(): boolean {
-    return !!this.apiKey && this.apiKey.length > 0;
+    return true;
   }
 
   private async fetch<T>(endpoint: string, params: Record<string, string> = {}): Promise<T | null> {
     try {
       const url = new URL(`${NEWS_API_PROXY_URL}${endpoint}`, window.location.origin);
-      // Pass API key to backend proxy
-      url.searchParams.set('apiKey', this.apiKey);
       Object.entries(params).forEach(([key, value]) => {
         url.searchParams.set(key, value);
       });
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), { headers: { ...getAuthHeaders() } });
       
       if (!response.ok) {
         log.error(`NewsAPI error: ${response.status} ${response.statusText}`);

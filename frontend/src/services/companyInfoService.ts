@@ -12,6 +12,7 @@
 
 import { formatCurrencyValue as formatFromSettings } from '../contexts';
 import { log } from '../utils/logger';
+import { getAuthHeaders } from './authService';
 
 const API_BASE = '/api';
 
@@ -92,26 +93,6 @@ export async function getEurUsdRate(): Promise<number> {
   return 0.92; // Fallback
 }
 
-/**
- * Get API keys from localStorage
- * Reads from 'daytrader_api_config' which is the same storage used by ApiConfigPanel
- */
-function getApiKeys(): { finnhub?: string; alphaVantage?: string; twelveData?: string } {
-  try {
-    const stored = localStorage.getItem('daytrader_api_config');
-    if (stored) {
-      const config = JSON.parse(stored);
-      return {
-        finnhub: config.finnhubApiKey || undefined,
-        alphaVantage: config.alphaVantageApiKey || undefined,
-        twelveData: config.twelveDataApiKey || undefined,
-      };
-    }
-  } catch {
-    // Ignore
-  }
-  return {};
-}
 
 /**
  * Fetch data from Yahoo Finance chart endpoint (basic price data)
@@ -190,10 +171,10 @@ async function fetchYahooQuoteData(symbol: string): Promise<Partial<CompanyInfo>
 /**
  * Fetch company profile from Finnhub (via backend proxy with shared caching)
  */
-async function fetchFinnhubProfile(symbol: string, apiKey: string): Promise<Partial<CompanyInfo> | null> {
+async function fetchFinnhubProfile(symbol: string): Promise<Partial<CompanyInfo> | null> {
   try {
     const response = await fetch(`/api/finnhub/profile/${encodeURIComponent(symbol)}`, {
-      headers: { 'X-Finnhub-Token': apiKey }
+      headers: getAuthHeaders()
     });
     if (!response.ok) return null;
     
@@ -218,10 +199,10 @@ async function fetchFinnhubProfile(symbol: string, apiKey: string): Promise<Part
 /**
  * Fetch basic metrics from Finnhub (via backend proxy with shared caching)
  */
-async function fetchFinnhubMetrics(symbol: string, apiKey: string): Promise<Partial<CompanyInfo> | null> {
+async function fetchFinnhubMetrics(symbol: string): Promise<Partial<CompanyInfo> | null> {
   try {
     const response = await fetch(`/api/finnhub/metrics/${encodeURIComponent(symbol)}`, {
-      headers: { 'X-Finnhub-Token': apiKey }
+      headers: getAuthHeaders()
     });
     if (!response.ok) return null;
     
@@ -246,10 +227,10 @@ async function fetchFinnhubMetrics(symbol: string, apiKey: string): Promise<Part
 /**
  * Fetch quote from Finnhub (via backend proxy with shared caching)
  */
-async function fetchFinnhubQuote(symbol: string, apiKey: string): Promise<Partial<CompanyInfo> | null> {
+async function fetchFinnhubQuote(symbol: string): Promise<Partial<CompanyInfo> | null> {
   try {
     const response = await fetch(`/api/finnhub/quote/${encodeURIComponent(symbol)}`, {
-      headers: { 'X-Finnhub-Token': apiKey }
+      headers: getAuthHeaders()
     });
     if (!response.ok) return null;
     
@@ -270,10 +251,10 @@ async function fetchFinnhubQuote(symbol: string, apiKey: string): Promise<Partia
 /**
  * Fetch from Alpha Vantage Overview (via backend proxy with shared caching)
  */
-async function fetchAlphaVantageOverview(symbol: string, apiKey: string): Promise<Partial<CompanyInfo> | null> {
+async function fetchAlphaVantageOverview(symbol: string): Promise<Partial<CompanyInfo> | null> {
   try {
     const response = await fetch(`/api/alphavantage/overview/${encodeURIComponent(symbol)}`, {
-      headers: { 'X-AlphaVantage-Key': apiKey }
+      headers: getAuthHeaders()
     });
     if (!response.ok) return null;
     
@@ -305,10 +286,10 @@ async function fetchAlphaVantageOverview(symbol: string, apiKey: string): Promis
 /**
  * Fetch from Twelve Data quote (via backend proxy with shared caching)
  */
-async function fetchTwelveDataQuote(symbol: string, apiKey: string): Promise<Partial<CompanyInfo> | null> {
+async function fetchTwelveDataQuote(symbol: string): Promise<Partial<CompanyInfo> | null> {
   try {
     const response = await fetch(`/api/twelvedata/quote/${encodeURIComponent(symbol)}`, {
-      headers: { 'X-TwelveData-Key': apiKey }
+      headers: getAuthHeaders()
     });
     if (!response.ok) return null;
     
@@ -344,47 +325,28 @@ export async function fetchCompanyInfo(symbol: string): Promise<CompanyInfo | nu
     return cached.data;
   }
   
-  const apiKeys = getApiKeys();
   const dataSources: string[] = [];
-  
-  // Debug: Log which API keys are available
-  log.info(`[CompanyInfo] Fetching ${symbol}, API keys available:`, {
-    finnhub: !!apiKeys.finnhub,
-    alphaVantage: !!apiKeys.alphaVantage,
-    twelveData: !!apiKeys.twelveData,
-  });
-  
-  // Start Yahoo fetches in parallel (quote for fundamentals, chart for backup price data)
+
   const [yahooQuoteData, yahooChartData, eurRate] = await Promise.all([
     fetchYahooQuoteData(symbol),
     fetchYahooChartData(symbol),
     getEurUsdRate(),
   ]);
-  
+
   if (yahooQuoteData || yahooChartData) dataSources.push('Yahoo');
-  
-  // Fetch from other providers if API keys are available
-  // Use sequential fetches with small delays to avoid hitting backend rate limits
+
+  // Backend resolved keys (server-default oder per-User aus DB) — wir versuchen alle
+  // Provider; 503/404 wird als null durchgereicht und die Quelle einfach nicht verwendet.
   const additionalResults: (Partial<CompanyInfo> | null)[] = [];
   const fetchLabels: string[] = [];
-  
-  const sequentialFetches: Array<{ fetch: () => Promise<Partial<CompanyInfo> | null>; label: string }> = [];
-  
-  if (apiKeys.finnhub) {
-    sequentialFetches.push(
-      { fetch: () => fetchFinnhubProfile(symbol, apiKeys.finnhub!), label: 'Finnhub Profile' },
-      { fetch: () => fetchFinnhubMetrics(symbol, apiKeys.finnhub!), label: 'Finnhub Metrics' },
-      { fetch: () => fetchFinnhubQuote(symbol, apiKeys.finnhub!), label: 'Finnhub Quote' },
-    );
-  }
-  
-  if (apiKeys.alphaVantage) {
-    sequentialFetches.push({ fetch: () => fetchAlphaVantageOverview(symbol, apiKeys.alphaVantage!), label: 'Alpha Vantage Overview' });
-  }
-  
-  if (apiKeys.twelveData) {
-    sequentialFetches.push({ fetch: () => fetchTwelveDataQuote(symbol, apiKeys.twelveData!), label: 'Twelve Data Quote' });
-  }
+
+  const sequentialFetches: Array<{ fetch: () => Promise<Partial<CompanyInfo> | null>; label: string }> = [
+    { fetch: () => fetchFinnhubProfile(symbol), label: 'Finnhub Profile' },
+    { fetch: () => fetchFinnhubMetrics(symbol), label: 'Finnhub Metrics' },
+    { fetch: () => fetchFinnhubQuote(symbol), label: 'Finnhub Quote' },
+    { fetch: () => fetchAlphaVantageOverview(symbol), label: 'Alpha Vantage Overview' },
+    { fetch: () => fetchTwelveDataQuote(symbol), label: 'Twelve Data Quote' },
+  ];
   
   // Execute sequentially with 50ms delay between requests to spread load
   for (const item of sequentialFetches) {
@@ -405,21 +367,10 @@ export async function fetchCompanyInfo(symbol: string): Promise<CompanyInfo | nu
     }
   });
   
-  // Track which sources provided data
-  let finnhubIdx = 0;
-  if (apiKeys.finnhub) {
-    if (additionalResults[finnhubIdx] || additionalResults[finnhubIdx + 1] || additionalResults[finnhubIdx + 2]) {
-      dataSources.push('Finnhub');
-    }
-    finnhubIdx += 3;
-  }
-  if (apiKeys.alphaVantage && additionalResults[finnhubIdx]) {
-    dataSources.push('Alpha Vantage');
-    finnhubIdx += 1;
-  }
-  if (apiKeys.twelveData && additionalResults[finnhubIdx]) {
-    dataSources.push('Twelve Data');
-  }
+  // Track which sources provided data (Reihenfolge entspricht sequentialFetches oben)
+  if (additionalResults[0] || additionalResults[1] || additionalResults[2]) dataSources.push('Finnhub');
+  if (additionalResults[3]) dataSources.push('Alpha Vantage');
+  if (additionalResults[4]) dataSources.push('Twelve Data');
   
   // Merge all data, preferring non-null values
   // Priority: Finnhub profile > Alpha Vantage > Yahoo > Twelve Data for names

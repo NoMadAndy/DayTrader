@@ -25,39 +25,20 @@ const DataServiceContext = createContext<DataServiceContextValue | null>(null);
 
 const STORAGE_KEY = 'daytrader_api_config';
 
-// Get environment variables for API keys
-function getEnvConfig(): DataServiceConfig {
-  return {
-    finnhubApiKey: import.meta.env.VITE_FINNHUB_API_KEY as string | undefined,
-    alphaVantageApiKey: import.meta.env.VITE_ALPHA_VANTAGE_API_KEY as string | undefined,
-    twelveDataApiKey: import.meta.env.VITE_TWELVE_DATA_API_KEY as string | undefined,
-    newsApiKey: import.meta.env.VITE_NEWS_API_KEY as string | undefined,
+// finnhub/alphaVantage/twelveData/newsApi/newsdata Keys liegen serverseitig
+// (Server-Default oder per-User in DB). Dieser Hook liest nur noch Provider-Toggles
+// und Marketaux/FMP/Tiingo/Mediastack-Keys (die noch direkt vom Browser gehen).
+function getInitialConfig(): DataServiceConfig {
+  const base: DataServiceConfig = {
     preferredSource: (import.meta.env.VITE_PREFERRED_DATA_SOURCE as DataSourceType) || 'yahoo',
   };
-}
-
-// Get stored config from localStorage (merged with env config)
-function getInitialConfig(): DataServiceConfig {
-  const envConfig = getEnvConfig();
-  
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      // Merge: env variables take precedence, then localStorage
-      return {
-        finnhubApiKey: envConfig.finnhubApiKey || parsed.finnhubApiKey || undefined,
-        alphaVantageApiKey: envConfig.alphaVantageApiKey || parsed.alphaVantageApiKey || undefined,
-        twelveDataApiKey: envConfig.twelveDataApiKey || parsed.twelveDataApiKey || undefined,
-        newsApiKey: envConfig.newsApiKey || parsed.newsApiKey || undefined,
-        preferredSource: envConfig.preferredSource,
-      };
-    }
+    if (stored) return { ...base, ...JSON.parse(stored), ...base };
   } catch (e) {
     log.warn('Failed to load stored API config:', e);
   }
-  
-  return envConfig;
+  return base;
 }
 
 export function DataServiceProvider({ children }: { children: React.ReactNode }) {
