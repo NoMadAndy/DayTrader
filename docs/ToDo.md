@@ -60,7 +60,7 @@ Frontend-Lint wurde am 2026-04-13 entschärft, damit CI grün wird. Folgende Kla
 ## ✨ Verbesserungen
 
 - **Deploy-Pfad dokumentieren / automatisieren**: [.github/workflows/ci.yml](../.github/workflows/ci.yml) hat nur Lint+Test+Build, keinen Deploy-Step. Manueller Pfad ist jetzt in [docs/deploy.md](deploy.md) festgehalten (Push → `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` → Playwright-Smoke). Auto-Trigger (Watchtower/Webhook/SSH-Pull) noch offen.
-- **Frontend-Healthcheck `unhealthy`**: Container antwortet, aber Healthcheck schlägt fehl. Definition in `docker-compose.prod.yml` prüfen.
+- ~~**Frontend-Healthcheck `unhealthy`**~~: ✓ 2026-04-13 — `localhost` löste auf `::1` (IPv6) auf, nginx hört nur IPv4. Fix: `127.0.0.1` in [frontend/Dockerfile](../frontend/Dockerfile) + [docker-compose.prod.yml](../docker-compose.prod.yml).
 
 ---
 
