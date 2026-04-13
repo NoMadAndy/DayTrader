@@ -292,6 +292,7 @@ export interface SignalAccuracyMetrics {
   totalSignals: number;
   correct: number;
   incorrect: number;
+  ic?: number | null; // Spearman Rank-IC (Sprint B P1)
 }
 
 export interface SignalAccuracyData {

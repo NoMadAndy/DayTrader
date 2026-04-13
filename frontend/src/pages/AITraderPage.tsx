@@ -14,6 +14,7 @@ import { TradeReasoningCard } from '../components/TradeReasoningCard';
 import AITraderReportCard from '../components/AITraderReportCard';
 import AITraderInsights from '../components/AITraderInsights';
 import SignalAccuracyChart from '../components/SignalAccuracyChart';
+import SignalICPanel from '../components/SignalICPanel';
 import AdaptiveWeightsPanel from '../components/AdaptiveWeightsPanel';
 import TradeAlertBar from '../components/TradeAlertBar';
 // TradeDetailCard removed (unused)
@@ -1497,12 +1498,17 @@ export function AITraderPage() {
             <div>
               <SignalAccuracyChart traderId={traderId} days={30} />
             </div>
-            
+
+            {/* Universe-weite Signal-IC */}
+            <div>
+              <SignalICPanel days={30} />
+            </div>
+
             {/* Adaptive Weights */}
             <div>
               <AdaptiveWeightsPanel trader={trader} />
             </div>
-            
+
             {/* Training Status */}
             <div>
               <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50 p-4">

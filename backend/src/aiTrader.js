@@ -8,6 +8,7 @@
 
 import { query, getClient } from './db.js';
 import logger from './logger.js';
+import signalIC from './signalIC.js';
 
 // ============================================================================
 // Trading Time Helper Functions
@@ -798,11 +799,27 @@ export async function logDecision(aiTraderId, decisionData) {
 
   // Update trader's last_decision_at
   await query(
-    `UPDATE ai_traders 
+    `UPDATE ai_traders
      SET last_decision_at = NOW(), total_decisions = total_decisions + 1
      WHERE id = $1`,
     [aiTraderId]
   );
+
+  // Log raw scores for IC-Tracking (Sprint C6B). Fire-and-forget, pro Quelle
+  // einzeln. Decision-Timestamp als score_at — wird im daily Backfill mit dem
+  // Next-Bar-Return verknüpft.
+  const scoreLogs = [
+    ['ml', mlScore],
+    ['rl', rlScore],
+    ['sentiment', sentimentScore],
+    ['technical', technicalScore],
+  ];
+  for (const [source, raw] of scoreLogs) {
+    if (raw === null || raw === undefined) continue;
+    const num = Number(raw);
+    if (!Number.isFinite(num)) continue;
+    signalIC.logSignalScore(source, symbol, num, result.rows[0].timestamp);
+  }
 
   return result.rows[0];
 }

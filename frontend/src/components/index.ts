@@ -26,6 +26,7 @@ export { SignalBreakdown } from './SignalBreakdown';
 export { default as AITraderReportCard } from './AITraderReportCard';
 export { default as AITraderInsights } from './AITraderInsights';
 export { default as SignalAccuracyChart } from './SignalAccuracyChart';
+export { default as SignalICPanel } from './SignalICPanel';
 export { default as AdaptiveWeightsPanel } from './AdaptiveWeightsPanel';
 export { ExchangeStatusPanel } from './ExchangeSelector';
 export { AITraderTrainingStatus } from './AITraderTrainingStatus';

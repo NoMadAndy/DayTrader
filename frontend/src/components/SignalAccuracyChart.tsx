@@ -111,10 +111,20 @@ export default function SignalAccuracyChart({ traderId, days = 30 }: SignalAccur
                     style={{ width: `${signal.data.accuracy * 100}%` }}
                   />
                 </div>
-                
-                {/* Stats */}
-                <div className="mt-1 text-xs text-gray-400">
-                  {signal.data.correct} correct / {signal.data.totalSignals} signals
+
+                {/* Stats inkl. Rank-IC (Sprint B P1) — Win-Rate sagt nur,
+                    ob die Schwelle stimmt; IC zeigt, ob das Signal überhaupt
+                    monoton mit dem Return korreliert. */}
+                <div className="mt-1 flex items-center justify-between text-xs text-gray-400">
+                  <span>{signal.data.correct} correct / {signal.data.totalSignals} signals</span>
+                  {typeof signal.data.ic === 'number' && (
+                    <span title="Spearman Rank-IC vs realized P&L">
+                      IC&nbsp;
+                      <span className={signal.data.ic > 0.05 ? 'text-green-400' : signal.data.ic < -0.05 ? 'text-red-400' : 'text-gray-400'}>
+                        {signal.data.ic >= 0 ? '+' : ''}{signal.data.ic.toFixed(3)}
+                      </span>
+                    </span>
+                  )}
                 </div>
               </>
             )}
