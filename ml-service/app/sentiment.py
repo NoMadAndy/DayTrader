@@ -94,65 +94,73 @@ def get_model_status() -> Dict:
     }
 
 
+_FINBERT_LABELS = ['positive', 'negative', 'neutral']
+_FINBERT_MAX_TOKENS = 512  # CLS + 510 content + SEP
+_FINBERT_CHUNK_STRIDE = 64  # overlap to keep cross-sentence context
+
+
+def _result_from_probs(text: str, probs) -> SentimentResult:
+    """Build a SentimentResult from a (3,) probability vector."""
+    probabilities = {label: float(p) for label, p in zip(_FINBERT_LABELS, probs)}
+    predicted_idx = int(probs.argmax())
+    score = probabilities['positive'] - probabilities['negative']
+    return SentimentResult(
+        text=text[:200],
+        sentiment=_FINBERT_LABELS[predicted_idx],
+        score=round(score, 4),
+        confidence=round(float(probs[predicted_idx]), 4),
+        probabilities=probabilities,
+    )
+
+
+def _predict_chunked(text: str):
+    """
+    Tokenize `text` with overlapping 512-token windows and return a single (3,)
+    probability vector aggregated across all chunks via confidence weighting
+    (max-prob per chunk). For text that fits in 512 tokens this collapses to
+    the same single forward pass as before.
+    """
+    inputs = _tokenizer(
+        text,
+        return_tensors="pt",
+        truncation=True,
+        max_length=_FINBERT_MAX_TOKENS,
+        stride=_FINBERT_CHUNK_STRIDE,
+        return_overflowing_tokens=True,
+        padding=True,
+    )
+    # Strip non-model fields produced by return_overflowing_tokens
+    model_inputs = {k: v for k, v in inputs.items()
+                    if k in ('input_ids', 'attention_mask', 'token_type_ids')}
+    if next(_model.parameters()).is_cuda:
+        model_inputs = {k: v.cuda() for k, v in model_inputs.items()}
+
+    with torch.no_grad():
+        logits = _model(**model_inputs).logits
+        chunk_probs = torch.nn.functional.softmax(logits, dim=-1).cpu().numpy()
+    # (n_chunks, 3) → confidence-weighted mean
+    if chunk_probs.shape[0] == 1:
+        return chunk_probs[0]
+    confidences = chunk_probs.max(axis=1)
+    if confidences.sum() == 0:
+        return chunk_probs.mean(axis=0)
+    return (chunk_probs * confidences[:, None]).sum(axis=0) / confidences.sum()
+
+
 def analyze_sentiment(text: str) -> Optional[SentimentResult]:
     """
-    Analyze sentiment of a single text using FinBERT.
-    
-    Args:
-        text: The text to analyze (news headline or summary)
-        
-    Returns:
-        SentimentResult with sentiment, score, and confidence
+    Analyze sentiment of a single text using FinBERT. Texts longer than 512
+    tokens are split into overlapping windows and aggregated (confidence-
+    weighted mean) instead of being silently truncated.
     """
     success, error = _load_model()
     if not success:
         logger.warning(f"FinBERT not available: {error}")
         return None
-    
+
     try:
-        # Tokenize
-        inputs = _tokenizer(
-            text,
-            return_tensors="pt",
-            truncation=True,
-            max_length=512,
-            padding=True
-        )
-        
-        # Move to same device as model
-        if next(_model.parameters()).is_cuda:
-            inputs = {k: v.cuda() for k, v in inputs.items()}
-        
-        # Get predictions
-        with torch.no_grad():
-            outputs = _model(**inputs)
-            logits = outputs.logits
-            
-            # Apply softmax to get probabilities
-            probs = torch.nn.functional.softmax(logits, dim=-1)
-            probs = probs.cpu().numpy()[0]
-        
-        # FinBERT labels: 0=positive, 1=negative, 2=neutral
-        labels = ['positive', 'negative', 'neutral']
-        probabilities = {label: float(prob) for label, prob in zip(labels, probs)}
-        
-        # Get predicted sentiment
-        predicted_idx = probs.argmax()
-        sentiment = labels[predicted_idx]
-        confidence = float(probs[predicted_idx])
-        
-        # Calculate score from -1 (bearish) to 1 (bullish)
-        # positive contributes positively, negative contributes negatively
-        score = probabilities['positive'] - probabilities['negative']
-        
-        return SentimentResult(
-            text=text[:200],  # Truncate for storage
-            sentiment=sentiment,
-            score=round(score, 4),
-            confidence=round(confidence, 4),
-            probabilities=probabilities
-        )
-        
+        agg_probs = _predict_chunked(text)
+        return _result_from_probs(text, agg_probs)
     except Exception as e:
         logger.error(f"Error analyzing sentiment: {e}")
         return None
@@ -174,57 +182,47 @@ def analyze_batch(texts: List[str], batch_size: int = 8) -> List[Optional[Sentim
         logger.warning(f"FinBERT not available: {error}")
         return [None] * len(texts)
     
-    results = []
-    
-    # Process in batches
-    for i in range(0, len(texts), batch_size):
-        batch_texts = texts[i:i + batch_size]
-        
+    # Pre-classify each text by token length. Short texts use the fast batched
+    # path; long ones go through _predict_chunked individually so chunks stay
+    # contiguous to their source text.
+    lengths = [len(_tokenizer.encode(t, add_special_tokens=True, truncation=False))
+               for t in texts]
+
+    results: List[Optional[SentimentResult]] = [None] * len(texts)
+    short_indices = [i for i, n in enumerate(lengths) if n <= _FINBERT_MAX_TOKENS]
+    long_indices = [i for i, n in enumerate(lengths) if n > _FINBERT_MAX_TOKENS]
+
+    # Fast batched path for texts that fit
+    for i in range(0, len(short_indices), batch_size):
+        idx_slice = short_indices[i:i + batch_size]
+        batch_texts = [texts[j] for j in idx_slice]
         try:
-            # Tokenize batch
             inputs = _tokenizer(
                 batch_texts,
                 return_tensors="pt",
                 truncation=True,
-                max_length=512,
-                padding=True
+                max_length=_FINBERT_MAX_TOKENS,
+                padding=True,
             )
-            
-            # Move to same device as model
             if next(_model.parameters()).is_cuda:
                 inputs = {k: v.cuda() for k, v in inputs.items()}
-            
-            # Get predictions
             with torch.no_grad():
-                outputs = _model(**inputs)
-                logits = outputs.logits
-                probs = torch.nn.functional.softmax(logits, dim=-1)
-                probs = probs.cpu().numpy()
-            
-            # Process each result
-            labels = ['positive', 'negative', 'neutral']
-            for j, text in enumerate(batch_texts):
-                text_probs = probs[j]
-                probabilities = {label: float(prob) for label, prob in zip(labels, text_probs)}
-                
-                predicted_idx = text_probs.argmax()
-                sentiment = labels[predicted_idx]
-                confidence = float(text_probs[predicted_idx])
-                score = probabilities['positive'] - probabilities['negative']
-                
-                results.append(SentimentResult(
-                    text=text[:200],
-                    sentiment=sentiment,
-                    score=round(score, 4),
-                    confidence=round(confidence, 4),
-                    probabilities=probabilities
-                ))
-                
+                logits = _model(**inputs).logits
+                probs = torch.nn.functional.softmax(logits, dim=-1).cpu().numpy()
+            for k, text_idx in enumerate(idx_slice):
+                results[text_idx] = _result_from_probs(texts[text_idx], probs[k])
         except Exception as e:
             logger.error(f"Error analyzing batch: {e}")
-            # Add None for each failed item in batch
-            results.extend([None] * len(batch_texts))
-    
+            # leave as None for failed slots
+
+    # Per-text chunked path for long texts (rare on headlines, common on bodies)
+    for text_idx in long_indices:
+        try:
+            agg_probs = _predict_chunked(texts[text_idx])
+            results[text_idx] = _result_from_probs(texts[text_idx], agg_probs)
+        except Exception as e:
+            logger.error(f"Error analyzing chunked text: {e}")
+
     return results
 
 

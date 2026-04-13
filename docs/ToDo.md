@@ -26,7 +26,7 @@ Motivation: News-Signale sollen tradable sein, nicht nur Noise. Ausgangslage sie
 - ~~News-API-Keys vom Frontend ins Backend verlagern~~ ✓ 2026-04-13 (A.3): Server-Default + User-Override (DB) via `resolveProviderKey`, Bundle key-frei, alle News-Routen mit korrekter `stockCache.setCache`-Signatur (TTL 15 min). NewsAPI/NewsData haben nun Cache (vorher buggy Call-Signature, Cache nie geschrieben).
 - 🟡 Semantic-Deduplikation via Embeddings vor Sentiment-Aggregation (URL+Headline-Dedup ✓ 2026-04-13, Embedding-Dedup offen als Sprint D)
 - ~~Freshness-Decay~~ ✓ 2026-04-13 (Sprint C2): Live-Aggregation mit τ=6h in [/api/ml/sentiment](../backend/src/index.js), Trend-Aggregation mit τ=24h in [getSentimentTrend](../backend/src/sentimentArchive.js).
-- FinBERT-Chunking für Artikel > 512 Token statt hartem Truncate (Sprint C5, heute low-risk weil nur Headlines verarbeitet werden)
+- ~~FinBERT-Chunking~~ ✓ 2026-04-13 (Sprint C5): Texte > 512 Token werden via `return_overflowing_tokens=True, stride=64` in überlappende Fenster zerlegt; pro-Chunk-Probabilities werden konfidenz-gewichtet aggregiert. Short-Text-Batch-Pfad bleibt für Headlines (heute fast ausschließlich der Fall) erhalten — Long-Text-Pfad ist Per-Text. Siehe [sentiment.py](../ml-service/app/sentiment.py).
 - ~~Marketaux/FMP/Tiingo/Mediastack-Keys aus Frontend entfernen~~ ✓ 2026-04-13 (Sprint C4): jetzt ebenfalls über `resolveProviderKey` (env: MARKETAUX/FMP/TIINGO/MEDIASTACK_API_KEY oder user_settings.api_keys.{marketaux,fmp,tiingo,mediastack}). Vorher landete der Key als URL-Query-Param in Browser- und Server-Access-Logs.
 - Quellen-Diversität: Reddit, SEC EDGAR 8-K, Earnings-Transcripts, X
 - IC / Rank-IC des Sentiment-Signals gegen Next-Bar-Return tracken
