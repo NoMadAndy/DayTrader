@@ -813,6 +813,34 @@ async def analyze_sentiment_batch(request: SentimentBatchRequest):
     }
 
 
+class EmbedBatchRequest(BaseModel):
+    """Request for FinBERT CLS embeddings of multiple texts"""
+    texts: List[str] = Field(..., description="Texts to embed (max 64 per call)")
+
+
+@app.post("/api/ml/embed/batch")
+async def embed_batch_endpoint(request: EmbedBatchRequest):
+    """
+    Return 768-dim FinBERT CLS embeddings for batch semantic deduplication.
+    Reuses the loaded sentiment model — no additional VRAM cost.
+    """
+    if not request.texts:
+        raise HTTPException(status_code=400, detail="Texts list cannot be empty")
+    if len(request.texts) > 64:
+        raise HTTPException(status_code=400, detail="Maximum 64 texts per batch")
+
+    embeddings = finbert.embed_batch(request.texts)
+    if embeddings is None:
+        raise HTTPException(status_code=503, detail="FinBERT not loaded")
+
+    return {
+        "success": True,
+        "embeddings": embeddings,
+        "dim": 768,
+        "count": len(embeddings),
+    }
+
+
 # ============== Warrant Pricing ==============
 
 class WarrantPriceRequest(BaseModel):

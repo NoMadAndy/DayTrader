@@ -226,6 +226,49 @@ def analyze_batch(texts: List[str], batch_size: int = 8) -> List[Optional[Sentim
     return results
 
 
+def embed_batch(texts: List[str], batch_size: int = 16) -> Optional[List[List[float]]]:
+    """
+    Return CLS-token embeddings (768-dim) from FinBERT's BERT backbone for each
+    text. Used for semantic deduplication of near-duplicate news items before
+    sentiment aggregation. Reuses the already-loaded sentiment model — no
+    additional VRAM cost.
+
+    Returns None if FinBERT is not available.
+    """
+    success, error = _load_model()
+    if not success:
+        logger.warning(f"FinBERT not available for embeddings: {error}")
+        return None
+
+    embeddings: List[List[float]] = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
+        try:
+            inputs = _tokenizer(
+                batch,
+                return_tensors="pt",
+                truncation=True,
+                max_length=_FINBERT_MAX_TOKENS,
+                padding=True,
+            )
+            if next(_model.parameters()).is_cuda:
+                inputs = {k: v.cuda() for k, v in inputs.items()}
+            with torch.no_grad():
+                # BertForSequenceClassification → backbone is .bert
+                outputs = _model.bert(
+                    input_ids=inputs["input_ids"],
+                    attention_mask=inputs.get("attention_mask"),
+                    token_type_ids=inputs.get("token_type_ids"),
+                )
+                cls = outputs.last_hidden_state[:, 0, :].cpu().numpy()
+            for vec in cls:
+                embeddings.append(vec.tolist())
+        except Exception as e:
+            logger.error(f"Error embedding batch: {e}")
+            embeddings.extend([None] * len(batch))
+    return embeddings
+
+
 def preload_model() -> bool:
     """
     Preload the model (useful for startup).

@@ -2520,6 +2520,56 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
       }
     }
     
+    // Semantic-Dedup via FinBERT-Embeddings: fängt Wire-Stories, deren Headlines
+    // unterschiedlich umformuliert wurden (URL-Dedup in C3 fängt nur identische
+    // URLs). Cosine-Similarity > Threshold → behalte das Item mit dem aktuellsten
+    // publishedAt. Toggle via ENV, weil zusätzlicher ML-Roundtrip ~50-150ms.
+    if (process.env.ENABLE_SEMANTIC_DEDUP === 'true' && newsTexts.length >= 3) {
+      try {
+        const embedRes = await fetch(`${ML_SERVICE_URL}/api/ml/embed/batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ texts: newsTexts.slice(0, 64) }),
+        });
+        if (embedRes.ok) {
+          const { embeddings } = await embedRes.json();
+          const threshold = parseFloat(process.env.SEMANTIC_DEDUP_THRESHOLD || '0.92');
+          const norm = (v) => {
+            let s = 0; for (let i = 0; i < v.length; i++) s += v[i] * v[i];
+            const n = Math.sqrt(s) || 1;
+            return v.map(x => x / n);
+          };
+          const cosine = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+          const normed = embeddings.map(e => Array.isArray(e) ? norm(e) : null);
+          const keep = new Array(newsTexts.length).fill(true);
+          for (let i = 0; i < normed.length; i++) {
+            if (!keep[i] || !normed[i]) continue;
+            for (let j = i + 1; j < normed.length; j++) {
+              if (!keep[j] || !normed[j]) continue;
+              if (cosine(normed[i], normed[j]) >= threshold) {
+                // Behalte das aktuellere Item; bei Gleichstand das mit niedrigerem Index
+                const ti = sources[i]?.publishedAt || 0;
+                const tj = sources[j]?.publishedAt || 0;
+                if (tj > ti) { keep[i] = false; break; } else { keep[j] = false; }
+              }
+            }
+          }
+          const before = newsTexts.length;
+          const newTexts = []; const newSources = [];
+          for (let i = 0; i < newsTexts.length; i++) {
+            if (keep[i]) { newTexts.push(newsTexts[i]); newSources.push(sources[i]); }
+          }
+          newsTexts.length = 0; newsTexts.push(...newTexts);
+          sources.length = 0; sources.push(...newSources);
+          if (before !== newsTexts.length) {
+            logger.info(`[Sentiment] Semantic-Dedup: ${before} → ${newsTexts.length} (threshold=${threshold})`);
+          }
+        }
+      } catch (err) {
+        logger.warn(`[Sentiment] Semantic-Dedup skipped (embed call failed): ${err.message}`);
+      }
+    }
+
     // If no news found, try archived sentiment first
     if (newsTexts.length === 0) {
       const archivedFallback = await getArchivedFallback();
@@ -2659,7 +2709,8 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
       positive_count: positiveCount,
       negative_count: negativeCount,
       neutral_count: neutralCount,
-      sources: sources.slice(0, 5)  // Limit to first 5 sources
+      sources: sources.slice(0, 5),
+      semantic_dedup_enabled: process.env.ENABLE_SEMANTIC_DEDUP === 'true',
     };
     
     // Cache for 60 minutes (was 10 min)
