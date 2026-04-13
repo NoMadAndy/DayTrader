@@ -475,6 +475,18 @@ export async function initializeAITraderSchema() {
       );
     `);
 
+    // Sprint B P2: B&H baseline + regime breakdown on daily reports
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_trader_daily_reports' AND column_name = 'benchmark_return_pct') THEN
+          ALTER TABLE ai_trader_daily_reports ADD COLUMN benchmark_return_pct DECIMAL(8,4);
+          ALTER TABLE ai_trader_daily_reports ADD COLUMN alpha_pct DECIMAL(8,4);
+          ALTER TABLE ai_trader_daily_reports ADD COLUMN regime_breakdown JSONB;
+        END IF;
+      END $$;
+    `);
+
     // Create ai_trader_weight_history table for tracking adaptive learning
     await client.query(`
       CREATE TABLE IF NOT EXISTS ai_trader_weight_history (

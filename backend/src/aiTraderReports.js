@@ -213,6 +213,67 @@ export async function generateDailyReport(traderId, date = new Date()) {
     // Calculate signal accuracy for the day
     const signalAccuracy = await calculateSignalAccuracy(traderId, 1); // 1 day
 
+    // Buy-and-Hold-Baseline: equal-weight Day-Return über alle heute getradeten
+    // Symbole. Ohne Baseline sind Win-Rate und P&L bedeutungslos — sie sagen nichts
+    // über Marktphase. Alpha = realized_pnl_percent - baseline_pct.
+    const baselineResult = await client.query(
+      `WITH today_symbols AS (
+         SELECT DISTINCT symbol FROM positions
+         WHERE portfolio_id = $1
+         AND (opened_at::date = $2::date OR closed_at::date = $2::date)
+       ),
+       day_returns AS (
+         SELECT hp.symbol, hp.close AS close_today,
+           (SELECT close FROM historical_prices hp2
+            WHERE hp2.symbol = hp.symbol AND hp2.date < $2::date
+            ORDER BY hp2.date DESC LIMIT 1) AS close_prev
+         FROM historical_prices hp
+         WHERE hp.date = $2::date AND hp.symbol IN (SELECT symbol FROM today_symbols)
+       )
+       SELECT AVG((close_today - close_prev) / NULLIF(close_prev, 0) * 100) AS bh_pct,
+              COUNT(*) AS n_symbols
+         FROM day_returns WHERE close_prev IS NOT NULL AND close_prev > 0`,
+      [portfolioId, reportDateStr]
+    );
+    const bhRow = baselineResult.rows[0];
+    const benchmarkReturnPct = bhRow?.bh_pct !== null && bhRow?.bh_pct !== undefined
+      ? parseFloat(bhRow.bh_pct) : null;
+    const alphaPct = benchmarkReturnPct !== null ? pnlPercent - benchmarkReturnPct : null;
+
+    // Regime-Split: aggregiere executed decisions je Marktregime. Regime wird vom
+    // ai_trader_engine in reasoning.enhancement_details.market_regime.regime
+    // gespeichert. Pro Regime werden P&L und Win-Rate separat ausgewiesen —
+    // gleicher Agent kann in Bull/Bear/Flat/Volatile sehr unterschiedlich laufen.
+    const regimeResult = await client.query(
+      `SELECT
+         COALESCE(reasoning->'enhancement_details'->'market_regime'->>'regime', 'unknown') AS regime,
+         COUNT(*) AS decisions,
+         COUNT(*) FILTER (WHERE executed = true) AS executed_trades,
+         COALESCE(SUM(outcome_pnl) FILTER (WHERE outcome_pnl IS NOT NULL), 0) AS total_pnl,
+         AVG(outcome_pnl) FILTER (WHERE outcome_pnl IS NOT NULL) AS avg_pnl,
+         COUNT(*) FILTER (WHERE outcome_was_correct = true) AS wins,
+         COUNT(*) FILTER (WHERE outcome_was_correct = false) AS losses
+       FROM ai_trader_decisions
+       WHERE ai_trader_id = $1 AND timestamp >= $2 AND timestamp <= $3
+       GROUP BY regime
+       ORDER BY decisions DESC`,
+      [traderId, startOfDay, endOfDay]
+    );
+    const regimeBreakdown = regimeResult.rows.map(r => {
+      const wins = parseInt(r.wins || 0);
+      const losses = parseInt(r.losses || 0);
+      const graded = wins + losses;
+      return {
+        regime: r.regime,
+        decisions: parseInt(r.decisions),
+        executed: parseInt(r.executed_trades || 0),
+        totalPnl: parseFloat(r.total_pnl || 0),
+        avgPnl: r.avg_pnl !== null ? parseFloat(r.avg_pnl) : null,
+        winRate: graded > 0 ? wins / graded : null,
+        wins, losses,
+      };
+    });
+
     // Generate insights
     const insights = await generateInsights(traderId, {
       date: reportDate,
@@ -236,9 +297,10 @@ export async function generateDailyReport(traderId, date = new Date()) {
         positions_opened, positions_closed,
         winning_trades, losing_trades, win_rate,
         avg_win, avg_loss, best_trade, worst_trade,
-        signal_accuracy, open_positions, insights
+        signal_accuracy, open_positions, insights,
+        benchmark_return_pct, alpha_pct, regime_breakdown
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
       )
       ON CONFLICT (ai_trader_id, report_date)
       DO UPDATE SET
@@ -261,21 +323,27 @@ export async function generateDailyReport(traderId, date = new Date()) {
         worst_trade = EXCLUDED.worst_trade,
         signal_accuracy = EXCLUDED.signal_accuracy,
         open_positions = EXCLUDED.open_positions,
-        insights = EXCLUDED.insights
+        insights = EXCLUDED.insights,
+        benchmark_return_pct = EXCLUDED.benchmark_return_pct,
+        alpha_pct = EXCLUDED.alpha_pct,
+        regime_breakdown = EXCLUDED.regime_breakdown
       RETURNING *`,
       [
         traderId, reportDateStr,
         startValue, endValue, pnl, pnlPercent, feesPaid,
-        0, // checks_performed - would need separate tracking
+        0,
         decisionsAnalyzed, tradesExecuted,
         positionsOpened, positionsClosed,
         winningTrades, losingTrades, winRate,
-        avgWin, avgLoss, 
+        avgWin, avgLoss,
         bestTrade ? JSON.stringify(bestTrade) : null,
         worstTrade ? JSON.stringify(worstTrade) : null,
         JSON.stringify(signalAccuracy),
         JSON.stringify(openPositions),
         insights,
+        benchmarkReturnPct,
+        alphaPct,
+        regimeBreakdown.length > 0 ? JSON.stringify(regimeBreakdown) : null,
       ]
     );
 

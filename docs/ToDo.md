@@ -39,9 +39,9 @@ Motivation: News-Signale sollen tradable sein, nicht nur Noise. Ausgangslage sie
 
 ### Backtest- & Evaluations-Hygiene
 - 🟡 Walk-Forward-CV: LSTM hat Walk-Forward (jetzt API-Default `use_walk_forward=True`), Transformer nutzt korrekt train-only-Scaler aber noch Single-Split (Sprint B P0c offen). Scaler-Leakage in Transformer behoben 2026-04-13.
-- Transaktionskosten (Spread + Slippage + Fees) in allen Backtests
-- Regime-aufgeteilte Performance-Metriken (Bull/Bear/Flat)
-- Baseline-Vergleich (Buy-and-Hold, Random) in jedem Report
+- Transaktionskosten (Spread + Slippage + Fees) in allen Backtests (Backend-Reports noch ohne expliziten Cost-Block; RL-Env ist bereits mit Slippage+Fees modelliert)
+- ~~Regime-aufgeteilte Performance-Metriken~~ ✓ 2026-04-13 (P2): `regime_breakdown` JSONB auf [ai_trader_daily_reports](../backend/src/aiTraderReports.js), aggregiert aus `reasoning.enhancement_details.market_regime.regime`.
+- ~~Baseline-Vergleich (Buy-and-Hold)~~ ✓ 2026-04-13 (P2): `benchmark_return_pct` + `alpha_pct` pro Tag als Equal-Weight-Day-Return der getradeten Symbole. Random-Baseline noch offen.
 - Walk-Forward für Transformer implementieren (P0c, Parität zu `model.py`)
 - IC / Rank-IC des Sentiment-Signals tracken (Sprint B P1, `aiTraderSignalAccuracy.js`)
 - ~~RL-Eval auf Hard-Hold-out~~ ✓ 2026-04-13: 80/20-Split war schon da, aber OOS nur auf erstem Symbol bewertet. Jetzt alle Test-Symbole + Calmar-Ratio in `_evaluate_model` + per-symbol-Ergebnisse in `oos_performance_metrics` (Sprint B P1, [trainer.py](../rl-trading-service/app/trainer.py)).
