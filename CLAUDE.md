@@ -54,7 +54,7 @@ Start: `docker-compose up`. Dev-Overrides in [docker-compose.override.yml](docke
 Vor Änderungen an News/Sentiment diese Punkte prüfen (siehe vorherige Analyse):
 
 - FinBERT trunkiert bei 512 Tokens — bei langen Artikeln Chunking nutzen
-- News-API-Keys gehören ins Backend, nicht ins Frontend-Bundle
+- ✓ API-Keys liegen serverseitig (Frontend-Bundle key-frei). Env-Namen: `FINNHUB_API_KEY`, `ALPHA_VANTAGE_API_KEY`, `TWELVE_DATA_API_KEY`, `NEWSAPI_KEY`, `NEWSDATA_API_KEY` (Legacy `VITE_*_API_KEY` als Fallback). Per-User-Keys in `user_settings.api_keys` (JSONB) überschreiben Server-Default — Resolver: `resolveProviderKey()` in [backend/src/index.js](backend/src/index.js).
 - Dedup via Embeddings vor Sentiment-Aggregation (5× gleiche Story = 5× Bias)
 - Freshness-Decay: `weight = exp(-Δt/τ)` für alte News
 - IC/Rank-IC der Sentiment-Signale tracken, sonst taub für Degradation
