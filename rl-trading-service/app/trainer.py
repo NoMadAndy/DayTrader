@@ -788,43 +788,60 @@ class TradingAgentTrainer:
                 log(f"   Alpha vs B&H: {eval_results['mean_alpha_pct']:.2f}%")
             
             # === Out-of-Sample Evaluation (Walk-Forward Test) ===
+            # Evaluiert den Agent auf dem zurückgehaltenen 20 %-Test-Fenster JEDES
+            # Symbols (nicht nur dem ersten). Gewichtet arithmetisch gemittelt — für
+            # tradeweise Gewichtung bräuchten wir eine Portfolio-Simulation.
             oos_results = None
+            oos_per_symbol = {}
             if test_data_split:
-                log(f"📊 Out-of-Sample Evaluation (Walk-Forward Test on {len(test_data_split)} symbol(s))...")
-                try:
-                    # Create test environment with first test symbol
-                    test_symbol = list(test_data_split.keys())[0]
-                    test_df = test_data_split[test_symbol]
-                    
-                    test_env = self.create_environment(test_df, effective_config)
-                    test_env = Monitor(test_env)
-                    test_vec_env = DummyVecEnv([lambda: test_env])
-                    
-                    # Apply trained normalization stats
-                    test_vec_env = VecNormalize.load(str(model_path / "vec_normalize.pkl"), test_vec_env)
-                    test_vec_env.training = False
-                    test_vec_env.norm_reward = False
-                    
-                    oos_results = self._evaluate_model(model, test_vec_env, n_episodes=5)
-                    
-                    log(f"   📊 OOS Results ({test_symbol}):")
-                    log(f"   Mean return: {oos_results['mean_return_pct']:.2f}%")
-                    if 'mean_sharpe_ratio' in oos_results:
-                        log(f"   Sharpe: {oos_results['mean_sharpe_ratio']:.2f}")
-                    if 'mean_alpha_pct' in oos_results:
-                        log(f"   Alpha vs B&H: {oos_results['mean_alpha_pct']:.2f}%")
-                    
-                    # Overfitting detection
+                log(f"📊 Out-of-Sample Evaluation (Walk-Forward Test auf {len(test_data_split)} Symbol(en))...")
+                for test_symbol, test_df in test_data_split.items():
+                    try:
+                        test_env = self.create_environment(test_df, effective_config)
+                        test_env = Monitor(test_env)
+                        test_vec_env = DummyVecEnv([lambda env=test_env: env])
+                        test_vec_env = VecNormalize.load(str(model_path / "vec_normalize.pkl"), test_vec_env)
+                        test_vec_env.training = False
+                        test_vec_env.norm_reward = False
+
+                        per_sym = self._evaluate_model(model, test_vec_env, n_episodes=5)
+                        oos_per_symbol[test_symbol] = per_sym
+                        log(f"   {test_symbol}: return={per_sym['mean_return_pct']:.2f}% "
+                            f"sharpe={per_sym.get('mean_sharpe_ratio', float('nan')):.2f} "
+                            f"calmar={per_sym.get('mean_calmar_ratio', float('nan')):.2f} "
+                            f"DD={per_sym.get('mean_max_drawdown', float('nan')):.2f}% "
+                            f"alpha={per_sym.get('mean_alpha_pct', float('nan')):.2f}%")
+                    except Exception as e:
+                        log(f"   ⚠️ OOS {test_symbol} fehlgeschlagen: {e}", "warning")
+
+                if oos_per_symbol:
+                    def _agg(key):
+                        vals = [v[key] for v in oos_per_symbol.values() if key in v]
+                        return float(np.mean(vals)) if vals else None
+                    oos_results = {
+                        "mean_return_pct": _agg("mean_return_pct"),
+                        "mean_sharpe_ratio": _agg("mean_sharpe_ratio"),
+                        "mean_sortino_ratio": _agg("mean_sortino_ratio"),
+                        "mean_calmar_ratio": _agg("mean_calmar_ratio"),
+                        "mean_max_drawdown": _agg("mean_max_drawdown"),
+                        "worst_max_drawdown": max(
+                            (v.get("worst_max_drawdown", 0) for v in oos_per_symbol.values()),
+                            default=0,
+                        ),
+                        "mean_win_rate": _agg("mean_win_rate"),
+                        "mean_alpha_pct": _agg("mean_alpha_pct"),
+                        "per_symbol": oos_per_symbol,
+                        "n_symbols": len(oos_per_symbol),
+                    }
                     is_return = eval_results['mean_return_pct']
-                    oos_return = oos_results['mean_return_pct']
+                    oos_return = oos_results['mean_return_pct'] or 0.0
+                    log(f"   📊 OOS aggregiert ({len(oos_per_symbol)} Symbole): "
+                        f"return={oos_return:.2f}%, sharpe={oos_results['mean_sharpe_ratio'] or 0:.2f}, "
+                        f"calmar={oos_results['mean_calmar_ratio'] or 0:.2f}")
                     if is_return > 0 and oos_return < -abs(is_return) * 0.5:
-                        log(f"   ⚠️ OVERFITTING WARNING: In-Sample {is_return:.2f}% vs OOS {oos_return:.2f}%", "warning")
+                        log(f"   ⚠️ OVERFITTING: IS {is_return:.2f}% vs OOS {oos_return:.2f}%", "warning")
                     elif is_return > 0 and oos_return > 0:
-                        log(f"   ✅ Model generalizes well: IS {is_return:.2f}% → OOS {oos_return:.2f}%")
-                    
-                except Exception as e:
-                    log(f"   ⚠️ OOS evaluation failed: {e}", "warning")
-                    oos_results = None
+                        log(f"   ✅ Generalisiert: IS {is_return:.2f}% → OOS {oos_return:.2f}%")
             
             # Calculate cumulative values
             new_cumulative_timesteps = cumulative_timesteps + total_timesteps
@@ -915,6 +932,7 @@ class TradingAgentTrainer:
         episode_returns = []
         episode_sharpe = []
         episode_sortino = []
+        episode_calmar = []
         episode_max_dd = []
         episode_win_rate = []
         episode_profit_factor = []
@@ -941,6 +959,8 @@ class TradingAgentTrainer:
                         episode_sharpe.append(ep_info['sharpe_ratio'])
                     if 'sortino_ratio' in ep_info:
                         episode_sortino.append(ep_info['sortino_ratio'])
+                    if 'calmar_ratio' in ep_info:
+                        episode_calmar.append(ep_info['calmar_ratio'])
                     if 'max_drawdown' in ep_info:
                         episode_max_dd.append(ep_info['max_drawdown'])
                     if 'win_rate' in ep_info:
@@ -968,6 +988,11 @@ class TradingAgentTrainer:
             result["mean_sharpe_ratio"] = float(np.mean(episode_sharpe))
         if episode_sortino:
             result["mean_sortino_ratio"] = float(np.mean(episode_sortino))
+        if episode_calmar:
+            # Exclude inf-like sentinels (Calmar = return/maxDD, DD→0 blows up)
+            calmar_clean = [x for x in episode_calmar if abs(x) < 1e6]
+            if calmar_clean:
+                result["mean_calmar_ratio"] = float(np.mean(calmar_clean))
         if episode_max_dd:
             result["mean_max_drawdown"] = float(np.mean(episode_max_dd))
             result["worst_max_drawdown"] = float(np.max(episode_max_dd))

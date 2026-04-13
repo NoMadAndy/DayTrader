@@ -44,7 +44,7 @@ Motivation: News-Signale sollen tradable sein, nicht nur Noise. Ausgangslage sie
 - Baseline-Vergleich (Buy-and-Hold, Random) in jedem Report
 - Walk-Forward für Transformer implementieren (P0c, Parität zu `model.py`)
 - IC / Rank-IC des Sentiment-Signals tracken (Sprint B P1, `aiTraderSignalAccuracy.js`)
-- RL-Eval auf Hard-Hold-out (letzte 20 %) statt Train-Window (Sprint B P1, `trainer.py`)
+- ~~RL-Eval auf Hard-Hold-out~~ ✓ 2026-04-13: 80/20-Split war schon da, aber OOS nur auf erstem Symbol bewertet. Jetzt alle Test-Symbole + Calmar-Ratio in `_evaluate_model` + per-symbol-Ergebnisse in `oos_performance_metrics` (Sprint B P1, [trainer.py](../rl-trading-service/app/trainer.py)).
 
 ---
 
