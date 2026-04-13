@@ -52,6 +52,9 @@ class TestConstants:
             "use_sharpe_reward", "sharpe_scale", "sortino_scale",
             "step_fee_penalty_scale", "opportunity_cost_scale",
             "consistency_bonus_scale",
+            "sharpe_threshold", "sharpe_threshold_bonus",
+            "overtrade_penalty_threshold", "overtrade_penalty_scale",
+            "risk_reward_bonus_scale", "calmar_bonus_scale",
         }
         assert set(DEFAULT_REWARD_WEIGHTS.keys()) == expected_keys
 
