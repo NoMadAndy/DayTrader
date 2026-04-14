@@ -50,16 +50,31 @@ class ChurnFilter:
     4. Cooldown after rapid consecutive trades on same symbol
     """
 
+    # Horizon-sensitiv: Scalper arbeiten per Definition knapp über Kosten,
+    # der alte 3×-Multiplier hat sie systematisch geblockt. Day-Trader bleiben
+    # bei 1.5×, längere Horizonte bei 2-3×. Keys siehe _get_horizon_thresholds
+    # in ai_trader_engine.py.
+    DEFAULT_COST_MULTIPLIERS: Dict[str, float] = {
+        'scalping': 1.1,
+        'day': 1.5,
+        'swing': 2.0,
+        'position': 3.0,
+    }
+
     def __init__(
         self,
         cost_multiplier: float = 3.0,
+        cost_multipliers: Optional[Dict[str, float]] = None,
         max_trades_per_symbol_per_hour: int = 2,
         max_total_trades_per_day: int = 20,
         rapid_trade_cooldown_minutes: int = 15,
         broker_fee_pct: float = 0.15,  # Average broker fee as % of trade value
         spread_pct: float = 0.10,      # Average spread cost as %
     ):
+        # Legacy single-value multiplier bleibt als Fallback für Horizons, die
+        # nicht explizit im Dict stehen.
         self.cost_multiplier = cost_multiplier
+        self.cost_multipliers = cost_multipliers or dict(self.DEFAULT_COST_MULTIPLIERS)
         self.max_trades_per_symbol_per_hour = max_trades_per_symbol_per_hour
         self.max_total_trades_per_day = max_total_trades_per_day
         self.rapid_trade_cooldown_minutes = rapid_trade_cooldown_minutes
@@ -77,6 +92,7 @@ class ChurnFilter:
         expected_return_pct: float,
         trade_type: str = 'buy',
         confidence: float = 0.5,
+        horizon: str = 'day',
     ) -> ChurnCheckResult:
         """
         Check if a trade should be allowed based on churn filters.
@@ -86,6 +102,8 @@ class ChurnFilter:
             expected_return_pct: Expected return as percentage (e.g., 2.0 for 2%)
             trade_type: Type of trade ('buy', 'sell', 'short')
             confidence: Signal confidence (0-1)
+            horizon: Trading horizon ('scalping'|'day'|'swing'|'position'). Steuert
+                den Cost-Multiplier — Scalper haben inhärent kleine Returns.
 
         Returns:
             ChurnCheckResult indicating if trade is allowed
@@ -101,7 +119,8 @@ class ChurnFilter:
 
         # 1. Check expected return vs costs
         total_round_trip_cost = (self.broker_fee_pct + self.spread_pct) * 2  # Buy + sell
-        min_required_return = total_round_trip_cost * self.cost_multiplier
+        multiplier = self.cost_multipliers.get(horizon, self.cost_multiplier)
+        min_required_return = total_round_trip_cost * multiplier
 
         # Adjust expected return by confidence
         adjusted_expected_return = expected_return_pct * confidence
@@ -109,7 +128,10 @@ class ChurnFilter:
         if adjusted_expected_return < min_required_return:
             return ChurnCheckResult(
                 allowed=False,
-                reason=f"Expected return {adjusted_expected_return:.2f}% < {min_required_return:.2f}% (3x costs)",
+                reason=(
+                    f"Expected return {adjusted_expected_return:.2f}% < "
+                    f"{min_required_return:.2f}% ({multiplier:.1f}× costs, horizon={horizon})"
+                ),
                 expected_return_pct=adjusted_expected_return,
                 min_required_return_pct=min_required_return
             )

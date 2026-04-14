@@ -431,6 +431,16 @@ class AITraderEngine:
                         'sample_size': len(recent),
                     }
 
+        # Soft gate: allow trades below the hard threshold but scale position size down.
+        # Rationale: Sprint-2 ensemble disagreement penalty pushed many valid signals just
+        # below the 0.65 threshold. Rather than dropping them entirely, trade them with
+        # reduced size so the edge-filter remains intact but capital exposure is
+        # risk-adjusted.
+        soft_band = 0.15
+        soft_threshold = max(0.3, threshold - soft_band)
+        self._current_hard_threshold = threshold
+        self._current_soft_threshold = soft_threshold
+
         # === STEP 5: Determine decision type ===
         decision_type = self._determine_decision_type(
             aggregated,
@@ -448,6 +458,7 @@ class AITraderEngine:
                 expected_return_pct=expected_return,
                 trade_type=decision_type,
                 confidence=aggregated.confidence,
+                horizon=self.config.trading_horizon,
             )
             enhancement_details['churn_filter'] = {
                 'allowed': churn_result.allowed,
@@ -843,8 +854,10 @@ class AITraderEngine:
             except (ValueError, TypeError):
                 pass  # If parsing fails, proceed normally
         
-        # If confidence below threshold, skip
-        if confidence < threshold:
+        # Soft gate: allow trades down to soft_threshold; position size is scaled
+        # down in _calculate_position_size based on (confidence - soft) / (hard - soft).
+        soft_threshold = getattr(self, '_current_soft_threshold', threshold)
+        if confidence < soft_threshold:
             return 'skip'
         
         # Check signal agreement requirement
@@ -1059,6 +1072,16 @@ class AITraderEngine:
             streak_scale = max(0.30, 1.0 - (self.consecutive_losses - 2) * 0.15)
             position_size *= streak_scale
         
+        # Soft-confidence scaling: if confidence is in the soft band (below hard
+        # threshold but above soft floor), reduce size linearly. At hard threshold
+        # the scale is 1.0; at the soft floor it approaches 0.
+        hard_thr = getattr(self, '_current_hard_threshold', None)
+        soft_thr = getattr(self, '_current_soft_threshold', None)
+        if hard_thr is not None and soft_thr is not None and confidence < hard_thr:
+            band = max(hard_thr - soft_thr, 1e-6)
+            conf_scale = max(0.0, (confidence - soft_thr) / band)
+            position_size *= conf_scale
+
         # For short positions, use a smaller position size (more conservative)
         if decision_type == 'short':
             position_size = position_size * 0.7  # 30% smaller than long positions
@@ -1223,7 +1246,20 @@ class AITraderEngine:
         Returns:
             Dictionary with reasoning details
         """
+        # Surface current price at top level for debug visibility — vorher
+        # steckte es nur in signals.ml.details.current_price, was beim Durch-
+        # klicken von Skip-Reasons unsichtbar war. Bevorzuge ML-Details (immer
+        # gesetzt wenn ML-Signal generiert wurde), Fallback technical/sentiment.
+        current_price = None
+        for sig_details in (aggregated.ml_details, aggregated.technical_details,
+                            aggregated.sentiment_details):
+            if isinstance(sig_details, dict):
+                current_price = sig_details.get('current_price') or current_price
+            if current_price:
+                break
+
         return {
+            'current_price': current_price,
             'weighted_score': aggregated.weighted_score,
             'threshold': threshold,
             'confidence': aggregated.confidence,

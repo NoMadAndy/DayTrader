@@ -5240,13 +5240,16 @@ app.get('/api/ai-traders/:id/portfolio', async (req, res) => {
 app.post('/api/ai-traders/:id/execute', async (req, res) => {
   try {
     const traderId = parseInt(req.params.id);
-    const { symbol, action, quantity, stop_loss, take_profit, reasoning } = req.body;
-    let { price } = req.body;
-    
-    // Validate quantity
-    if (!quantity || quantity <= 0) {
+    const { symbol, action, stop_loss, take_profit, reasoning } = req.body;
+    let { price, quantity } = req.body;
+
+    // Validate quantity. Engine sendet für shorts ein negatives quantity als
+    // Richtungs-Flag; downstream nutzt ohnehin Math.abs(). Richtung steckt in
+    // `action` — akzeptiere |quantity| > 0, sonst 400.
+    if (!quantity || Math.abs(quantity) <= 0) {
       return res.status(400).json({ error: 'Invalid quantity', quantity });
     }
+    quantity = Math.abs(quantity);
     
     // === REALISM: Reject trades outside market hours ===
     if (backgroundJobs.isOutsideTradingHours()) {
