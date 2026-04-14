@@ -452,8 +452,34 @@ class AITraderEngine:
 
         # === STEP 6: Churn Filter ===
         if self.churn_filter and decision_type in ('buy', 'short'):
-            # Estimate expected return from signal score
-            expected_return = abs(aggregated.weighted_score) * 5  # Rough: score * 5%
+            # Expected-Return-Schätzung: |score| × horizon-Ceiling, bei vorhandenem
+            # bb_width (aus Technical-Details, ~2σ-Range normalisiert auf Preis)
+            # volatility-skaliert. Scalper können nie einen ganzen swing-Move
+            # erwarten — ceiling bindet an tägliche Range; Position kann Multi-Day-
+            # Moves ernten. Fallback auf Horizon-Konstanten wenn bb_width fehlt.
+            bb_width_pct = None
+            tech = aggregated.technical_details or {}
+            if isinstance(tech, dict) and 'bb_width' in tech:
+                try:
+                    bb_width_pct = float(tech['bb_width']) * 100.0  # bb_width ist fraction of price
+                except (TypeError, ValueError):
+                    bb_width_pct = None
+
+            horizon_ceiling_pct = {
+                'scalping': 0.5,   # max ~0.5× tages-BB
+                'day': 1.0,        # full tages-BB
+                'swing': 2.5,
+                'position': 5.0,
+            }.get(self.config.trading_horizon, 1.0)
+            horizon_constant_pct = {
+                'scalping': 1.0, 'day': 2.0, 'swing': 5.0, 'position': 10.0,
+            }.get(self.config.trading_horizon, 2.0)
+
+            if bb_width_pct is not None and bb_width_pct > 0:
+                ceiling = bb_width_pct * horizon_ceiling_pct
+            else:
+                ceiling = horizon_constant_pct
+            expected_return = abs(aggregated.weighted_score) * ceiling
             churn_result = self.churn_filter.check_trade(
                 symbol=symbol,
                 expected_return_pct=expected_return,
