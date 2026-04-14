@@ -67,21 +67,42 @@ def clear_training_logs(agent_name: str):
 
 
 async def resume_running_traders():
-    """Resume all traders that were running before service restart."""
+    """Resume all traders that were running before service restart.
+
+    Backend rate-limits /api/ai-traders; ein 429 beim Boot hat früher das Auto-
+    Resume stumm abgebrochen und Trader sind bis zum nächsten manuellen Start
+    nicht mehr gelaufen. Jetzt Retry mit exponential backoff auf transient 429/
+    5xx.
+    """
     logger.info("resume_running_traders: Starting task...")
     try:
-        # Wait a bit for backend to be ready
         await asyncio.sleep(2)
         logger.info("resume_running_traders: Checking for traders...")
-        
+
         backend_url = settings.backend_url or "http://backend:3001"
         async with httpx.AsyncClient(timeout=30.0) as client:
-            # Fetch all AI traders from backend
-            logger.info(f"resume_running_traders: Fetching from {backend_url}/api/ai-traders")
-            response = await client.get(f"{backend_url}/api/ai-traders")
-            logger.info(f"resume_running_traders: Response status: {response.status_code}")
-            if response.status_code != 200:
-                logger.warning(f"Could not fetch AI traders: {response.status_code}")
+            response = None
+            last_status = None
+            # 6 Versuche: 2s, 5s, 10s, 20s, 40s, 60s → max ~140s Resume-Verzögerung
+            for attempt, delay in enumerate([2, 5, 10, 20, 40, 60], start=1):
+                logger.info(f"resume_running_traders: Fetching {backend_url}/api/ai-traders (attempt {attempt})")
+                try:
+                    response = await client.get(f"{backend_url}/api/ai-traders")
+                    last_status = response.status_code
+                except httpx.RequestError as e:
+                    logger.warning(f"resume_running_traders: Request error {e}; retrying in {delay}s")
+                    await asyncio.sleep(delay)
+                    continue
+                if response.status_code == 200:
+                    break
+                if response.status_code in (429, 503) or response.status_code >= 500:
+                    logger.warning(f"resume_running_traders: backend returned {response.status_code}; retrying in {delay}s")
+                    await asyncio.sleep(delay)
+                    continue
+                break  # 4xx other than 429 → give up
+
+            if response is None or response.status_code != 200:
+                logger.error(f"Could not fetch AI traders after retries; last status={last_status}")
                 return
             
             traders = response.json()
