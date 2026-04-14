@@ -12,6 +12,7 @@ Implements comprehensive risk checks including:
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 from datetime import datetime, time
+import os
 import httpx
 import pytz
 
@@ -52,7 +53,7 @@ class RiskManager:
         """
         self.config = config
         self.backend_url = "http://backend:3001"
-        self.http_client = httpx.AsyncClient(timeout=30.0)
+        self.http_client = httpx.AsyncClient(timeout=30.0, headers={'X-Internal-Service-Token': os.environ.get('INTERNAL_SERVICE_TOKEN', '')})
         
         # Pre-compute config values with defaults for null-safety
         self._initial_budget = config.initial_budget if config.initial_budget is not None else 100000

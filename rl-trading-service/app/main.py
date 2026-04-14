@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from collections import deque
+import os
 import asyncio
 from contextlib import asynccontextmanager
 import logging
@@ -80,7 +81,7 @@ async def resume_running_traders():
         logger.info("resume_running_traders: Checking for traders...")
 
         backend_url = settings.backend_url or "http://backend:3001"
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers={'X-Internal-Service-Token': os.environ.get('INTERNAL_SERVICE_TOKEN', '')}) as client:
             response = None
             last_status = None
             # 6 Versuche: 2s, 5s, 10s, 20s, 40s, 60s → max ~140s Resume-Verzögerung
@@ -563,7 +564,7 @@ async def train_from_backend(request: TrainFromBackendRequest, background_tasks:
                 log_message(f"   Date range: {start_date} to {end_date}")
                 
                 # Fetch data from backend for each symbol
-                async with httpx.AsyncClient(timeout=60.0) as client:
+                async with httpx.AsyncClient(timeout=60.0, headers={'X-Internal-Service-Token': os.environ.get('INTERNAL_SERVICE_TOKEN', '')}) as client:
                     for symbol in request.symbols:
                         try:
                             log_message(f"   Fetching {symbol}...")
@@ -887,7 +888,7 @@ async def get_quick_signal(agent_name: str, symbol: str = "AAPL"):
         end_date = datetime.now().strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d")
         
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers={'X-Internal-Service-Token': os.environ.get('INTERNAL_SERVICE_TOKEN', '')}) as client:
             response = await client.get(
                 f"{settings.backend_url}/api/historical-prices/{symbol}",
                 params={"startDate": start_date, "endDate": end_date}
@@ -983,7 +984,7 @@ async def backtest_agent(request: BacktestRequest):
             end_date = datetime.now().strftime("%Y-%m-%d")
             start_date = (datetime.now() - timedelta(days=request.days)).strftime("%Y-%m-%d")
             
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=60.0, headers={'X-Internal-Service-Token': os.environ.get('INTERNAL_SERVICE_TOKEN', '')}) as client:
                 response = await client.get(
                     f"{settings.backend_url}/api/historical-prices/{request.symbol}",
                     params={"startDate": start_date, "endDate": end_date}

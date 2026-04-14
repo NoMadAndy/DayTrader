@@ -10,6 +10,7 @@ Aggregates signals from multiple sources:
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
+import os
 import asyncio
 import numpy as np
 import httpx
@@ -46,7 +47,11 @@ class SignalAggregator:
         self.config = config
         self.ml_service_url = "http://ml-service:8000"
         self.backend_url = "http://backend:3001"  # For combined endpoints
-        self.http_client = httpx.AsyncClient(timeout=30.0)
+        self.http_client = httpx.AsyncClient(timeout=30.0, headers={'X-Internal-Service-Token': os.environ.get('INTERNAL_SERVICE_TOKEN', '')})
+        # Cache of previous ML predictions per symbol so we can feed prediction/actual
+        # pairs back to the drift detector once the actual price becomes known.
+        # Format: {symbol: {"predicted_price": float, "timestamp": str}}
+        self._last_ml_predictions: Dict[str, Dict[str, Any]] = {}
     
     async def aggregate_signals(
         self,
@@ -88,18 +93,28 @@ class SignalAggregator:
         rl_conf = rl_result.get('confidence', 0.5)
         sentiment_conf = sentiment_result.get('confidence', 0.5)
         technical_conf = technical_result.get('confidence', 0.5)
-        
+
         # Adjust weights based on signal availability/confidence
         # Use defaults if weights are None
         ml_weight = self.config.ml_weight if self.config.ml_weight is not None else 0.25
         rl_weight = self.config.rl_weight if self.config.rl_weight is not None else 0.25
         sentiment_weight = self.config.sentiment_weight if self.config.sentiment_weight is not None else 0.25
         technical_weight = self.config.technical_weight if self.config.technical_weight is not None else 0.25
-        
-        effective_ml_weight = ml_weight * (ml_conf if ml_conf > 0.1 else 0.1)
-        effective_rl_weight = rl_weight * (rl_conf if rl_conf > 0.1 else 0.1)
-        effective_sentiment_weight = sentiment_weight * (sentiment_conf if sentiment_conf > 0.1 else 0.1)
-        effective_technical_weight = technical_weight * (technical_conf if technical_conf > 0.1 else 0.1)
+
+        # Wenn ein Signal einen Error meldet (z.B. "No RL agent configured",
+        # Obs-Space-Mismatch, News-Proxy timeout), ist score=0 mit conf=0. Früher
+        # zog der Confidence-Floor von 0.1 ein Rest-Gewicht auf dieses 0-Signal
+        # und bias'te weighted_score ~10 % Richtung Mitte. Jetzt: Error-getaggte
+        # Quellen bekommen weight=0, die Normalisierung unten verteilt den Rest.
+        ml_error = bool(ml_result.get('error'))
+        rl_error = bool(rl_result.get('error'))
+        sentiment_error = bool(sentiment_result.get('error'))
+        technical_error = bool(technical_result.get('error'))
+
+        effective_ml_weight = 0.0 if ml_error else ml_weight * (ml_conf if ml_conf > 0.1 else 0.1)
+        effective_rl_weight = 0.0 if rl_error else rl_weight * (rl_conf if rl_conf > 0.1 else 0.1)
+        effective_sentiment_weight = 0.0 if sentiment_error else sentiment_weight * (sentiment_conf if sentiment_conf > 0.1 else 0.1)
+        effective_technical_weight = 0.0 if technical_error else technical_weight * (technical_conf if technical_conf > 0.1 else 0.1)
         
         # Adjust weights based on market regime
         regime = market_regime.get('regime', 'range')
@@ -133,9 +148,18 @@ class SignalAggregator:
             technical_score * effective_technical_weight
         )
         
-        # Calculate agreement level
-        scores = [ml_score, rl_score, sentiment_score, technical_score]
-        agreement = self._calculate_agreement(scores)
+        # Calculate agreement level — error-getaggte Signale (score=0) nicht
+        # mitzählen, sonst kippt ein fehlender RL-Agent drei bullische Signale
+        # von "strong" auf "mixed".
+        scores_for_agreement = [
+            s for s, err in (
+                (ml_score, ml_error),
+                (rl_score, rl_error),
+                (sentiment_score, sentiment_error),
+                (technical_score, technical_error),
+            ) if not err
+        ]
+        agreement = self._calculate_agreement(scores_for_agreement) if scores_for_agreement else 'mixed'
         
         # Calculate confidence based on agreement and individual confidences
         # Only consider signals with valid confidence (> 0.05)
@@ -237,11 +261,33 @@ class SignalAggregator:
                 current_price = data.get('current_price', 0)
                 
                 if predictions and current_price > 0:
+                    # Feed the drift detector: the previous cycle's prediction is now
+                    # scored against today's current_price (the actual that realized
+                    # since the prediction was made). Fire-and-forget; don't block
+                    # the signal pipeline on it.
+                    prev = self._last_ml_predictions.get(symbol)
+                    if prev and prev.get('predicted_price'):
+                        asyncio.create_task(self._record_drift_sample(
+                            symbol=symbol,
+                            predicted_price=prev['predicted_price'],
+                            actual_price=current_price,
+                            timestamp=prev.get('timestamp'),
+                        ))
+
+                    # Surface drift warnings from the ML service to the caller so
+                    # downstream logic (and logs) can react to them.
+                    drift_warning = data.get('drift_warning')
+
                     # Use first prediction (day 1) for immediate signal
                     first_pred = predictions[0]
                     predicted_price = first_pred.get('predicted_price', current_price)
                     confidence = first_pred.get('confidence', 0.5)
                     change_pct = first_pred.get('change_pct', 0)
+
+                    self._last_ml_predictions[symbol] = {
+                        'predicted_price': predicted_price,
+                        'timestamp': datetime.utcnow().isoformat(),
+                    }
                     
                     # Normalize change_pct relative to symbol's historical volatility
                     # instead of fixed /10.0 — adapts to each stock's range
@@ -261,7 +307,8 @@ class SignalAggregator:
                         'prediction': predicted_price,
                         'current_price': current_price,
                         'predicted_change': change_pct / 100.0,  # Convert percentage to decimal
-                        'model': data.get('model_info', {}).get('type', 'lstm')
+                        'model': data.get('model_info', {}).get('type', 'lstm'),
+                        'drift_warning': drift_warning,
                     }
                 else:
                     return {
@@ -304,6 +351,27 @@ class SignalAggregator:
                 'error': str(e)
             }
     
+    async def _record_drift_sample(
+        self,
+        symbol: str,
+        predicted_price: float,
+        actual_price: float,
+        timestamp: Optional[str] = None,
+    ) -> None:
+        try:
+            await self.http_client.post(
+                f"{self.ml_service_url}/api/ml/drift/record",
+                json={
+                    'symbol': symbol,
+                    'predicted_price': float(predicted_price),
+                    'actual_price': float(actual_price),
+                    'timestamp': timestamp,
+                },
+                timeout=5.0,
+            )
+        except Exception as e:
+            print(f"Drift recording failed for {symbol}: {e}")
+
     async def _auto_train_ml_model(self, symbol: str, market_data: Dict) -> Dict:
         """
         Automatically train an ML model for a symbol if none exists.

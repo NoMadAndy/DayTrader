@@ -57,21 +57,32 @@ if (CORS_ORIGIN === '*' && NODE_ENV === 'production') {
 }
 
 // Rate limiting configuration
-// Paths exempt from rate limiting (relative to /api mount point)
+// Paths exempt from rate limiting (relative to /api mount point).
+// Interne Orchestrierung (rl-trading-service Auto-Resume, Frontend-Polling
+// der Trader-Liste) löst sonst 429s aus und unterbricht den Scheduler-Loop.
 const RATE_LIMIT_SKIP_PATHS = new Set([
   '/auth/status',     // Lightweight auth status check
   '/rl/health',       // RL service health check
   '/rl/agents',       // RL agent listing
   '/ml/health',       // ML service health check
+  '/ai-traders',      // Trader-Liste (resume_running_traders + Frontend-Refresh)
 ]);
 
+// Internal service calls (rl-trading-service → backend) tragen diesen Header
+// und sind vom Ratelimit ausgenommen. Secret kommt aus ENV; wenn unset, wird
+// der Check gar nicht angewandt (keine Exemption).
+const INTERNAL_SERVICE_TOKEN = process.env.INTERNAL_SERVICE_TOKEN || '';
 const apiLimiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10), // 1 minute
   max: parseInt(process.env.RATE_LIMIT_MAX || '100', 10), // 100 requests per window
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
-  skip: (req) => RATE_LIMIT_SKIP_PATHS.has(req.path),
+  skip: (req) => {
+    if (RATE_LIMIT_SKIP_PATHS.has(req.path)) return true;
+    if (INTERNAL_SERVICE_TOKEN && req.headers['x-internal-service-token'] === INTERNAL_SERVICE_TOKEN) return true;
+    return false;
+  },
 });
 
 const authLimiter = rateLimit({

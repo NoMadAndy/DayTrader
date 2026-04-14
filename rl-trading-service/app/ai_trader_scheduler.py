@@ -28,7 +28,7 @@ class AITraderScheduler:
             backend_url: URL of backend service
         """
         self.backend_url = backend_url
-        self.http_client = httpx.AsyncClient(timeout=30.0)
+        self.http_client = httpx.AsyncClient(timeout=30.0, headers={'X-Internal-Service-Token': os.environ.get('INTERNAL_SERVICE_TOKEN', '')})
         self.engines: Dict[int, AITraderEngine] = {}
         self.running_tasks: Dict[int, asyncio.Task] = {}
         self.training_tasks: Dict[int, asyncio.Task] = {}

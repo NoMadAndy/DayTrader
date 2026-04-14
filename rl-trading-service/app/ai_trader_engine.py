@@ -20,6 +20,7 @@ Enhanced with:
 from typing import Optional, Dict, List, Any
 from dataclasses import dataclass, field
 from datetime import datetime
+import os
 import httpx
 import numpy as np
 
@@ -227,7 +228,7 @@ class AITraderEngine:
 
         self.signal_aggregator = SignalAggregator(config)
         self.risk_manager = RiskManager(config)
-        self.http_client = httpx.AsyncClient(timeout=30.0)
+        self.http_client = httpx.AsyncClient(timeout=30.0, headers={'X-Internal-Service-Token': os.environ.get('INTERNAL_SERVICE_TOKEN', '')})
         self.consecutive_losses = 0
         self.consecutive_wins = 0
         self._trade_history: list = []  # Recent trade outcomes for streak tracking
