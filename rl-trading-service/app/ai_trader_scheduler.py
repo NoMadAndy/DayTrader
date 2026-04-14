@@ -204,6 +204,11 @@ class AITraderScheduler:
                                 # Set cooldown after closing to prevent immediate re-buy
                                 if decision.decision_type in ['sell', 'close']:
                                     self._set_cooldown(trader_id, symbol)
+                            elif decision.decision_type in ['sell', 'close']:
+                                # Backend rejected close (meist stale portfolio_state):
+                                # "No position to sell". Cooldown setzen, damit die
+                                # nächsten Ticks nicht dasselbe nochmal versuchen.
+                                self._set_cooldown(trader_id, symbol)
                         
                     except Exception as e:
                         import traceback

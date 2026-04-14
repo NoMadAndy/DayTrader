@@ -648,8 +648,19 @@ class AITraderEngine:
             signal_agreement=aggregated.agreement,
             reasoning=reasoning,
             summary_short=summary,
-            quantity=quantity if decision_type in ['buy', 'sell', 'short'] else None,
-            price=current_price if decision_type in ['buy', 'sell', 'short'] else None,
+            # For close, quantity/price kommen aus der existing Position, nicht aus
+            # _calculate_position_size (das gibt (0,0) für close). Ohne diese Werte
+            # hat der Scheduler null im /execute-Payload und backend 400t mit
+            # "Invalid quantity".
+            quantity=(
+                quantity if decision_type in ['buy', 'sell', 'short']
+                else (abs(int(portfolio_state.get('positions', {}).get(symbol, {}).get('quantity') or 0))
+                      if decision_type == 'close' else None)
+            ),
+            price=(
+                current_price if decision_type in ['buy', 'sell', 'short', 'close']
+                else None
+            ),
             stop_loss=stop_loss,
             take_profit=take_profit,
             risk_checks_passed=risk_result.all_passed,
