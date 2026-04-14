@@ -101,7 +101,7 @@ class RiskManager:
         checks.append(self._check_max_positions(current_portfolio, decision_type))
         checks.append(self._check_symbol_exposure(symbol, position_size, current_portfolio))
         checks.append(self._check_total_exposure(position_size, current_portfolio, decision_type))
-        checks.append(self._check_cash_reserve(position_size, current_portfolio))
+        checks.append(self._check_cash_reserve(position_size, current_portfolio, decision_type))
         checks.append(self._check_daily_loss(current_portfolio))
         checks.append(self._check_max_drawdown(current_portfolio))
         checks.append(self._check_trading_hours())
@@ -219,16 +219,31 @@ class RiskManager:
         current_portfolio: Dict,
         decision_type: str
     ) -> RiskCheck:
-        """Check total portfolio exposure"""
+        """Check total portfolio exposure.
+
+        Closing Aktionen ('sell', 'close', 'cover') REDUZIEREN Exposure — diese
+        Checks dürfen sie nie blockieren, sonst bleibt ein über-exponiertes
+        Portfolio für immer offen (die einzige Lösung wäre sonst, erst Cash zu
+        erzeugen, aber man kann ja nicht verkaufen…).
+        """
         total_invested = current_portfolio.get('total_invested') or 0
-        
-        # Add new position if opening (buy or short)
+        max_exposure = self._initial_budget * self._max_total_exposure
+
+        if decision_type in ('sell', 'close', 'cover'):
+            return RiskCheck(
+                name="Total Exposure",
+                category="exposure",
+                passed=True,
+                value=f"${total_invested:,.0f}",
+                limit=f"${max_exposure:,.0f}",
+                description=f"Closing reduziert Exposure (Limit {self._max_total_exposure*100:.0f}% of budget)",
+                severity='info',
+            )
+
         if decision_type in ('buy', 'short'):
             total_invested += new_position_size
-        
-        max_exposure = self._initial_budget * self._max_total_exposure
+
         passed = total_invested <= max_exposure
-        
         return RiskCheck(
             name="Total Exposure",
             category="exposure",
@@ -238,16 +253,29 @@ class RiskManager:
             description=f"Total exposure must not exceed {self._max_total_exposure*100:.0f}% of budget",
             severity='blocker' if not passed else 'info'
         )
-    
-    def _check_cash_reserve(self, position_size: float, current_portfolio: Dict) -> RiskCheck:
-        """Check if we maintain minimum cash reserve"""
+
+    def _check_cash_reserve(self, position_size: float, current_portfolio: Dict, decision_type: str = 'buy') -> RiskCheck:
+        """Check if we maintain minimum cash reserve.
+
+        Sell/Close GENERIEREN Cash — nie blockieren, sonst hängt ein überzogen-
+        investiertes Portfolio im Limbo.
+        """
         cash = current_portfolio.get('cash') or self._initial_budget
         min_reserve = self._initial_budget * self._reserve_cash
-        
-        # After buying, will we still have enough cash?
+
+        if decision_type in ('sell', 'close', 'cover'):
+            return RiskCheck(
+                name="Cash Reserve",
+                category="liquidity",
+                passed=True,
+                value=f"${cash:,.0f}",
+                limit=f"${min_reserve:,.0f}",
+                description=f"Closing produziert Cash (Reserve {self._reserve_cash*100:.0f}% of budget)",
+                severity='info',
+            )
+
         remaining_cash = cash - position_size
         passed = remaining_cash >= min_reserve
-        
         return RiskCheck(
             name="Cash Reserve",
             category="liquidity",

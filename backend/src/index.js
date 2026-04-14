@@ -4990,17 +4990,18 @@ app.patch('/api/ai-traders/:id/decisions/mark-executed', async (req, res) => {
     const traderId = parseInt(req.params.id);
     const { symbol, decision_type, timestamp } = req.body;
     
-    // Find the most recent decision matching the criteria
+    // Find the most recent decision matching the criteria. Die Tabelle hat
+    // keine updated_at-Spalte — der frühere Versuch, sie zu setzen, warf SQL-
+    // Error und der Flag blieb false, obwohl Trades ausgeführt wurden.
     const result = await db.query(
-      `UPDATE ai_trader_decisions 
-       SET executed = true, 
-           updated_at = NOW()
+      `UPDATE ai_trader_decisions
+       SET executed = true
        WHERE id = (
-         SELECT id FROM ai_trader_decisions 
-         WHERE ai_trader_id = $1 
-           AND symbol = $2 
+         SELECT id FROM ai_trader_decisions
+         WHERE ai_trader_id = $1
+           AND symbol = $2
            AND decision_type = $3
-         ORDER BY timestamp DESC 
+         ORDER BY timestamp DESC
          LIMIT 1
        )
        RETURNING id`,
