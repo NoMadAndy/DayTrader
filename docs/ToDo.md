@@ -46,6 +46,7 @@ Motivation: News-Signale sollen tradable sein, nicht nur Noise. Ausgangslage sie
 - Walk-Forward für Transformer implementieren (P0c, Parität zu `model.py`)
 - IC / Rank-IC des Sentiment-Signals tracken (Sprint B P1, `aiTraderSignalAccuracy.js`)
 - ~~RL-Eval auf Hard-Hold-out~~ ✓ 2026-04-13: 80/20-Split war schon da, aber OOS nur auf erstem Symbol bewertet. Jetzt alle Test-Symbole + Calmar-Ratio in `_evaluate_model` + per-symbol-Ergebnisse in `oos_performance_metrics` (Sprint B P1, [trainer.py](../rl-trading-service/app/trainer.py)).
+- **RL-Legacy-Agents entsorgen oder retrainen**: `aggressive_momentum` und `balanced_trader1` wurden vor dem Sprint-2-Cross-Asset-Feature-Sprint trainiert (Obs-Space 2105 statt 2407). Jeder `predict()`-Call wirft `spaces must have the same shape`. Andere 8 Agents (`day_trader0001`/`1`/`2`/`3`/`0002`, `conservative_swing0001`/`1`, `position_investor`) laufen sauber mit 2407. Aktuell sind alle Trader auf kompatible Agents gemapped (DB-Update 2026-04-14: Scalper→`day_trader1`, News-Trader+Algo-Stratege→`day_trader0001`). → Entweder die beiden Legacy-Agents retrainen oder aus `/rl/agents` löschen.
 
 ---
 
