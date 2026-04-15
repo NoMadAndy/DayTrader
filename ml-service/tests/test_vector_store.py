@@ -43,11 +43,12 @@ def test_upsert_search_roundtrip():
     pid = str(uuid.uuid4())
     now = int(time.time())
     vec = _rand_vec()
+    sym = f"RT-{uuid.uuid4().hex[:8].upper()}"
     vs.upsert(
         "news",
-        [{"id": pid, "vector": vec, "payload": {"symbol": "TEST", "published_at": now, "source": "pytest"}}],
+        [{"id": pid, "vector": vec, "payload": {"symbol": sym, "published_at": now, "source": "pytest"}}],
     )
-    hits = vs.search("news", vec, k=1, flt={"symbol": "TEST"})
+    hits = vs.search("news", vec, k=1, flt={"symbol": sym})
     assert hits and hits[0]["id"] == pid
     assert hits[0]["payload"]["source"] == "pytest"
 

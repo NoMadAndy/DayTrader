@@ -25,6 +25,7 @@ from .drift_detector import DriftDetector
 from . import sentiment as finbert
 from . import embeddings as rag_embeddings
 from . import vector_store as rag_store
+from . import news_features as rag_news_features
 
 # Store for active predictors (keyed by "SYMBOL" for LSTM, "SYMBOL_transformer" for Transformer)
 predictors: Dict[str, object] = {}  # StockPredictor | TransformerStockPredictor | EnsemblePredictor
@@ -925,6 +926,42 @@ async def rag_search(collection: str, request: RagSearchRequest):
 @app.get("/rag/health", tags=["RAG"])
 async def rag_health():
     return {"embedder": rag_embeddings.info(), "qdrant": rag_store.health()}
+
+
+class NewsRedundancyRequest(BaseModel):
+    symbol: str = Field(..., description="Trading symbol")
+    decision_ts: int = Field(..., gt=0, description="Unix-second timestamp at which the decision is being made")
+    window_seconds: int = Field(rag_news_features.DEFAULT_WINDOW_SECONDS, ge=60, le=30 * 24 * 3600)
+    cluster_threshold: float = Field(rag_news_features.DEFAULT_CLUSTER_THRESHOLD, ge=0.0, le=1.0)
+    decay_tau_seconds: float = Field(rag_news_features.DEFAULT_DECAY_TAU_SECONDS, gt=0)
+    max_articles: int = Field(200, ge=1, le=1000)
+
+
+@app.post("/rag/news/redundancy", tags=["RAG"])
+async def rag_news_redundancy(request: NewsRedundancyRequest):
+    """
+    Compute look-ahead-safe news redundancy + freshness-decayed cluster weight
+    for use as a signal feature. published_at < decision_ts is enforced.
+    """
+    res = rag_news_features.compute_news_redundancy(
+        symbol=request.symbol,
+        decision_ts=request.decision_ts,
+        window_seconds=request.window_seconds,
+        cluster_threshold=request.cluster_threshold,
+        decay_tau_seconds=request.decay_tau_seconds,
+        max_articles=request.max_articles,
+    )
+    return {
+        "success": True,
+        "symbol": res.symbol,
+        "decision_ts": res.decision_ts,
+        "window_seconds": res.window_seconds,
+        "total_articles": res.total_articles,
+        "unique_clusters": res.unique_clusters,
+        "redundancy": res.redundancy,
+        "cluster_weight": res.cluster_weight,
+        "latest_published_at": res.latest_published_at,
+    }
 
 
 # ============== Warrant Pricing ==============

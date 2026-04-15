@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — RAG Phase 1C: News-Cluster-Redundancy als Sentiment-Confidence-Modifier
+
+- **`ml-service/app/news_features.py`** — `compute_news_redundancy(symbol, decision_ts, …)` zieht via Qdrant-Scroll alle News in `[decision_ts - window, decision_ts)` (Look-ahead-Guard hart erzwungen), greedy-clustert per Cosine, liefert `total_articles`, `unique_clusters`, `redundancy = 1 - unique/total`, `cluster_weight = Σ exp(-Δt/τ)`, `latest_published_at`. Defaults via ENV `NEWS_REDUNDANCY_WINDOW_SECONDS`, `NEWS_CLUSTER_THRESHOLD` (0.75 für bge-base, empirisch), `NEWS_DECAY_TAU_SECONDS`.
+- **`ml-service/app/main.py`** — neuer Endpoint `POST /rag/news/redundancy`. Window-Cap auf 30d.
+- **`rl-trading-service/app/ai_trader_signals.py`** — `_get_news_redundancy(symbol, decision_ts)` ruft den Endpoint, `_get_sentiment_signal()` multipliziert die Sentiment-Confidence mit `exp(-redundancy)` (0 dup → 1.0, 50% dup → 0.61, 90% dup → 0.41). Score-Vorzeichen bleibt unangetastet — nur die Gewichtung in der Aggregation reagiert. Soft-Fail: bei Qdrant-Ausfall arbeitet Sentiment unverändert weiter. Neue Felder im Result: `news_redundancy`, `news_unique_clusters`, `news_cluster_weight`, `confidence_raw`.
+- **Tests** — `tests/test_news_features.py` (3 Tests: Look-ahead-Filter exkludiert Future-Articles, Cluster-Collapse für Paraphrasen, leeres Fenster). 10/10 RAG-Tests grün.
+
 ### Added — RAG Phase 1A+B: News-Ingest-Hook + Backfill
 
 - **`backend/src/ragIngest.js`** — `ingestNewsHeadlines(symbol, sources)`: fire-and-forget POST an `ml-service /rag/ingest/news` mit stabilen UUID-IDs (sha1-Hash über `symbol|url||headline`) → idempotent bei Re-Ingest. AbortController-Timeout (default 4 s, ENV `RAG_INGEST_TIMEOUT_MS`). Failures werden geloggt, blocken nie die Sentiment-Response.

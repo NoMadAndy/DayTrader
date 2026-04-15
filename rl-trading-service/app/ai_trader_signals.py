@@ -642,13 +642,31 @@ class SignalAggregator:
                 elif sentiment == 'positive' and score < 0:
                     score = abs(score)
                 
+                base_confidence = data.get('confidence', 0.5)
+
+                # News-cluster modifier: query Qdrant via ml-service for the
+                # number of *distinct* news clusters in the look-back window.
+                # Raw sentiment over 5 paraphrases of the same wire story is
+                # the same single signal — confidence should reflect that.
+                redundancy_info = await self._get_news_redundancy(symbol)
+                effective_conf = base_confidence
+                if redundancy_info and redundancy_info.get('total_articles', 0) > 0:
+                    redundancy = float(redundancy_info.get('redundancy', 0.0))
+                    # exp(-redundancy): 0 dup → 1.0, 50% dup → 0.61, 90% dup → 0.41
+                    quality_factor = float(np.exp(-redundancy))
+                    effective_conf = base_confidence * quality_factor
+
                 return {
                     'score': score,
-                    'confidence': data.get('confidence', 0.5),
+                    'confidence': effective_conf,
+                    'confidence_raw': base_confidence,
                     'sentiment': sentiment,
                     'sentiment_score': raw_score,
                     'news_count': data.get('news_count', 0),
-                    'sources': data.get('sources', [])
+                    'sources': data.get('sources', []),
+                    'news_redundancy': (redundancy_info or {}).get('redundancy'),
+                    'news_unique_clusters': (redundancy_info or {}).get('unique_clusters'),
+                    'news_cluster_weight': (redundancy_info or {}).get('cluster_weight'),
                 }
             else:
                 print(f"Sentiment service error: {response.status_code}")
@@ -668,6 +686,30 @@ class SignalAggregator:
                 'error': str(e)
             }
     
+    async def _get_news_redundancy(self, symbol: str, decision_ts: Optional[int] = None) -> Optional[Dict]:
+        """
+        Fetch news cluster redundancy from ml-service for the given symbol.
+
+        Look-ahead-safe: ml-service enforces published_at < decision_ts. When
+        decision_ts is omitted (live signal path), the current time is used.
+
+        Returns None on any failure — the caller must treat this as a soft
+        feature so sentiment still works if Qdrant is down.
+        """
+        try:
+            ts = int(decision_ts) if decision_ts is not None else int(datetime.utcnow().timestamp())
+            response = await self.http_client.post(
+                f"{self.ml_service_url}/rag/news/redundancy",
+                json={"symbol": symbol, "decision_ts": ts},
+                timeout=5.0,
+            )
+            if response.status_code != 200:
+                return None
+            return response.json()
+        except Exception as e:
+            print(f"news redundancy lookup failed for {symbol}: {e}")
+            return None
+
     def _detect_market_regime(self, market_data: Dict, technical_result: Dict) -> Dict:
         """
         Detect current market regime from price data and technical indicators.
