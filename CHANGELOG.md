@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — RAG Phase 0: Qdrant + bge-base Embedder
+
+- **`ml-service/app/embeddings.py`** — Singleton-Wrapper um `sentence-transformers` mit `BAAI/bge-base-en-v1.5` (768 dim, cosine-normalisiert). ENV `EMBEDDER_MODEL`, `EMBEDDER_DEVICE` (default `cpu`, damit FinBERT auf GPU nicht konkurriert), `EMBEDDER_BATCH_SIZE`.
+- **`ml-service/app/vector_store.py`** — Qdrant-Wrapper mit Bootstrap für Collections `news`, `trades`, `signals`, `repo` (768 dim, cosine). Payload-Indizes auf häufig gefilterten Feldern (`symbol`, `published_at`, `kind` etc.). Range-Filter-Support (`{gt,gte,lt,lte}`) für zwingenden Look-ahead-Guard.
+- **`docker-compose.yml`** — neuer Service `qdrant` (v1.17, Volume `qdrant-data`, TCP-Healthcheck). ml-service `depends_on: qdrant`. Neue ENVs: `QDRANT_URL`, `EMBEDDER_MODEL`, `EMBEDDER_DEVICE`, `EMBEDDER_BATCH_SIZE`.
+- **`ml-service/Dockerfile`** — `sentence-transformers` + `qdrant-client` zu Builder-Stage; bge-Modell wird beim Build vorgeladen (HF-Cache in Prod-Stage übernommen → kein Cold-Start-Download).
+- **API** — neue Endpoints `POST /rag/embed`, `POST /rag/ingest/{collection}`, `POST /rag/search/{collection}`, `GET /rag/health`. Bestehender FinBERT-CLS-Endpoint `/api/ml/embed/batch` bleibt für Rückwärtskompatibilität.
+- **Tests** — `tests/test_embeddings.py` (Determinismus, Shape, Normalisierung), `tests/test_vector_store.py` (Round-Trip, expliziter Look-ahead-Range-Filter-Test). 7/7 pass.
+
 ### Added — Sprint 2: Cross-Asset Features, LSTM+Transformer Ensemble, Concept Drift Detection, Feature Selection
 
 - **`ml-service/app/cross_asset_features.py`** — `CrossAssetFeatureProvider`: fetches S&P 500 returns, VIX level, US 10Y Treasury yield, USD Index return, and sector-ETF return via `yfinance`; in-memory TTL cache (default 1 h); entirely optional — models work unchanged when disabled.

@@ -23,6 +23,8 @@ from .transformer_model import TransformerStockPredictor
 from .ensemble_model import EnsemblePredictor
 from .drift_detector import DriftDetector
 from . import sentiment as finbert
+from . import embeddings as rag_embeddings
+from . import vector_store as rag_store
 
 # Store for active predictors (keyed by "SYMBOL" for LSTM, "SYMBOL_transformer" for Transformer)
 predictors: Dict[str, object] = {}  # StockPredictor | TransformerStockPredictor | EnsemblePredictor
@@ -45,7 +47,14 @@ async def lifespan(app: FastAPI):
             print("FinBERT model loaded successfully")
         else:
             print("FinBERT model loading deferred (will load on first request)")
-    
+
+    # RAG stack: bootstrap Qdrant collections; embedder loads lazily on first /rag call
+    try:
+        rag_store.ensure_collections()
+        print(f"Qdrant ready: {rag_store.health()}")
+    except Exception as exc:
+        print(f"Qdrant bootstrap failed (RAG endpoints will error until reachable): {exc}")
+
     yield
     print("Shutting down ML Service")
 
@@ -839,6 +848,83 @@ async def embed_batch_endpoint(request: EmbedBatchRequest):
         "dim": 768,
         "count": len(embeddings),
     }
+
+
+# ============== RAG: Embeddings + Vector Store ==============
+
+
+class RagEmbedRequest(BaseModel):
+    texts: List[str] = Field(..., description="Texts to embed (batched)")
+
+
+@app.post("/rag/embed", tags=["RAG"])
+async def rag_embed(request: RagEmbedRequest):
+    if not request.texts:
+        raise HTTPException(status_code=400, detail="texts must be non-empty")
+    if len(request.texts) > 256:
+        raise HTTPException(status_code=400, detail="max 256 texts per call")
+    vectors = rag_embeddings.embed(request.texts)
+    return {"success": True, "vectors": vectors, "dim": rag_embeddings.EMBEDDING_DIM, "count": len(vectors)}
+
+
+class RagIngestItem(BaseModel):
+    text: str = Field(..., description="Text to embed and store")
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    id: Optional[str] = Field(default=None, description="Optional stable id (else UUID)")
+
+
+class RagIngestRequest(BaseModel):
+    items: List[RagIngestItem]
+
+
+def _validate_collection(name: str) -> None:
+    if name not in rag_store.COLLECTIONS:
+        raise HTTPException(status_code=400, detail=f"unknown collection '{name}'")
+
+
+@app.post("/rag/ingest/{collection}", tags=["RAG"])
+async def rag_ingest(collection: str, request: RagIngestRequest):
+    _validate_collection(collection)
+    if not request.items:
+        return {"success": True, "upserted": 0}
+    if len(request.items) > 256:
+        raise HTTPException(status_code=400, detail="max 256 items per call")
+    texts = [i.text for i in request.items]
+    vectors = rag_embeddings.embed(texts)
+    to_upsert = [
+        {"id": item.id, "vector": vec, "payload": item.payload}
+        for item, vec in zip(request.items, vectors)
+    ]
+    n = rag_store.upsert(collection, to_upsert)
+    return {"success": True, "upserted": n}
+
+
+class RagSearchRequest(BaseModel):
+    query: str = Field(..., description="Natural-language query text")
+    k: int = Field(8, ge=1, le=100)
+    filter: Optional[Dict[str, Any]] = Field(default=None, description="Payload filter; range via {gt,gte,lt,lte}")
+    score_threshold: Optional[float] = None
+
+
+@app.post("/rag/search/{collection}", tags=["RAG"])
+async def rag_search(collection: str, request: RagSearchRequest):
+    _validate_collection(collection)
+    if not request.query.strip():
+        raise HTTPException(status_code=400, detail="query must be non-empty")
+    vec = rag_embeddings.embed([request.query])[0]
+    hits = rag_store.search(
+        collection=collection,
+        query_vector=vec,
+        k=request.k,
+        flt=request.filter,
+        score_threshold=request.score_threshold,
+    )
+    return {"success": True, "hits": hits, "count": len(hits)}
+
+
+@app.get("/rag/health", tags=["RAG"])
+async def rag_health():
+    return {"embedder": rag_embeddings.info(), "qdrant": rag_store.health()}
 
 
 # ============== Warrant Pricing ==============

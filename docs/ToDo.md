@@ -33,9 +33,9 @@ Motivation: News-Signale sollen tradable sein, nicht nur Noise. Ausgangslage sie
 - Event-Typ-Separation (Earnings vs Upgrade vs M&A vs Rumor)
 
 ### Claude-Verhalten / LLM-Integration
-- Post-Trade-Explainability in [backend/src/aiTraderInsights.js](../backend/src/aiTraderInsights.js) mit LLM anreichern
+- Post-Trade-Explainability in [backend/src/aiTraderInsights.js](../backend/src/aiTraderInsights.js) mit LLM anreichern → **in Arbeit** (Phase 2 von RAG-Stack, siehe [Plan](../../.claude/plans/curious-sleeping-eagle.md))
 - Prompt-Caching für wiederkehrende Kontexte (Marktregime, Ticker-Profile)
-- RAG-artiger Speicher für historische Trades + Begründungen (Vektor-DB)
+- RAG-artiger Speicher für historische Trades + Begründungen (Vektor-DB) → Phase 0 ✓ 2026-04-15: Qdrant + bge-base-en-v1.5 (768 dim) + Collections `news/trades/signals/repo` + `/rag/*` Endpoints + 7/7 Tests. Nächste Phasen: (1) News-Redundanz als RL-Feature, (2) Haiku-Post-Trade-Erklärungen default-on, (3) Repo-Research-CLI.
 - Strukturierte Tool-Calls statt Freitext bei Signalgenerierung
 
 ### Backtest- & Evaluations-Hygiene

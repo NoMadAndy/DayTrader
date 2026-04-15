@@ -43,6 +43,11 @@ RUN pip install --no-cache-dir torch torchvision --index-url https://download.py
 # Install remaining dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Preload bge-base-en-v1.5 so cold-starts don't download ~440MB
+ARG EMBEDDER_MODEL=BAAI/bge-base-en-v1.5
+ENV HF_HOME=/opt/hf-cache
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${EMBEDDER_MODEL}')"
+
 # =============================================================================
 # Stage 3: Production
 # =============================================================================
@@ -69,6 +74,10 @@ ENV TORCH_NUM_THREADS=${TORCH_NUM_THREADS:-2}
 
 # Copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
+
+# Carry HF cache (incl. preloaded bge model) into the production stage
+ENV HF_HOME=/opt/hf-cache
+COPY --from=builder /opt/hf-cache /opt/hf-cache
 
 # Copy application code
 COPY app/ /app/app/
