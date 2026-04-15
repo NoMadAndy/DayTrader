@@ -1,13 +1,21 @@
 /**
  * Hook for connecting to AI Trader SSE stream
- * 
+ *
  * Enhanced with reverse proxy compatibility:
  * - Heartbeat monitoring to detect stale connections
  * - Automatic polling fallback when SSE fails
  * - Reconnection with exponential backoff
  * - EventSource.readyState monitoring
  * - Periodic connection health checks
+ *
+ * NOTE on react-hooks/immutability suppression below: this hook intentionally
+ * mutates ref-objects (reconnect counters, timer handles, EventSource
+ * instances) as part of the SSE lifecycle. Moving these into useState would
+ * cause reconnect storms because each assignment would re-render, which re-
+ * runs the effect and reconnects again. Refs are correct here — the rule
+ * simply flags the mutation pattern without distinguishing intent.
  */
+/* eslint-disable react-hooks/immutability */
 import { useEffect, useState, useCallback, useRef } from 'react';
 import type { AITraderEvent } from '../types/aiTrader';
 import { log } from '../utils/logger';
@@ -53,6 +61,9 @@ export function useAITraderStream(options: UseAITraderStreamOptions = {}) {
   const onEventRef = useRef(onEvent);
   const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY_MS);
   const sseFailureCountRef = useRef(0);
+  // Initial heartbeat timestamp; Date.now at mount is intended (ref is mutable
+  // and re-init at render would defeat staleness detection).
+  // eslint-disable-next-line react-hooks/purity
   const lastHeartbeatRef = useRef<number>(Date.now());
   const isConnectingRef = useRef(false);
   const traderIdRef = useRef(traderId);

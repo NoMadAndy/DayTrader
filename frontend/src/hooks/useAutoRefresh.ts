@@ -1,12 +1,17 @@
+/* eslint-disable react-hooks/immutability */
 /**
  * Auto-Refresh Hook for Real-Time Stock Updates
- * 
+ *
+ * Same rationale as useAITraderStream: we mutate refs for timer handles and
+ * visibility flags. useState would create a re-render loop for what is
+ * semantically just side-channel state.
+ *
  * Provides intelligent auto-refresh based on:
  * - Available API quota
  * - Page visibility (foreground vs background)
  * - User's watchlist
  * - Rate limiter configuration
- * 
+ *
  * Features:
  * - Adaptive refresh intervals based on API limits
  * - Background sync via Service Worker
@@ -335,7 +340,9 @@ export function useServiceWorker() {
       log.info('[SW] Service Worker not supported');
       return;
     }
-    
+    // One-time feature-detection write — no cascade because the effect runs
+    // exactly once (empty deps). Rule is overly strict for mount-detection.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsSupported(true);
     
     // Register Service Worker

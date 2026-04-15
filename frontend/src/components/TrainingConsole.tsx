@@ -64,9 +64,10 @@ export function TrainingConsole({ agentName, isTraining, progress, onClose }: Tr
     }
   }, [agentName]);
 
-  // Reset logs when training starts
+  // Reset logs when training starts — synchronous prop-reaction pattern.
   useEffect(() => {
     if (isTraining) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLogs([]);
       lastLogCount.current = 0;
       setIsExpanded(true);

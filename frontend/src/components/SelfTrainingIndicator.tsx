@@ -74,14 +74,14 @@ export function SelfTrainingIndicator({ traderId, compact = false, onTrainingEve
     }
   }, [traderId, onTrainingEvent]);
 
-  // Poll status while training
+  // Poll status while training. fetchStatus internally setStates; the rule
+  // flags the initial sync call as "setState in effect" — safe here because
+  // the effect is gated on status.is_training and re-subscribing doesn't
+  // cascade.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchStatus();
-    
-    const interval = setInterval(() => {
-      fetchStatus();
-    }, status?.is_training ? 2000 : 10000); // Poll faster while training
-    
+    const interval = setInterval(() => { fetchStatus(); }, status?.is_training ? 2000 : 10000);
     return () => clearInterval(interval);
   }, [fetchStatus, status?.is_training]);
 

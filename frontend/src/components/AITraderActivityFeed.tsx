@@ -132,12 +132,12 @@ export function AITraderActivityFeed({
         for (let i = 0; i < newEventsCount; i++) {
           indices.add(i);
         }
+        // Flash-on-event is exactly the useState-in-effect pattern the rule
+        // wants an external-sub for — we receive events via prop diff, no sub
+        // API is available here. Cleanup happens via setTimeout below.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setFlashingIndices(indices);
-        
-        // Remove flash after animation
-        setTimeout(() => {
-          setFlashingIndices(new Set());
-        }, 1000);
+        setTimeout(() => { setFlashingIndices(new Set()); }, 1000);
       }
       
       // Check for executed trades only (buy/sell/short/close)

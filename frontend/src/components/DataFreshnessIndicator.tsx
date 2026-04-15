@@ -20,6 +20,11 @@ export function DataFreshnessIndicator({
   }
   
   const updateTime = typeof lastUpdate === 'string' ? new Date(lastUpdate) : lastUpdate;
+  // Date.now at render is flagged as impure; for a "how old is this" badge
+  // the value SHOULD change between renders so parent-triggered re-renders
+  // (e.g. from polling) show the latest age. Making this pure would force a
+  // useState+setInterval loop just to produce identical output.
+  // eslint-disable-next-line react-hooks/purity
   const ageMs = Date.now() - updateTime.getTime();
   const isStale = ageMs > staleThresholdMs;
   

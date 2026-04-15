@@ -42,8 +42,12 @@ export default function SignalICPanel({ days = 30 }: { days?: number }) {
   const [data, setData] = useState<ICResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Async fetch → setState on completion is the canonical React data-loading
+  // pattern; the compiler-rule noise comes from the synchronous setLoading
+  // before the fetch starts. Cancelled-flag guards against post-unmount.
   useEffect(() => {
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     fetch(`/api/ml/sentiment/ic?days=${days}`)
       .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))

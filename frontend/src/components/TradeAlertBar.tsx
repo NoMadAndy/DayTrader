@@ -62,11 +62,9 @@ export default function TradeAlertBar({ trade, onDismiss, autoDismissMs = 30000 
     return () => clearInterval(interval);
   }, [trade, autoDismissMs, onDismiss]);
 
-  // Reset expansion when new trade arrives
-  useEffect(() => {
-    setExpanded(false);
-    setProgress(100);
-  }, [trade?.id]);
+  // Reset expansion when new trade arrives — synchronous reset on prop change.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setExpanded(false); setProgress(100); }, [trade?.id]);
 
   if (!trade) return null;
 

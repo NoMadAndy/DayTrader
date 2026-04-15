@@ -26,8 +26,11 @@ export function Navigation() {
     return subscribeToAuth(setAuthState);
   }, []);
 
-  // Close mobile menu when route changes
+  // Close mobile menu when route changes. Synchronous setState in an effect
+  // is flagged by react-hooks/set-state-in-effect, but for route-change
+  // reactions this is the standard React pattern (no external sub available).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMobileMenuOpen(false);
   }, [location.pathname]);
 
