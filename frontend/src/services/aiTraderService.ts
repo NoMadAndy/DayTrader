@@ -156,6 +156,29 @@ export async function getAITraderDecision(traderId: number, decisionId: number):
   return handleResponse<AITraderDecision>(response);
 }
 
+export interface DecisionExplanation {
+  decisionId: number;
+  status: 'pending' | 'in_progress' | 'ok' | 'error' | 'skipped_no_api_key';
+  explanation: string | null;
+  model: string | null;
+  generatedAt: string | null;
+  error: string | null;
+  usage?: {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    cacheReadTokens: number | null;
+  };
+}
+
+/**
+ * Get LLM-generated post-trade explanation for a decision.
+ * Worker-driven: this endpoint is a pure reader. Poll if status is pending.
+ */
+export async function getDecisionExplanation(decisionId: number): Promise<DecisionExplanation> {
+  const response = await fetch(`${API_BASE}/ai-trader/decisions/${decisionId}/explanation`);
+  return handleResponse<DecisionExplanation>(response);
+}
+
 /**
  * Get positions for an AI trader
  */

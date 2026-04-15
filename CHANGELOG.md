@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — RAG Phase 2B: Post-Trade-Erklärungen Frontend + docker-compose-ENVs
+
+- **`frontend/src/components/TradeReasoningCard.tsx`** — neue Unterkomponente `DecisionExplanationPanel`: lazy-lädt beim Ausklappen `/api/ai-trader/decisions/:id/explanation`, pollt alle 10 s bei `pending|in_progress`, zeigt generierten Text + Modell-Label; separate States für `skipped_no_api_key` („AI-Erklärungen deaktiviert") und `error`. Panel rendert nur für geschlossene Trades (`outcomePnl != null`).
+- **`frontend/src/services/aiTraderService.ts`** — `getDecisionExplanation(id)` + `DecisionExplanation`-Typ.
+- **Bugfix** — Guard `outcomePnl !== null` → `outcomePnl != null` in TradeReasoningCard (Outcome-Block **und** neues Panel), weil API-Payload `outcomePnl: undefined` liefern kann wenn snake_case-Fallback fehlt. Vorher leakten Outcome + Erklärung auf offene Trades. Gefunden im Playwright-Smoke (XOM-Hold).
+- **`docker-compose.yml`** — `ANTHROPIC_API_KEY` + Explanation-ENVs in Backend-Service-Whitelist (vorher nicht durchgereicht), doppelter `ML_SERVICE_URL`-Eintrag entfernt.
+- **`frontend/public/sw.js`** — `CACHE_NAME` auf `daytrader-v2` gehoben (neue UI-Assets).
+- **Smoke-verifiziert** end-to-end: synthetische Close-Decision → Worker-Tick → Haiku generiert deutsche Erklärung (353 in / 200 out Tokens) → Frontend rendert Panel korrekt mit Modell-Label.
+
 ### Added — RAG Phase 2A: Post-Trade-Erklärungen via Haiku (Backend)
 
 - **`backend/src/tradeExplanations.js`** — Poll-basierter Worker: findet geschlossene `ai_trader_decisions` (Close/Sell/Exit + `outcome_pnl IS NOT NULL`) ohne vorhandene Erklärung, claimed via Insert mit UNIQUE-Constraint, baut Prompt aus Decision-Row + RAG-News-Kontext (ml-service `/rag/search/news`, Fenster `[ts-2h, ts+15min]`, Symbol-Filter), ruft Haiku 4.5 mit Prompt-Caching auf System-Prompt, persistiert `explanation`, `input_tokens`, `output_tokens`, `cache_read_tokens`. Soft-Fail bei fehlendem `ANTHROPIC_API_KEY` → Status `skipped_no_api_key`.

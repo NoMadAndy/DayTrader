@@ -8,7 +8,7 @@ Zentrale Aufgabenliste. Format und Regeln siehe [CLAUDE.md](../CLAUDE.md) Abschn
 
 > Neue Wünsche landen hier. Claude sortiert sie nach jedem Prompt in die passende Sektion unten ein und lässt eine `→ verschoben nach …`-Spur stehen, bis der Punkt erledigt ist.
 
-- _(leer)_
+- KRITISCH!: Anthropic API wirklich nur dann benutzen, wenn unbedingt nötig. Minimaler Verbrauch! Serverseitig tracken, wie viele API Calls gemacht wurden und 
 
 ---
 

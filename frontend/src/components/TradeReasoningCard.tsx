@@ -4,10 +4,11 @@
  * Displays AI trader decision with expandable reasoning.
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { AITraderDecision, DecisionType } from '../types/aiTrader';
 import { SignalBreakdown } from './SignalBreakdown';
+import { getDecisionExplanation, type DecisionExplanation } from '../services/aiTraderService';
 
 /** Navigate to stock dashboard for a symbol */
 function useNavigateToSymbol() {
@@ -226,7 +227,7 @@ export function TradeReasoningCard({ decision, expanded: controlledExpanded, onT
           )}
           
           {/* Outcome (if available) */}
-          {decision.outcomePnl !== null && (
+          {decision.outcomePnl != null && (
             <div className="pt-3 border-t border-slate-700/50">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Outcome</span>
@@ -248,8 +249,112 @@ export function TradeReasoningCard({ decision, expanded: controlledExpanded, onT
               </div>
             </div>
           )}
+
+          {/* AI-Erklärung — lazy-loaded Haiku summary, only for closed trades */}
+          {decision.outcomePnl != null && (
+            <DecisionExplanationPanel decisionId={decision.id} isExpanded={isExpanded} />
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * AI explanation panel (RAG Phase 2B). Loads on first render while the parent
+ * card is expanded, polls while status is pending/in_progress.
+ */
+function DecisionExplanationPanel({ decisionId, isExpanded }: { decisionId: number; isExpanded: boolean }) {
+  const [data, setData] = useState<DecisionExplanation | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pollTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!isExpanded) return;
+    let cancelled = false;
+
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await getDecisionExplanation(decisionId);
+        if (cancelled) return;
+        setData(res);
+        const pending = res.status === 'pending' || res.status === 'in_progress';
+        if (pending) {
+          pollTimer.current = window.setTimeout(load, 10000);
+        }
+      } catch (e) {
+        if (cancelled) return;
+        setError((e as Error).message || 'Laden fehlgeschlagen');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+
+    return () => {
+      cancelled = true;
+      if (pollTimer.current) window.clearTimeout(pollTimer.current);
+    };
+  }, [decisionId, isExpanded]);
+
+  const header = (
+    <div className="text-sm font-medium text-purple-300 mb-2 flex items-center gap-2">
+      <span>🤖 AI-Erklärung</span>
+      {data?.model && <span className="text-[10px] text-gray-500 font-normal">· {data.model}</span>}
+    </div>
+  );
+
+  if (error) {
+    return (
+      <div className="pt-3 border-t border-slate-700/50">
+        {header}
+        <div className="text-sm text-red-400 bg-red-900/10 rounded-lg p-3">{error}</div>
+      </div>
+    );
+  }
+
+  if (!data || data.status === 'pending' || data.status === 'in_progress' || loading) {
+    return (
+      <div className="pt-3 border-t border-slate-700/50">
+        {header}
+        <div className="text-sm text-gray-500 italic bg-slate-900/50 rounded-lg p-3">
+          Erklärung wird generiert…
+        </div>
+      </div>
+    );
+  }
+
+  if (data.status === 'skipped_no_api_key') {
+    return (
+      <div className="pt-3 border-t border-slate-700/50">
+        {header}
+        <div className="text-sm text-gray-500 bg-slate-900/50 rounded-lg p-3">
+          AI-Erklärungen deaktiviert (kein API-Key konfiguriert).
+        </div>
+      </div>
+    );
+  }
+
+  if (data.status === 'error') {
+    return (
+      <div className="pt-3 border-t border-slate-700/50">
+        {header}
+        <div className="text-sm text-red-400 bg-red-900/10 rounded-lg p-3">
+          {data.error || 'Unbekannter Fehler bei der Erklärung.'}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pt-3 border-t border-slate-700/50">
+      {header}
+      <div className="text-sm text-gray-300 bg-slate-900/50 rounded-lg p-3 whitespace-pre-line">
+        {data.explanation}
+      </div>
     </div>
   );
 }

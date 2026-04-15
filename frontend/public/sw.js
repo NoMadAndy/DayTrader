@@ -5,8 +5,8 @@
  * Uses Periodic Background Sync API where available.
  */
 
-const CACHE_NAME = 'daytrader-v1';
-const QUOTE_CACHE_NAME = 'daytrader-quotes-v1';
+const CACHE_NAME = 'daytrader-v2';
+const QUOTE_CACHE_NAME = 'daytrader-quotes-v2';
 
 // URLs to cache for offline support
 const STATIC_ASSETS = [
