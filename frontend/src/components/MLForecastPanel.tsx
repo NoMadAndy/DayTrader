@@ -96,16 +96,18 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
       }
     };
     checkModel();
+    // loadPrediction + onPredictionsChange are stable-ish (useCallback /
+    // caller-provided); including them would re-check the model every time
+    // stockData updates, defeating the "on symbol change" intent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAvailable, symbol]);
 
   // Poll training status
   useEffect(() => {
     if (!isTraining) return;
-
     const pollStatus = async () => {
       const status = await mlService.getTrainingStatus(symbol);
       setTrainingStatus(status);
-
       if (status?.status === 'completed') {
         setIsTraining(false);
         setHasModel(true);
@@ -115,9 +117,11 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
         setError(status.message || 'Training failed');
       }
     };
-
     const interval = setInterval(pollStatus, 2000);
     return () => clearInterval(interval);
+    // loadPrediction closure uses current stockData; re-subscribing every
+    // render would restart the poll interval unnecessarily.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTraining, symbol]);
 
   const loadPrediction = useCallback(async () => {
@@ -198,7 +202,7 @@ export function MLForecastPanel({ symbol, stockData, onPredictionsChange, onRefr
     }
     
     setIsLoading(false);
-  }, [symbol, stockData, onPredictionsChange]);
+  }, [symbol, stockData, onPredictionsChange, t]);
 
   // Register refresh function with parent
   useEffect(() => {

@@ -162,10 +162,11 @@ export default function RLAgentsPanel({ className = '' }: RLAgentsPanelProps) {
     loadAvailableSymbols();
   }, []);
 
-  // Load watchlist when auth state changes
-  useEffect(() => {
-    loadWatchlistSymbols();
-  }, [authState.isAuthenticated]);
+  // Load watchlist when auth state changes. loadWatchlistSymbols is a stable
+  // component-scope function that reads from the current authState closure on
+  // each call — intentionally not listed as a dep.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadWatchlistSymbols(); }, [authState.isAuthenticated]);
 
   // Load agents when service is available
   useEffect(() => {

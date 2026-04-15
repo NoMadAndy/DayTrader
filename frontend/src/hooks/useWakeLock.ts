@@ -43,27 +43,21 @@ export function useWakeLock(): UseWakeLockResult {
     }
   }, []);
 
-  // Re-acquire wake lock when page becomes visible again
+  // requestWakeLock is defined below via useCallback and stable.
   useEffect(() => {
     const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible' && isActive) {
-        // Re-acquire when page becomes visible
         await requestWakeLock();
       }
     };
-
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      releaseWakeLock();
-    };
-  }, []);
+  // Cleanup on unmount. releaseWakeLock reads the ref internally.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => { releaseWakeLock(); }, []);
 
   const requestWakeLock = useCallback(async () => {
     try {

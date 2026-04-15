@@ -577,22 +577,24 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
     }
   }, [selectedSessionId, mode]);
 
-  // Load historical data when session or symbol changes
+  // loadHistoricalData reads the current activeSession closure on each call;
+  // listing it would retrigger on every activeSession field change.
   useEffect(() => {
     if (activeSession && backtestSymbol && mode === 'backtest') {
       loadHistoricalData();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSession?.id, backtestSymbol, activeSession?.currentDate, mode]);
 
-  // Auto-play functionality
+  // handleAdvanceTime is declared below — listing it would reset the 2s timer
+  // on every step.
   useEffect(() => {
     if (isAutoPlaying && activeSession?.status === 'active') {
-      const timer = setInterval(() => {
-        handleAdvanceTime(1);
-      }, 2000);
+      const timer = setInterval(() => { handleAdvanceTime(1); }, 2000);
       return () => clearInterval(timer);
     }
-  }, [isAutoPlaying, activeSession]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAutoPlaying, activeSession?.status]);
 
   const loadSessions = async () => {
     try {
@@ -657,6 +659,9 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
       close: d.close,
       volume: d.volume,
     }));
+    // activeSession?.currentDate is the only field read; including the full
+    // object would over-invalidate this memo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historicalData, activeSession?.currentDate]);
 
   const backtestForecast: ForecastResult | null = useMemo(() => {

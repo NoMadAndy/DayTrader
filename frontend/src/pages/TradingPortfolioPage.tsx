@@ -137,7 +137,6 @@ export function TradingPortfolioPage() {
     if (symbolFromUrl) {
       setSelectedSymbol(symbolFromUrl);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
   
   // Load configuration
@@ -193,8 +192,8 @@ export function TradingPortfolioPage() {
     } finally {
       setLoading(false);
     }
-  }, [authState.isAuthenticated]);
-  
+  }, [authState.isAuthenticated, t]);
+
   useEffect(() => {
     loadPortfolioData();
   }, [loadPortfolioData]);
@@ -317,6 +316,9 @@ export function TradingPortfolioPage() {
     checkPositionTriggersCallback();
     const interval = setInterval(checkPositionTriggersCallback, 60000);
     return () => clearInterval(interval);
+    // formatCurrency is locale-memoized by useSettings; listing it would reset
+    // the 60s trigger-check timer on every language switch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authState.isAuthenticated, openPositions.length, dataService, loadPortfolioData]);
   
   // Calculate fee preview

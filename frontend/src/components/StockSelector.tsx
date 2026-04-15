@@ -215,10 +215,12 @@ export function StockSelector({
 
     // Refresh immediately when opened
     refreshPrices();
-    
-    // Then refresh every 30 seconds while open
+    // Then refresh every 30 seconds while open. `stocks` is intentionally not
+    // in the dep array — it's refreshed by refreshPrices itself, listing it
+    // would retrigger the effect on every successful fetch.
     const interval = setInterval(refreshPrices, 30000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, stocks.length]);
 
   // Filter stocks based on search

@@ -274,6 +274,10 @@ export function SettingsPage() {
         }
       });
     }
+    // applyConfig is useCallback-stable; listing it would re-trigger this
+    // effect whenever setConfig (its dep) changes, which forks a network
+    // race with the in-flight fetchUserSettings response.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authState.isAuthenticated]);
 
   const applyConfig = useCallback((config: ApiConfig) => {

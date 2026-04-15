@@ -50,19 +50,35 @@ export default function RLAdvisorPanel({
     setSelectedAgents(trainedAgents);
   }, [agents]);
 
+  const fetchSignals = useCallback(async () => {
+    if (selectedAgents.length === 0 || historicalData.length < 100) return;
+    setError(null);
+    try {
+      const result = await rlTradingService.getMultiSignals(selectedAgents, historicalData);
+      setSignals(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to get signals');
+      setSignals(null);
+    }
+  }, [selectedAgents, historicalData]);
+
   // Fetch signals when data or selection changes
   useEffect(() => {
     if (isAvailable && selectedAgents.length > 0 && historicalData.length >= 100) {
       fetchSignals();
     }
-  }, [selectedAgents, historicalData, symbol]);
+    // symbol is intentionally in the dep array: when the user switches to a
+    // different stock we need to refetch even if selectedAgents/historicalData
+    // happen to be reference-equal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchSignals, isAvailable, symbol]);
 
   const checkServiceAndLoadAgents = async () => {
     setIsLoading(true);
     try {
       const available = await rlTradingService.isAvailable();
       setIsAvailable(available);
-      
+
       if (available) {
         const agentList = await rlTradingService.listAgents();
         setAgents(agentList.filter(a => a.is_trained));
@@ -72,19 +88,6 @@ export default function RLAdvisorPanel({
       setIsAvailable(false);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const fetchSignals = async () => {
-    if (selectedAgents.length === 0 || historicalData.length < 100) return;
-    
-    setError(null);
-    try {
-      const result = await rlTradingService.getMultiSignals(selectedAgents, historicalData);
-      setSignals(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to get signals');
-      setSignals(null);
     }
   };
 

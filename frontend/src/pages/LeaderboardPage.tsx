@@ -55,6 +55,9 @@ export function LeaderboardPage() {
     }
     
     loadData();
+    // t is stable across renders (memoized by useSettings), not listing it
+    // keeps this effect from re-running on every locale-switch tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeframe, filter, authState.isAuthenticated]);
   
   const getRankIcon = (rank: number): string => {

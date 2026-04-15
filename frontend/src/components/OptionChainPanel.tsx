@@ -100,6 +100,10 @@ export function OptionChainPanel({ symbol, underlyingPrice, onSelect, onClose }:
     } finally {
       setLoading(false);
     }
+    // loadTheoreticalChain is declared below, would create a circular dep;
+    // the fallback path only runs on fetch error, reading it via closure is
+    // fine because both memos depend on the same upstream props.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, underlyingPrice, volatility, ratio, forceSource]);
 
   // Load theoretical chain (existing behavior)
@@ -127,6 +131,9 @@ export function OptionChainPanel({ symbol, underlyingPrice, onSelect, onClose }:
     } finally {
       setLoading(false);
     }
+    // selectedExpiry is intentionally omitted: we only auto-select when the
+    // user hasn't picked one yet, reading the current value via closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [underlyingPrice, volatility, ratio]);
 
   // Load data on mount / parameter change

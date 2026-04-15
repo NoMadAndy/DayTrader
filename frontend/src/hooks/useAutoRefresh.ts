@@ -225,8 +225,9 @@ export function useAutoRefresh(config: AutoRefreshConfig): [AutoRefreshState, Au
         setupInterval();
       }
     }, interval);
-  }, [fetchQuotes, state.isPaused]);
-  
+    // isPausedRef.current is read inside — state.isPaused was redundant.
+  }, [fetchQuotes]);
+
   // Handle visibility changes
   useEffect(() => {
     const handleVisibility = () => {

@@ -559,10 +559,11 @@ export function WatchlistPanel({ onSelectSymbol, currentSymbol }: WatchlistPanel
     setIsRefreshing(false);
   }, [fetchSymbolData, authState.isAuthenticated]);
 
-  // Auto-refresh on mount
-  useEffect(() => {
-    refreshWatchlist();
-  }, []);
+  // Auto-refresh on mount (exactly once — refreshWatchlist is a stable
+  // useCallback; including it would re-run the effect on every dependency
+  // change it captures, defeating the "on mount" intent).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { refreshWatchlist(); }, []);
 
   // Lightweight price-only refresh (doesn't reload company info or signals)
   // Use a ref to get current symbols to avoid stale closure issues
