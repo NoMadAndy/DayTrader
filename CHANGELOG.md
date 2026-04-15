@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Anthropic-API-Budget-Governance (Andys KRITISCH-Wunsch 2026-04-15)
+
+- **`backend/src/tradeExplanations.js`** — drei neue Guards gegen unnötige/doppelte API-Calls:
+  1. **Trivial-Skip**: `|outcome_pnl_percent| < EXPLANATION_MIN_PNL_PERCENT` (default 0.5%) → Status `skipped_trivial`, **kein** Haiku-Call.
+  2. **Zombie-Recovery**: `in_progress`-Rows älter als `EXPLANATION_STALE_MINUTES` (default 10) werden vor jedem Tick gelöscht, damit Decisions retry-bar sind wenn Worker mitten im Call crashte (UNIQUE + ON CONFLICT hätte sie sonst dauerhaft geblockt).
+  3. **Usage-Endpoint** `GET /api/ai-trader/explanations/usage` — Counts + Token-Sums + Cache-Hit-Rate für today/7d/30d zur Spend-Visibilität.
+- Bestehende Guards weiter aktiv: `UNIQUE(decision_id)` gegen Doppel-Calls, `EXPLANATION_MAX_PER_DAY=500`, Prompt-Caching auf System-Prompt, `max_tokens=400`, reiner Reader-Endpoint im UI (Polling triggert keine neuen Calls).
+
 ### Added — RAG Phase 2B: Post-Trade-Erklärungen Frontend + docker-compose-ENVs
 
 - **`frontend/src/components/TradeReasoningCard.tsx`** — neue Unterkomponente `DecisionExplanationPanel`: lazy-lädt beim Ausklappen `/api/ai-trader/decisions/:id/explanation`, pollt alle 10 s bei `pending|in_progress`, zeigt generierten Text + Modell-Label; separate States für `skipped_no_api_key` („AI-Erklärungen deaktiviert") und `error`. Panel rendert nur für geschlossene Trades (`outcomePnl != null`).

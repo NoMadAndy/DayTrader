@@ -30,6 +30,11 @@ const INTERVAL_MS = parseInt(process.env.EXPLANATION_WORKER_INTERVAL_MS || '1500
 const BATCH = parseInt(process.env.EXPLANATION_WORKER_BATCH || '5', 10);
 const ENABLED = (process.env.EXPLANATION_ENABLED || 'true').toLowerCase() !== 'false';
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://ml-service:8000';
+// Triviale Trades übersprungen — |pnl%| < Schwelle → keine Erklärung, kein API-Call.
+const MIN_PNL_PERCENT = parseFloat(process.env.EXPLANATION_MIN_PNL_PERCENT || '0.5');
+// in_progress-Rows, die älter als dieser Timeout sind, werden re-queued (Worker
+// crashte mitten im Haiku-Call oder Container-Restart).
+const STALE_MINUTES = parseInt(process.env.EXPLANATION_STALE_MINUTES || '10', 10);
 
 const SYSTEM_PROMPT = `You are an equities trade analyst. Given a closed trade and the news/signal context present at the time of the decision, produce a concise 3–5 sentence explanation in German of why this trade closed with the observed outcome. Focus on: (1) what signals drove the entry/exit, (2) what news context was present, (3) whether the outcome matched the thesis. Avoid financial advice, avoid hedging language, do not speculate about future moves. Never invent numbers — if a field is missing, skip it.`;
 
@@ -211,6 +216,19 @@ async function generateExplanation(decision) {
 }
 
 async function processDecision(decision) {
+  // Gate 1 — überspringe triviale Trades ohne API-Call.
+  const absPnlPct = Math.abs(Number(decision.outcome_pnl_percent) || 0);
+  if (Number.isFinite(absPnlPct) && absPnlPct < MIN_PNL_PERCENT) {
+    await query(
+      `INSERT INTO trade_explanations (decision_id, status, model, generated_at)
+       VALUES ($1, 'skipped_trivial', $2, CURRENT_TIMESTAMP)
+       ON CONFLICT (decision_id) DO NOTHING`,
+      [decision.id, MODEL]
+    );
+    logger.debug(`[TradeExplanations] skipped_trivial decision=${decision.id} pnl_pct=${absPnlPct}`);
+    return;
+  }
+
   // Insert placeholder row first to claim it (unique constraint on decision_id
   // prevents duplicate work if multiple workers ever run).
   try {
@@ -264,8 +282,25 @@ async function processDecision(decision) {
   }
 }
 
+async function recoverStaleInProgress() {
+  // Gate 3 — Zombie-Recovery: Rows die älter als STALE_MINUTES sind und noch
+  // in_progress stehen wurden durch einen crashenden Call gelassen.
+  // Löschen gibt die Decision zum Retry frei (UNIQUE + ON CONFLICT greift wieder).
+  const { rowCount } = await query(
+    `DELETE FROM trade_explanations
+       WHERE status = 'in_progress'
+         AND created_at < NOW() - ($1 || ' minutes')::interval
+     RETURNING decision_id`,
+    [STALE_MINUTES]
+  );
+  if (rowCount && rowCount > 0) {
+    logger.warn(`[TradeExplanations] recovered ${rowCount} stale in_progress rows (>${STALE_MINUTES}min)`);
+  }
+}
+
 async function tick() {
   try {
+    await recoverStaleInProgress();
     const doneToday = await countExplanationsToday();
     const remaining = MAX_PER_DAY - doneToday;
     if (remaining <= 0) {
@@ -280,6 +315,50 @@ async function tick() {
   } catch (e) {
     logger.error(`[TradeExplanations] tick failed: ${e.message}`);
   }
+}
+
+/**
+ * Aggregate token usage + status breakdown for monitoring API spend.
+ * Returns counts and token sums for today / last 7 days / last 30 days.
+ */
+export async function getUsageStats() {
+  const { rows } = await query(
+    `WITH windows AS (
+       SELECT 'today'::text AS window, date_trunc('day', CURRENT_TIMESTAMP) AS since
+       UNION ALL SELECT '7d', CURRENT_TIMESTAMP - INTERVAL '7 days'
+       UNION ALL SELECT '30d', CURRENT_TIMESTAMP - INTERVAL '30 days'
+     )
+     SELECT w.window,
+            COUNT(*) FILTER (WHERE te.status = 'ok')                  AS ok_count,
+            COUNT(*) FILTER (WHERE te.status = 'error')               AS error_count,
+            COUNT(*) FILTER (WHERE te.status = 'skipped_trivial')     AS skipped_trivial,
+            COUNT(*) FILTER (WHERE te.status = 'skipped_no_api_key')  AS skipped_no_key,
+            COALESCE(SUM(te.input_tokens)      FILTER (WHERE te.status = 'ok'), 0)::bigint AS input_tokens,
+            COALESCE(SUM(te.output_tokens)     FILTER (WHERE te.status = 'ok'), 0)::bigint AS output_tokens,
+            COALESCE(SUM(te.cache_read_tokens) FILTER (WHERE te.status = 'ok'), 0)::bigint AS cache_read_tokens
+       FROM windows w
+  LEFT JOIN trade_explanations te ON te.generated_at >= w.since
+   GROUP BY w.window
+   ORDER BY CASE w.window WHEN 'today' THEN 1 WHEN '7d' THEN 2 ELSE 3 END`
+  );
+  return {
+    model: MODEL,
+    dailyCap: MAX_PER_DAY,
+    minPnlPercent: MIN_PNL_PERCENT,
+    windows: rows.map((r) => ({
+      window: r.window,
+      okCount: Number(r.ok_count),
+      errorCount: Number(r.error_count),
+      skippedTrivial: Number(r.skipped_trivial),
+      skippedNoKey: Number(r.skipped_no_key),
+      inputTokens: Number(r.input_tokens),
+      outputTokens: Number(r.output_tokens),
+      cacheReadTokens: Number(r.cache_read_tokens),
+      cacheHitRate: r.input_tokens > 0
+        ? Number((Number(r.cache_read_tokens) / Number(r.input_tokens)).toFixed(3))
+        : null,
+    })),
+  };
 }
 
 export function startTradeExplanationsWorker() {
@@ -314,4 +393,5 @@ export default {
   startTradeExplanationsWorker,
   stopTradeExplanationsWorker,
   getExplanationForDecision,
+  getUsageStats,
 };

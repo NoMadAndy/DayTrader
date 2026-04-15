@@ -8,7 +8,7 @@ Zentrale Aufgabenliste. Format und Regeln siehe [CLAUDE.md](../CLAUDE.md) Abschn
 
 > Neue Wünsche landen hier. Claude sortiert sie nach jedem Prompt in die passende Sektion unten ein und lässt eine `→ verschoben nach …`-Spur stehen, bis der Punkt erledigt ist.
 
-- KRITISCH!: Anthropic API wirklich nur dann benutzen, wenn unbedingt nötig. Minimaler Verbrauch! Serverseitig tracken, wie viele API Calls gemacht wurden und 
+- KRITISCH!: Anthropic API wirklich nur dann benutzen, wenn unbedingt nötig. Minimaler Verbrauch! Serverseitig tracken, wie viele API Calls gemacht wurden und keine doppelten oder unnützen Calls machen! → verschoben nach „Claude-Verhalten / LLM-Integration"
 
 ---
 
@@ -44,6 +44,7 @@ Motivation: News-Signale sollen tradable sein, nicht nur Noise. Ausgangslage sie
   - Phase 2B offen: Frontend-Panel + Playwright-Smoke.
   - Phase 3 offen: Repo-Research-CLI.
 - Strukturierte Tool-Calls statt Freitext bei Signalgenerierung
+- **Anthropic-API-Budget-Governance** (Andy 2026-04-15, KRITISCH): aggressiv verhindern dass Haiku unnötig aufgerufen wird. Bestehende Guards: `UNIQUE(decision_id)` (kein Doppel-Call), `EXPLANATION_MAX_PER_DAY=500`, Prompt-Caching, `max_tokens=400`, poll-basiert (UI triggert keine Calls). Offen/neu: (a) triviale Trades überspringen (|pnl%| < Schwelle, ENV), (b) Zombie-`in_progress`-Recovery nach Timeout, (c) `GET /api/ai-trader/explanations/usage` für Token-/Kosten-Visibilität mit today/7d/30d + Cache-Hit-Rate, (d) bei neuen Claude-Features IMMER erst prüfen ob das wirklich einen Call rechtfertigt — Default ist Nicht-Call.
 
 ### Backtest- & Evaluations-Hygiene
 - 🟡 Walk-Forward-CV: LSTM hat Walk-Forward (jetzt API-Default `use_walk_forward=True`), Transformer nutzt korrekt train-only-Scaler aber noch Single-Split (Sprint B P0c offen). Scaler-Leakage in Transformer behoben 2026-04-13.

@@ -4999,6 +4999,20 @@ app.get('/api/ai-trader/decisions/:id/explanation', async (req, res) => {
 });
 
 /**
+ * Token & call usage for the Anthropic-based explanation worker.
+ * GET /api/ai-trader/explanations/usage
+ */
+app.get('/api/ai-trader/explanations/usage', async (req, res) => {
+  try {
+    const stats = await tradeExplanations.getUsageStats();
+    res.json(stats);
+  } catch (e) {
+    logger.error(`[TradeExplanations] usage fetch error: ${e.message}`);
+    res.status(500).json({ error: 'internal error' });
+  }
+});
+
+/**
  * Force recalculate stats for all AI traders
  * POST /api/ai-traders/recalculate-stats
  */
