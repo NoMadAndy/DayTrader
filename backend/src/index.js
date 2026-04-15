@@ -16,6 +16,7 @@ import logger from './logger.js';
 import { isValidEmail, isValidPassword, isValidUsername, isValidSymbol, validateBody, validateSymbolParam, sanitizeString } from './validation.js';
 import db from './db.js';
 import stockCache from './stockCache.js';
+import { providerCall, ProviderQuotaError } from './providerCall.js';
 import backgroundJobs from './backgroundJobs.js';
 import * as sentimentArchive from './sentimentArchive.js';
 import signalIC from './signalIC.js';
@@ -1644,45 +1645,32 @@ const ALPHA_VANTAGE_BASE_URL = 'https://www.alphavantage.co/query';
 app.get('/api/alphavantage/quote/:symbol', optionalAuthMiddleware, async (req, res) => {
   const { symbol } = req.params;
   const apiKey = await resolveProviderKey(req, 'alphavantage');
+  if (!apiKey) return res.status(400).json({ error: 'Alpha Vantage API key required (X-AlphaVantage-Key header)' });
+
   const cacheKey = `alphavantage:quote:${symbol.toUpperCase()}`;
-  
-  if (process.env.DATABASE_URL) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      logger.info(`[AlphaVantage] Cache hit for quote ${symbol}`);
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-  }
-  
-  if (!apiKey) {
-    return res.status(400).json({ error: 'Alpha Vantage API key required (X-AlphaVantage-Key header)' });
-  }
-  
   try {
     const url = `${ALPHA_VANTAGE_BASE_URL}?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
-    const response = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
+    const { data, fromCache, stale } = await providerCall('alphaVantage', async () => {
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+      const j = await r.json();
+      if (j.Note || j.Information) throw new Error(`Alpha Vantage rate limit: ${j.Note || j.Information}`);
+      return j;
+    }, {
+      cacheKey,
+      cacheType: 'quote',
+      symbol: symbol.toUpperCase(),
+      source: 'alphavantage',
+      ttlSeconds: stockCache.CACHE_DURATIONS.quote,
+      allowStale: false,
     });
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ error: `Alpha Vantage error: ${response.statusText}` });
-    }
-    
-    const data = await response.json();
-    
-    // Check for rate limit message
-    if (data.Note || data.Information) {
-      return res.status(429).json({ error: 'Alpha Vantage rate limit exceeded', message: data.Note || data.Information });
-    }
-    
-    if (process.env.DATABASE_URL && data['Global Quote'] && data['Global Quote']['05. price']) {
-      await stockCache.setCache(cacheKey, 'quote', symbol.toUpperCase(), data, 'alphavantage', stockCache.CACHE_DURATIONS.quote);
-      logger.info(`[AlphaVantage] Cached quote for ${symbol}`);
-    }
-    
-    res.json(data);
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('Alpha Vantage quote proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `alphaVantage quota exhausted`, reason: error.reason });
+    }
+    logger.error(`Alpha Vantage quote proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch from Alpha Vantage', message: error.message });
   }
 });
@@ -1697,44 +1685,32 @@ app.get('/api/alphavantage/daily/:symbol', optionalAuthMiddleware, async (req, r
   const { symbol } = req.params;
   const { outputsize = 'compact' } = req.query;
   const apiKey = await resolveProviderKey(req, 'alphavantage');
+  if (!apiKey) return res.status(400).json({ error: 'Alpha Vantage API key required (X-AlphaVantage-Key header)' });
+
   const cacheKey = `alphavantage:daily:${symbol.toUpperCase()}:${outputsize}`;
-  
-  if (process.env.DATABASE_URL) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      logger.info(`[AlphaVantage] Cache hit for daily ${symbol}`);
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-  }
-  
-  if (!apiKey) {
-    return res.status(400).json({ error: 'Alpha Vantage API key required (X-AlphaVantage-Key header)' });
-  }
-  
   try {
     const url = `${ALPHA_VANTAGE_BASE_URL}?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(symbol)}&outputsize=${outputsize}&apikey=${apiKey}`;
-    const response = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
+    const { data, fromCache, stale } = await providerCall('alphaVantage', async () => {
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+      const j = await r.json();
+      if (j.Note || j.Information) throw new Error(`Alpha Vantage rate limit: ${j.Note || j.Information}`);
+      return j;
+    }, {
+      cacheKey,
+      cacheType: 'candles_daily',
+      symbol: symbol.toUpperCase(),
+      source: 'alphavantage',
+      ttlSeconds: stockCache.CACHE_DURATIONS.candles_daily,
+      allowStale: true,
     });
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ error: `Alpha Vantage error: ${response.statusText}` });
-    }
-    
-    const data = await response.json();
-    
-    if (data.Note || data.Information) {
-      return res.status(429).json({ error: 'Alpha Vantage rate limit exceeded', message: data.Note || data.Information });
-    }
-    
-    if (process.env.DATABASE_URL && data['Time Series (Daily)']) {
-      await stockCache.setCache(cacheKey, 'candles', symbol.toUpperCase(), data, 'alphavantage', stockCache.CACHE_DURATIONS.candles_daily);
-      logger.info(`[AlphaVantage] Cached daily for ${symbol}`);
-    }
-    
-    res.json(data);
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('Alpha Vantage daily proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `alphaVantage quota exhausted`, reason: error.reason });
+    }
+    logger.error(`Alpha Vantage daily proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch daily from Alpha Vantage', message: error.message });
   }
 });
@@ -1749,44 +1725,32 @@ app.get('/api/alphavantage/intraday/:symbol', optionalAuthMiddleware, async (req
   const { symbol } = req.params;
   const { interval = '5min', outputsize = 'compact' } = req.query;
   const apiKey = await resolveProviderKey(req, 'alphavantage');
+  if (!apiKey) return res.status(400).json({ error: 'Alpha Vantage API key required (X-AlphaVantage-Key header)' });
+
   const cacheKey = `alphavantage:intraday:${symbol.toUpperCase()}:${interval}:${outputsize}`;
-  
-  if (process.env.DATABASE_URL) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      logger.info(`[AlphaVantage] Cache hit for intraday ${symbol}`);
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-  }
-  
-  if (!apiKey) {
-    return res.status(400).json({ error: 'Alpha Vantage API key required (X-AlphaVantage-Key header)' });
-  }
-  
   try {
     const url = `${ALPHA_VANTAGE_BASE_URL}?function=TIME_SERIES_INTRADAY&symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=${outputsize}&apikey=${apiKey}`;
-    const response = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
+    const { data, fromCache, stale } = await providerCall('alphaVantage', async () => {
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+      const j = await r.json();
+      if (j.Note || j.Information) throw new Error(`Alpha Vantage rate limit: ${j.Note || j.Information}`);
+      return j;
+    }, {
+      cacheKey,
+      cacheType: 'candles_intraday',
+      symbol: symbol.toUpperCase(),
+      source: 'alphavantage',
+      ttlSeconds: stockCache.CACHE_DURATIONS.candles_intraday,
+      allowStale: true,
     });
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ error: `Alpha Vantage error: ${response.statusText}` });
-    }
-    
-    const data = await response.json();
-    
-    if (data.Note || data.Information) {
-      return res.status(429).json({ error: 'Alpha Vantage rate limit exceeded', message: data.Note || data.Information });
-    }
-    
-    if (process.env.DATABASE_URL && data[`Time Series (${interval})`]) {
-      await stockCache.setCache(cacheKey, 'candles', symbol.toUpperCase(), data, 'alphavantage', stockCache.CACHE_DURATIONS.candles_intraday);
-      logger.info(`[AlphaVantage] Cached intraday for ${symbol}`);
-    }
-    
-    res.json(data);
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('Alpha Vantage intraday proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `alphaVantage quota exhausted`, reason: error.reason });
+    }
+    logger.error(`Alpha Vantage intraday proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch intraday from Alpha Vantage', message: error.message });
   }
 });
@@ -1799,45 +1763,32 @@ app.get('/api/alphavantage/intraday/:symbol', optionalAuthMiddleware, async (req
 app.get('/api/alphavantage/overview/:symbol', optionalAuthMiddleware, async (req, res) => {
   const { symbol } = req.params;
   const apiKey = await resolveProviderKey(req, 'alphavantage');
+  if (!apiKey) return res.status(400).json({ error: 'Alpha Vantage API key required (X-AlphaVantage-Key header)' });
+
   const cacheKey = `alphavantage:overview:${symbol.toUpperCase()}`;
-  
-  if (process.env.DATABASE_URL) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      logger.info(`[AlphaVantage] Cache hit for overview ${symbol}`);
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-  }
-  
-  if (!apiKey) {
-    return res.status(400).json({ error: 'Alpha Vantage API key required (X-AlphaVantage-Key header)' });
-  }
-  
   try {
     const url = `${ALPHA_VANTAGE_BASE_URL}?function=OVERVIEW&symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
-    const response = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
+    const { data, fromCache, stale } = await providerCall('alphaVantage', async () => {
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+      const j = await r.json();
+      if (j.Note || j.Information) throw new Error(`Alpha Vantage rate limit: ${j.Note || j.Information}`);
+      return j;
+    }, {
+      cacheKey,
+      cacheType: 'company_info',
+      symbol: symbol.toUpperCase(),
+      source: 'alphavantage',
+      ttlSeconds: stockCache.CACHE_DURATIONS.company_info,
+      allowStale: true,
     });
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ error: `Alpha Vantage error: ${response.statusText}` });
-    }
-    
-    const data = await response.json();
-    
-    if (data.Note || data.Information) {
-      return res.status(429).json({ error: 'Alpha Vantage rate limit exceeded', message: data.Note || data.Information });
-    }
-    
-    // Cache company info for 24 hours
-    if (process.env.DATABASE_URL && data && data.Symbol) {
-      await stockCache.setCache(cacheKey, 'company_info', symbol.toUpperCase(), data, 'alphavantage', stockCache.CACHE_DURATIONS.company_info);
-      logger.info(`[AlphaVantage] Cached overview for ${symbol}`);
-    }
-    
-    res.json(data);
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('Alpha Vantage overview proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `alphaVantage quota exhausted`, reason: error.reason });
+    }
+    logger.error(`Alpha Vantage overview proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch overview from Alpha Vantage', message: error.message });
   }
 });
@@ -1850,49 +1801,34 @@ app.get('/api/alphavantage/overview/:symbol', optionalAuthMiddleware, async (req
  */
 app.get('/api/alphavantage/search', optionalAuthMiddleware, async (req, res) => {
   const { keywords } = req.query;
+  if (!keywords) return res.status(400).json({ error: 'Search keywords required' });
   const apiKey = await resolveProviderKey(req, 'alphavantage');
-  const cacheKey = `alphavantage:search:${keywords?.toLowerCase()}`;
-  
-  if (process.env.DATABASE_URL && keywords) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      logger.info(`[AlphaVantage] Cache hit for search ${keywords}`);
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-  }
-  
-  if (!apiKey) {
-    return res.status(400).json({ error: 'Alpha Vantage API key required (X-AlphaVantage-Key header)' });
-  }
-  
-  if (!keywords) {
-    return res.status(400).json({ error: 'Search keywords required' });
-  }
-  
+  if (!apiKey) return res.status(400).json({ error: 'Alpha Vantage API key required (X-AlphaVantage-Key header)' });
+
+  const cacheKey = `alphavantage:search:${keywords.toLowerCase()}`;
   try {
     const url = `${ALPHA_VANTAGE_BASE_URL}?function=SYMBOL_SEARCH&keywords=${encodeURIComponent(keywords)}&apikey=${apiKey}`;
-    const response = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
+    const { data, fromCache, stale } = await providerCall('alphaVantage', async () => {
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+      const j = await r.json();
+      if (j.Note || j.Information) throw new Error(`Alpha Vantage rate limit: ${j.Note || j.Information}`);
+      return j;
+    }, {
+      cacheKey,
+      cacheType: 'search',
+      symbol: keywords.toUpperCase(),
+      source: 'alphavantage',
+      ttlSeconds: stockCache.CACHE_DURATIONS.search,
+      allowStale: true,
     });
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ error: `Alpha Vantage error: ${response.statusText}` });
-    }
-    
-    const data = await response.json();
-    
-    if (data.Note || data.Information) {
-      return res.status(429).json({ error: 'Alpha Vantage rate limit exceeded', message: data.Note || data.Information });
-    }
-    
-    if (process.env.DATABASE_URL && data && data.bestMatches) {
-      await stockCache.setCache(cacheKey, 'search', keywords.toUpperCase(), data, 'alphavantage', stockCache.CACHE_DURATIONS.search);
-      logger.info(`[AlphaVantage] Cached search for ${keywords}`);
-    }
-    
-    res.json(data);
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('Alpha Vantage search proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `alphaVantage quota exhausted`, reason: error.reason });
+    }
+    logger.error(`Alpha Vantage search proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to search Alpha Vantage', message: error.message });
   }
 });
@@ -1910,44 +1846,32 @@ const TWELVE_DATA_BASE_URL = 'https://api.twelvedata.com';
 app.get('/api/twelvedata/quote/:symbol', optionalAuthMiddleware, async (req, res) => {
   const { symbol } = req.params;
   const apiKey = await resolveProviderKey(req, 'twelvedata');
+  if (!apiKey) return res.status(400).json({ error: 'Twelve Data API key required (X-TwelveData-Key header)' });
+
   const cacheKey = `twelvedata:quote:${symbol.toUpperCase()}`;
-  
-  if (process.env.DATABASE_URL) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      logger.info(`[TwelveData] Cache hit for quote ${symbol}`);
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-  }
-  
-  if (!apiKey) {
-    return res.status(400).json({ error: 'Twelve Data API key required (X-TwelveData-Key header)' });
-  }
-  
   try {
     const url = `${TWELVE_DATA_BASE_URL}/quote?symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
-    const response = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
+    const { data, fromCache, stale } = await providerCall('twelveData', async () => {
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+      const j = await r.json();
+      if (j.code || j.status === 'error') throw new Error(j.message || 'Twelve Data error');
+      return j;
+    }, {
+      cacheKey,
+      cacheType: 'quote',
+      symbol: symbol.toUpperCase(),
+      source: 'twelvedata',
+      ttlSeconds: stockCache.CACHE_DURATIONS.quote,
+      allowStale: false,
     });
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ error: `Twelve Data error: ${response.statusText}` });
-    }
-    
-    const data = await response.json();
-    
-    if (data.code || data.status === 'error') {
-      return res.status(400).json({ error: data.message || 'Twelve Data error' });
-    }
-    
-    if (process.env.DATABASE_URL && data && data.close) {
-      await stockCache.setCache(cacheKey, 'quote', symbol.toUpperCase(), data, 'twelvedata', stockCache.CACHE_DURATIONS.quote);
-      logger.info(`[TwelveData] Cached quote for ${symbol}`);
-    }
-    
-    res.json(data);
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('Twelve Data quote proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `twelveData quota exhausted`, reason: error.reason });
+    }
+    logger.error(`Twelve Data quote proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch from Twelve Data', message: error.message });
   }
 });
@@ -1962,47 +1886,34 @@ app.get('/api/twelvedata/timeseries/:symbol', optionalAuthMiddleware, async (req
   const { symbol } = req.params;
   const { interval = '1day', outputsize = '100' } = req.query;
   const apiKey = await resolveProviderKey(req, 'twelvedata');
+  if (!apiKey) return res.status(400).json({ error: 'Twelve Data API key required (X-TwelveData-Key header)' });
+
+  const isDaily = interval.includes('day') || interval.includes('week') || interval.includes('month');
+  const ttl = isDaily ? stockCache.CACHE_DURATIONS.candles_daily : stockCache.CACHE_DURATIONS.candles_intraday;
   const cacheKey = `twelvedata:timeseries:${symbol.toUpperCase()}:${interval}:${outputsize}`;
-  
-  if (process.env.DATABASE_URL) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      logger.info(`[TwelveData] Cache hit for timeseries ${symbol}`);
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-  }
-  
-  if (!apiKey) {
-    return res.status(400).json({ error: 'Twelve Data API key required (X-TwelveData-Key header)' });
-  }
-  
   try {
     const url = `${TWELVE_DATA_BASE_URL}/time_series?symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=${outputsize}&apikey=${apiKey}`;
-    const response = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
+    const { data, fromCache, stale } = await providerCall('twelveData', async () => {
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+      const j = await r.json();
+      if (j.code || j.status === 'error') throw new Error(j.message || 'Twelve Data error');
+      return j;
+    }, {
+      cacheKey,
+      cacheType: isDaily ? 'candles_daily' : 'candles_intraday',
+      symbol: symbol.toUpperCase(),
+      source: 'twelvedata',
+      ttlSeconds: ttl,
+      allowStale: true,
     });
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ error: `Twelve Data error: ${response.statusText}` });
-    }
-    
-    const data = await response.json();
-    
-    if (data.code || data.status === 'error') {
-      return res.status(400).json({ error: data.message || 'Twelve Data error' });
-    }
-    
-    if (process.env.DATABASE_URL && data && data.values) {
-      const ttl = interval.includes('day') || interval.includes('week') || interval.includes('month') 
-        ? stockCache.CACHE_DURATIONS.candles_daily 
-        : stockCache.CACHE_DURATIONS.candles_intraday;
-      await stockCache.setCache(cacheKey, 'candles', symbol.toUpperCase(), data, 'twelvedata', ttl);
-      logger.info(`[TwelveData] Cached timeseries for ${symbol}`);
-    }
-    
-    res.json(data);
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('Twelve Data timeseries proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `twelveData quota exhausted`, reason: error.reason });
+    }
+    logger.error(`Twelve Data timeseries proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch timeseries from Twelve Data', message: error.message });
   }
 });
@@ -2015,45 +1926,32 @@ app.get('/api/twelvedata/timeseries/:symbol', optionalAuthMiddleware, async (req
  */
 app.get('/api/twelvedata/search', optionalAuthMiddleware, async (req, res) => {
   const { symbol } = req.query;
+  if (!symbol) return res.status(400).json({ error: 'Search symbol required' });
   const apiKey = await resolveProviderKey(req, 'twelvedata');
-  const cacheKey = `twelvedata:search:${symbol?.toLowerCase()}`;
-  
-  if (process.env.DATABASE_URL && symbol) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      logger.info(`[TwelveData] Cache hit for search ${symbol}`);
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-  }
-  
-  if (!symbol) {
-    return res.status(400).json({ error: 'Search symbol required' });
-  }
-  
+
+  const cacheKey = `twelvedata:search:${symbol.toLowerCase()}`;
   try {
     let url = `${TWELVE_DATA_BASE_URL}/symbol_search?symbol=${encodeURIComponent(symbol)}`;
-    if (apiKey) {
-      url += `&apikey=${apiKey}`;
-    }
-    
-    const response = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
+    if (apiKey) url += `&apikey=${apiKey}`;
+    const { data, fromCache, stale } = await providerCall('twelveData', async () => {
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+      return r.json();
+    }, {
+      cacheKey,
+      cacheType: 'search',
+      symbol: symbol.toUpperCase(),
+      source: 'twelvedata',
+      ttlSeconds: stockCache.CACHE_DURATIONS.search,
+      allowStale: true,
     });
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ error: `Twelve Data error: ${response.statusText}` });
-    }
-    
-    const data = await response.json();
-    
-    if (process.env.DATABASE_URL && data && data.data) {
-      await stockCache.setCache(cacheKey, 'search', symbol.toUpperCase(), data, 'twelvedata', stockCache.CACHE_DURATIONS.search);
-      logger.info(`[TwelveData] Cached search for ${symbol}`);
-    }
-    
-    res.json(data);
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('Twelve Data search proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `twelveData quota exhausted`, reason: error.reason });
+    }
+    logger.error(`Twelve Data search proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to search Twelve Data', message: error.message });
   }
 });
@@ -2071,20 +1969,10 @@ const NEWS_API_BASE_URL = 'https://newsapi.org/v2';
 app.get('/api/news/everything', optionalAuthMiddleware, async (req, res) => {
   const { q, language = 'en', sortBy = 'publishedAt', pageSize = '10' } = req.query;
   const apiKey = await resolveProviderKey(req, 'newsapi');
-
-  if (!apiKey) {
-    return res.status(503).json({ error: 'NewsAPI not configured on server' });
-  }
-  if (!q) {
-    return res.status(400).json({ error: 'Search query (q) is required' });
-  }
+  if (!apiKey) return res.status(503).json({ error: 'NewsAPI not configured on server' });
+  if (!q) return res.status(400).json({ error: 'Search query (q) is required' });
 
   const cacheKey = `newsapi:everything:${q}:${language}:${sortBy}:${pageSize}`;
-  if (process.env.DATABASE_URL) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-  }
-  
   try {
     const url = new URL(`${NEWS_API_BASE_URL}/everything`);
     url.searchParams.set('apiKey', apiKey);
@@ -2092,32 +1980,34 @@ app.get('/api/news/everything', optionalAuthMiddleware, async (req, res) => {
     url.searchParams.set('language', language);
     url.searchParams.set('sortBy', sortBy);
     url.searchParams.set('pageSize', pageSize);
-    
-    const response = await fetch(url.toString(), {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; DayTrader/1.0)',
-        'Accept': 'application/json',
-      },
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      logger.error(`NewsAPI error: ${response.status} ${data.message || response.statusText}`);
-      return res.status(response.status).json({
-        error: 'NewsAPI error',
-        status: response.status,
-        message: data.message || response.statusText
-      });
-    }
 
-    if (process.env.DATABASE_URL && data?.status === 'ok') {
-      await stockCache.setCache(cacheKey, 'news', String(q).toUpperCase(), data, 'newsapi', stockCache.CACHE_DURATIONS.news);
-    }
-    res.json(data);
+    const { data, fromCache, stale } = await providerCall('newsapi', async () => {
+      const r = await fetch(url.toString(), {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; DayTrader/1.0)',
+          'Accept': 'application/json',
+        },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(`HTTP ${r.status}: ${j.message || r.statusText}`);
+      if (j.status !== 'ok') throw new Error(j.message || 'NewsAPI returned non-ok status');
+      return j;
+    }, {
+      cacheKey,
+      cacheType: 'news',
+      symbol: String(q).toUpperCase(),
+      source: 'newsapi',
+      ttlSeconds: stockCache.CACHE_DURATIONS.news,
+      allowStale: true,
+    });
+    if (stale) res.set('X-Cache-Stale', 'true');
+    return res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('NewsAPI proxy error:', error);
-    res.status(500).json({ 
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `newsapi quota exhausted`, reason: error.reason });
+    }
+    logger.error(`NewsAPI proxy error: ${error.message}`);
+    return res.status(500).json({
       error: 'Failed to fetch from NewsAPI',
       message: error.message 
     });
@@ -6440,70 +6330,54 @@ const MARKETAUX_API_BASE = 'https://api.marketaux.com/v1';
 app.get('/api/marketaux/news', optionalAuthMiddleware, async (req, res) => {
   const { symbols, language = 'en', limit = '10' } = req.query;
   const apiKey = await resolveProviderKey(req, 'marketaux');
+  if (!apiKey) return res.status(503).json({ error: 'Marketaux not configured on server' });
 
-  if (!apiKey) {
-    return res.status(503).json({ error: 'Marketaux not configured on server' });
-  }
-  
   const cacheKey = `marketaux:news:${symbols || 'all'}:${language}`;
-  
   try {
-    // Check cache first
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-    
-    const url = new URL(`${MARKETAUX_API_BASE}/news/all`);
-    url.searchParams.set('api_token', apiKey);
-    url.searchParams.set('language', language);
-    url.searchParams.set('limit', limit);
-    if (symbols) {
-      url.searchParams.set('symbols', symbols);
-    }
-    
-    const response = await fetch(url.toString(), {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'DayTrader/1.0'
-      }
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ 
-        error: 'Marketaux API error'
+    const { data, fromCache, stale } = await providerCall('marketaux', async () => {
+      const url = new URL(`${MARKETAUX_API_BASE}/news/all`);
+      url.searchParams.set('api_token', apiKey);
+      url.searchParams.set('language', language);
+      url.searchParams.set('limit', limit);
+      if (symbols) url.searchParams.set('symbols', symbols);
+      const r = await fetch(url.toString(), {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'DayTrader/1.0' },
       });
-    }
-    
-    // Generate unique timestamp base for this batch
-    const batchTimestamp = Date.now();
-    
-    // Normalize to NewsItem format
-    const normalizedData = {
-      items: (data.data || []).map((item, index) => ({
-        id: item.uuid || `marketaux-${batchTimestamp}-${index}`,
-        headline: item.title || '',
-        summary: item.description || item.snippet || '',
-        source: item.source || 'Marketaux',
-        url: item.url || '',
-        datetime: item.published_at ? new Date(item.published_at).getTime() : Date.now(),
-        image: item.image_url || undefined,
-        related: item.entities?.map(e => e.symbol).filter(Boolean) || [],
-        sentiment: typeof item.sentiment_score === 'number' ? item.sentiment_score : undefined,
-        language: item.language || language
-      })),
-      meta: data.meta,
-      fetchedAt: new Date().toISOString()
-    };
-    
-    // Cache for 5 minutes
-    await stockCache.setCache(cacheKey, 'news', String(symbols || 'all').toUpperCase(), normalizedData, 'marketaux', stockCache.CACHE_DURATIONS.news);
-    
-    res.json(normalizedData);
+      const j = await r.json();
+      if (!r.ok) throw new Error(`Marketaux HTTP ${r.status}`);
+
+      const batchTimestamp = Date.now();
+      return {
+        items: (j.data || []).map((item, index) => ({
+          id: item.uuid || `marketaux-${batchTimestamp}-${index}`,
+          headline: item.title || '',
+          summary: item.description || item.snippet || '',
+          source: item.source || 'Marketaux',
+          url: item.url || '',
+          datetime: item.published_at ? new Date(item.published_at).getTime() : Date.now(),
+          image: item.image_url || undefined,
+          related: item.entities?.map((e) => e.symbol).filter(Boolean) || [],
+          sentiment: typeof item.sentiment_score === 'number' ? item.sentiment_score : undefined,
+          language: item.language || language,
+        })),
+        meta: j.meta,
+        fetchedAt: new Date().toISOString(),
+      };
+    }, {
+      cacheKey,
+      cacheType: 'news',
+      symbol: String(symbols || 'all').toUpperCase(),
+      source: 'marketaux',
+      ttlSeconds: stockCache.CACHE_DURATIONS.news,
+      allowStale: true,
+    });
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('Marketaux proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `marketaux quota exhausted`, reason: error.reason });
+    }
+    logger.error(`Marketaux proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch from Marketaux' });
   }
 });
@@ -6522,67 +6396,50 @@ const FMP_API_BASE = 'https://financialmodelingprep.com/api/v3';
 app.get('/api/fmp/news/stock', optionalAuthMiddleware, async (req, res) => {
   const { tickers, limit = '10' } = req.query;
   const apiKey = await resolveProviderKey(req, 'fmp');
+  if (!apiKey) return res.status(503).json({ error: 'FMP not configured on server' });
 
-  if (!apiKey) {
-    return res.status(503).json({ error: 'FMP not configured on server' });
-  }
-  
   const cacheKey = `fmp:stocknews:${tickers || 'all'}`;
-  
   try {
-    // Check cache first
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-    
-    const url = new URL(`${FMP_API_BASE}/stock_news`);
-    url.searchParams.set('apikey', apiKey);
-    url.searchParams.set('limit', limit);
-    if (tickers) {
-      url.searchParams.set('tickers', tickers);
-    }
-    
-    const response = await fetch(url.toString(), {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'DayTrader/1.0'
-      }
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ 
-        error: 'FMP API error'
+    const { data, fromCache, stale } = await providerCall('fmp', async () => {
+      const url = new URL(`${FMP_API_BASE}/stock_news`);
+      url.searchParams.set('apikey', apiKey);
+      url.searchParams.set('limit', limit);
+      if (tickers) url.searchParams.set('tickers', tickers);
+      const r = await fetch(url.toString(), {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'DayTrader/1.0' },
       });
-    }
-    
-    // Generate unique timestamp base for this batch
-    const batchTimestamp = Date.now();
-    
-    // Normalize to NewsItem format
-    const normalizedData = {
-      items: (data || []).map((item, index) => ({
-        id: `fmp-${batchTimestamp}-${index}`,
-        headline: item.title || '',
-        summary: item.text || '',
-        source: item.site || 'FMP',
-        url: item.url || '',
-        datetime: item.publishedDate ? new Date(item.publishedDate).getTime() : Date.now(),
-        image: item.image || undefined,
-        related: item.symbol ? [item.symbol] : [],
-        language: 'en'
-      })),
-      fetchedAt: new Date().toISOString()
-    };
-    
-    // Cache for 5 minutes
-    await stockCache.setCache(cacheKey, 'news', String(tickers || 'all').toUpperCase(), normalizedData, 'fmp', stockCache.CACHE_DURATIONS.news);
-    
-    res.json(normalizedData);
+      const j = await r.json();
+      if (!r.ok) throw new Error(`FMP HTTP ${r.status}`);
+      const batchTimestamp = Date.now();
+      return {
+        items: (j || []).map((item, index) => ({
+          id: `fmp-${batchTimestamp}-${index}`,
+          headline: item.title || '',
+          summary: item.text || '',
+          source: item.site || 'FMP',
+          url: item.url || '',
+          datetime: item.publishedDate ? new Date(item.publishedDate).getTime() : Date.now(),
+          image: item.image || undefined,
+          related: item.symbol ? [item.symbol] : [],
+          language: 'en',
+        })),
+        fetchedAt: new Date().toISOString(),
+      };
+    }, {
+      cacheKey,
+      cacheType: 'news',
+      symbol: String(tickers || 'all').toUpperCase(),
+      source: 'fmp',
+      ttlSeconds: stockCache.CACHE_DURATIONS.news,
+      allowStale: true,
+    });
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('FMP proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `fmp quota exhausted`, reason: error.reason });
+    }
+    logger.error(`FMP proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch from FMP' });
   }
 });
@@ -6595,64 +6452,49 @@ app.get('/api/fmp/news/stock', optionalAuthMiddleware, async (req, res) => {
 app.get('/api/fmp/news/general', optionalAuthMiddleware, async (req, res) => {
   const { limit = '20' } = req.query;
   const apiKey = await resolveProviderKey(req, 'fmp');
+  if (!apiKey) return res.status(503).json({ error: 'FMP not configured on server' });
 
-  if (!apiKey) {
-    return res.status(503).json({ error: 'FMP not configured on server' });
-  }
-  
   const cacheKey = `fmp:generalnews`;
-  
   try {
-    // Check cache first
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-    
-    const url = new URL(`${FMP_API_BASE}/stock-market-news`);
-    url.searchParams.set('apikey', apiKey);
-    url.searchParams.set('limit', limit);
-    
-    const response = await fetch(url.toString(), {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'DayTrader/1.0'
-      }
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ 
-        error: 'FMP API error'
+    const { data, fromCache, stale } = await providerCall('fmp', async () => {
+      const url = new URL(`${FMP_API_BASE}/stock-market-news`);
+      url.searchParams.set('apikey', apiKey);
+      url.searchParams.set('limit', limit);
+      const r = await fetch(url.toString(), {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'DayTrader/1.0' },
       });
-    }
-    
-    // Generate unique timestamp base for this batch
-    const batchTimestamp = Date.now();
-    
-    // Normalize to NewsItem format
-    const normalizedData = {
-      items: (data || []).map((item, index) => ({
-        id: `fmp-general-${batchTimestamp}-${index}`,
-        headline: item.title || '',
-        summary: item.text || '',
-        source: item.site || 'FMP',
-        url: item.url || '',
-        datetime: item.publishedDate ? new Date(item.publishedDate).getTime() : Date.now(),
-        image: item.image || undefined,
-        related: item.symbol ? [item.symbol] : [],
-        language: 'en'
-      })),
-      fetchedAt: new Date().toISOString()
-    };
-    
-    // Cache for 5 minutes
-    await stockCache.setCache(cacheKey, 'news', 'ALL', normalizedData, 'fmp', stockCache.CACHE_DURATIONS.news);
-    
-    res.json(normalizedData);
+      const j = await r.json();
+      if (!r.ok) throw new Error(`FMP HTTP ${r.status}`);
+      const batchTimestamp = Date.now();
+      return {
+        items: (j || []).map((item, index) => ({
+          id: `fmp-general-${batchTimestamp}-${index}`,
+          headline: item.title || '',
+          summary: item.text || '',
+          source: item.site || 'FMP',
+          url: item.url || '',
+          datetime: item.publishedDate ? new Date(item.publishedDate).getTime() : Date.now(),
+          image: item.image || undefined,
+          related: item.symbol ? [item.symbol] : [],
+          language: 'en',
+        })),
+        fetchedAt: new Date().toISOString(),
+      };
+    }, {
+      cacheKey,
+      cacheType: 'news',
+      symbol: 'ALL',
+      source: 'fmp',
+      ttlSeconds: stockCache.CACHE_DURATIONS.news,
+      allowStale: true,
+    });
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('FMP general news proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `fmp quota exhausted`, reason: error.reason });
+    }
+    logger.error(`FMP general news proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch from FMP' });
   }
 });
@@ -6671,67 +6513,49 @@ const TIINGO_API_BASE = 'https://api.tiingo.com';
 app.get('/api/tiingo/news', optionalAuthMiddleware, async (req, res) => {
   const { tickers, limit = '10' } = req.query;
   const apiKey = await resolveProviderKey(req, 'tiingo');
+  if (!apiKey) return res.status(503).json({ error: 'Tiingo not configured on server' });
 
-  if (!apiKey) {
-    return res.status(503).json({ error: 'Tiingo not configured on server' });
-  }
-  
   const cacheKey = `tiingo:news:${tickers || 'all'}`;
-  
   try {
-    // Check cache first
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-    
-    const url = new URL(`${TIINGO_API_BASE}/tiingo/news`);
-    url.searchParams.set('token', apiKey);
-    url.searchParams.set('limit', limit);
-    if (tickers) {
-      url.searchParams.set('tickers', tickers);
-    }
-    
-    const response = await fetch(url.toString(), {
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'User-Agent': 'DayTrader/1.0'
-      }
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ 
-        error: 'Tiingo API error'
+    const { data, fromCache, stale } = await providerCall('tiingo', async () => {
+      const url = new URL(`${TIINGO_API_BASE}/tiingo/news`);
+      url.searchParams.set('token', apiKey);
+      url.searchParams.set('limit', limit);
+      if (tickers) url.searchParams.set('tickers', tickers);
+      const r = await fetch(url.toString(), {
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'DayTrader/1.0' },
       });
-    }
-    
-    // Generate unique timestamp base for this batch
-    const batchTimestamp = Date.now();
-    
-    // Normalize to NewsItem format
-    const normalizedData = {
-      items: (data || []).map((item, index) => ({
-        id: item.id?.toString() || `tiingo-${batchTimestamp}-${index}`,
-        headline: item.title || '',
-        summary: item.description || '',
-        source: item.source || 'Tiingo',
-        url: item.url || '',
-        datetime: item.publishedDate ? new Date(item.publishedDate).getTime() : Date.now(),
-        related: item.tickers || [],
-        language: 'en'
-      })),
-      fetchedAt: new Date().toISOString()
-    };
-    
-    // Cache for 5 minutes
-    await stockCache.setCache(cacheKey, 'news', String(tickers || 'all').toUpperCase(), normalizedData, 'tiingo', stockCache.CACHE_DURATIONS.news);
-    
-    res.json(normalizedData);
+      const j = await r.json();
+      if (!r.ok) throw new Error(`Tiingo HTTP ${r.status}`);
+      const batchTimestamp = Date.now();
+      return {
+        items: (j || []).map((item, index) => ({
+          id: item.id?.toString() || `tiingo-${batchTimestamp}-${index}`,
+          headline: item.title || '',
+          summary: item.description || '',
+          source: item.source || 'Tiingo',
+          url: item.url || '',
+          datetime: item.publishedDate ? new Date(item.publishedDate).getTime() : Date.now(),
+          related: item.tickers || [],
+          language: 'en',
+        })),
+        fetchedAt: new Date().toISOString(),
+      };
+    }, {
+      cacheKey,
+      cacheType: 'news',
+      symbol: String(tickers || 'all').toUpperCase(),
+      source: 'tiingo',
+      ttlSeconds: stockCache.CACHE_DURATIONS.news,
+      allowStale: true,
+    });
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('Tiingo proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `tiingo quota exhausted`, reason: error.reason });
+    }
+    logger.error(`Tiingo proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch from Tiingo' });
   }
 });
@@ -6750,69 +6574,51 @@ const MEDIASTACK_API_BASE = 'http://api.mediastack.com/v1';
 app.get('/api/mediastack/news', optionalAuthMiddleware, async (req, res) => {
   const { keywords = '', language = 'en', limit = '20' } = req.query;
   const apiKey = await resolveProviderKey(req, 'mediastack');
+  if (!apiKey) return res.status(503).json({ error: 'Mediastack not configured on server' });
 
-  if (!apiKey) {
-    return res.status(503).json({ error: 'Mediastack not configured on server' });
-  }
-  
   const cacheKey = `mediastack:news:${keywords || 'all'}:${language}`;
-  
   try {
-    // Check cache first
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-    
-    const url = new URL(`${MEDIASTACK_API_BASE}/news`);
-    url.searchParams.set('access_key', apiKey);
-    url.searchParams.set('languages', language);
-    url.searchParams.set('limit', limit);
-    if (keywords) {
-      url.searchParams.set('keywords', keywords);
-    }
-    
-    const response = await fetch(url.toString(), {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'DayTrader/1.0'
-      }
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ 
-        error: 'mediastack API error',
-        message: data.error?.message || 'Unknown error'
+    const { data, fromCache, stale } = await providerCall('mediastack', async () => {
+      const url = new URL(`${MEDIASTACK_API_BASE}/news`);
+      url.searchParams.set('access_key', apiKey);
+      url.searchParams.set('languages', language);
+      url.searchParams.set('limit', limit);
+      if (keywords) url.searchParams.set('keywords', keywords);
+      const r = await fetch(url.toString(), {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'DayTrader/1.0' },
       });
-    }
-    
-    // Generate unique timestamp base for this batch
-    const batchTimestamp = Date.now();
-    
-    // Normalize to NewsItem format
-    const normalizedData = {
-      items: (data.data || []).map((item, index) => ({
-        id: `mediastack-${batchTimestamp}-${index}`,
-        headline: item.title || '',
-        summary: item.description || '',
-        source: item.source || 'mediastack',
-        url: item.url || '',
-        datetime: item.published_at ? new Date(item.published_at).getTime() : Date.now(),
-        image: item.image || undefined,
-        language: item.language || language,
-        category: item.category || undefined
-      })),
-      fetchedAt: new Date().toISOString()
-    };
-    
-    // Cache for 5 minutes
-    await stockCache.setCache(cacheKey, 'news', String(keywords || 'all').toUpperCase(), normalizedData, 'mediastack', stockCache.CACHE_DURATIONS.news);
-    
-    res.json(normalizedData);
+      const j = await r.json();
+      if (!r.ok) throw new Error(`mediastack HTTP ${r.status}: ${j?.error?.message || r.statusText}`);
+      const batchTimestamp = Date.now();
+      return {
+        items: (j.data || []).map((item, index) => ({
+          id: `mediastack-${batchTimestamp}-${index}`,
+          headline: item.title || '',
+          summary: item.description || '',
+          source: item.source || 'mediastack',
+          url: item.url || '',
+          datetime: item.published_at ? new Date(item.published_at).getTime() : Date.now(),
+          image: item.image || undefined,
+          language: item.language || language,
+          category: item.category || undefined,
+        })),
+        fetchedAt: new Date().toISOString(),
+      };
+    }, {
+      cacheKey,
+      cacheType: 'news',
+      symbol: String(keywords || 'all').toUpperCase(),
+      source: 'mediastack',
+      ttlSeconds: stockCache.CACHE_DURATIONS.news,
+      allowStale: true,
+    });
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('mediastack proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `mediastack quota exhausted`, reason: error.reason });
+    }
+    logger.error(`mediastack proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch from mediastack' });
   }
 });
@@ -6831,69 +6637,51 @@ const NEWSDATA_API_BASE = 'https://newsdata.io/api/1';
 app.get('/api/newsdata/news', optionalAuthMiddleware, async (req, res) => {
   const { q = '', language = 'en', category = 'business' } = req.query;
   const apiKey = await resolveProviderKey(req, 'newsdata');
+  if (!apiKey) return res.status(503).json({ error: 'NewsData.io not configured on server' });
 
-  if (!apiKey) {
-    return res.status(503).json({ error: 'NewsData.io not configured on server' });
-  }
-  
   const cacheKey = `newsdata:news:${q || 'all'}:${language}:${category}`;
-  
   try {
-    // Check cache first
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-    
-    const url = new URL(`${NEWSDATA_API_BASE}/news`);
-    url.searchParams.set('apikey', apiKey);
-    url.searchParams.set('language', language);
-    url.searchParams.set('category', category);
-    if (q) {
-      url.searchParams.set('q', q);
-    }
-    
-    const response = await fetch(url.toString(), {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'DayTrader/1.0'
-      }
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok || data.status === 'error') {
-      return res.status(response.status || 400).json({ 
-        error: 'NewsData.io API error',
-        message: data.message || 'Unknown error'
+    const { data, fromCache, stale } = await providerCall('newsdata', async () => {
+      const url = new URL(`${NEWSDATA_API_BASE}/news`);
+      url.searchParams.set('apikey', apiKey);
+      url.searchParams.set('language', language);
+      url.searchParams.set('category', category);
+      if (q) url.searchParams.set('q', q);
+      const r = await fetch(url.toString(), {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'DayTrader/1.0' },
       });
-    }
-    
-    // Generate unique timestamp base for this batch
-    const batchTimestamp = Date.now();
-    
-    // Normalize to NewsItem format
-    const normalizedData = {
-      items: (data.results || []).map((item, index) => ({
-        id: item.article_id || `newsdata-${batchTimestamp}-${index}`,
-        headline: item.title || '',
-        summary: item.description || item.content || '',
-        source: item.source_id || 'NewsData.io',
-        url: item.link || '',
-        datetime: item.pubDate ? new Date(item.pubDate).getTime() : Date.now(),
-        image: item.image_url || undefined,
-        language: item.language || language,
-        category: item.category?.[0] || category
-      })),
-      fetchedAt: new Date().toISOString()
-    };
-    
-    // Cache for 5 minutes
-    await stockCache.setCache(cacheKey, 'news', String(q || 'all').toUpperCase(), normalizedData, 'newsdata', stockCache.CACHE_DURATIONS.news);
-    
-    res.json(normalizedData);
+      const j = await r.json();
+      if (!r.ok || j.status === 'error') throw new Error(`NewsData HTTP ${r.status}: ${j.message || r.statusText}`);
+      const batchTimestamp = Date.now();
+      return {
+        items: (j.results || []).map((item, index) => ({
+          id: item.article_id || `newsdata-${batchTimestamp}-${index}`,
+          headline: item.title || '',
+          summary: item.description || item.content || '',
+          source: item.source_id || 'NewsData.io',
+          url: item.link || '',
+          datetime: item.pubDate ? new Date(item.pubDate).getTime() : Date.now(),
+          image: item.image_url || undefined,
+          language: item.language || language,
+          category: item.category?.[0] || category,
+        })),
+        fetchedAt: new Date().toISOString(),
+      };
+    }, {
+      cacheKey,
+      cacheType: 'news',
+      symbol: String(q || 'all').toUpperCase(),
+      source: 'newsdata',
+      ttlSeconds: stockCache.CACHE_DURATIONS.news,
+      allowStale: true,
+    });
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('NewsData.io proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `newsdata quota exhausted`, reason: error.reason });
+    }
+    logger.error(`NewsData.io proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch from NewsData.io' });
   }
 });

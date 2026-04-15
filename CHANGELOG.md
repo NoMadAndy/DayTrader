@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Provider-Traffic-Limiter Phase B (Paid-Tier-Provider migriert)
+
+13 Routes auf zentralen `providerCall`-Gate umgezogen — alle Outbound-Calls zu den Providern mit engsten Free-Tier-Limits gehen jetzt durch Cache + Quota + Stale-While-Revalidate:
+
+- **AlphaVantage** (5 Routes, Free-Tier 25/d): `/api/alphavantage/{quote,daily,intraday,overview,search}`. `allowStale: false` für live Quote (Stale-Quote könnte Trading-Entscheidungen fehlleiten), `true` für historical/company_info/search.
+- **TwelveData** (3 Routes, 800/d): `/api/twelvedata/{quote,timeseries,search}`. Quote mit `allowStale: false`.
+- **News-Provider** (5 Routes): `/api/news/everything` (NewsAPI), `/api/marketaux/news`, `/api/fmp/news/{stock,general}`, `/api/tiingo/news`, `/api/mediastack/news`, `/api/newsdata/news`. Alle mit `allowStale: true`.
+- Bei Quota-Exhaustion: 429 mit `{error, reason}` statt opaker 500er; Response-Header `X-Cache-Stale: true` bei Fallback auf abgelaufenen Cache; `_cached` / `_stale` Flags im Body für Frontend-Differenzierung.
+- Counter-Verifikation live: twelveData usedToday 0 → 1 nach einem `/api/twelvedata/search`-Call.
+
 ### Added — Provider-Traffic-Limiter Phase A (Free-Tier-Governance Infrastruktur)
 
 - **`backend/src/providerCall.js`** — zentraler Gate für alle Outbound-Provider-Calls: Cache-Hit → kein Call, Quota-Check → bei Block Stale-While-Revalidate-Fallback oder `ProviderQuotaError`. Additiv, keine Call-Sites angefasst.
