@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Provider-Traffic-Limiter Phase C (Background-Job-Disziplin)
+
+- **`backend/src/backgroundJobs.js`** — Quote-Refresh-Zyklus holt jetzt ausschließlich *aktiv genutzte* Symbole (Union aus offenen `positions` + `custom_symbols` + optionalem `QUOTE_REFRESH_FALLBACK_SYMBOLS`-ENV). Fixer 10-Symbol-Default-Block entfernt.
+- **Wenn niemand etwas hält oder watched**: Cycle wird komplett übersprungen, Log-Level `debug`. Vorher Yahoo-Hammer von ~72k Calls/Tag auch bei leerem System. Mit `QUOTE_REFRESH_FALLBACK_SYMBOLS=SPY,QQQ` kann man ein Minimalset für Home-Dashboard erzwingen.
+- Live-Verifikation nach Deploy: Zyklus zog 118 echte aktive Symbole (Positions + Watchlists), capped auf `maxSymbolsPerCycle=50` — vorher: immer 50 inkl. nie-gewatchte Default-Ticker.
+
 ### Changed — Provider-Traffic-Limiter Phase B (Paid-Tier-Provider migriert)
 
 13 Routes auf zentralen `providerCall`-Gate umgezogen — alle Outbound-Calls zu den Providern mit engsten Free-Tier-Limits gehen jetzt durch Cache + Quota + Stale-While-Revalidate:

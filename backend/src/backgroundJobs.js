@@ -17,23 +17,16 @@ import signalIC from './signalIC.js';
 
 // Configuration
 const CONFIG = {
-  // How often to update quotes (in milliseconds)
-  quoteUpdateInterval: 60 * 1000, // 1 minute
-  
-  // How often to clean expired cache (in milliseconds)
-  cacheCleanupInterval: 5 * 60 * 1000, // 5 minutes
-  
-  // Batch size for quote updates (to avoid overwhelming APIs)
+  quoteUpdateInterval: 60 * 1000,
+  cacheCleanupInterval: 5 * 60 * 1000,
   quoteBatchSize: 10,
-  
-  // Delay between batches (in milliseconds)
   batchDelayMs: 2000,
-  
-  // Maximum symbols to update per cycle
   maxSymbolsPerCycle: 50,
-  
-  // Default symbols to always keep updated (popular stocks)
-  defaultSymbols: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'AMD', 'INTC', 'NFLX'],
+  // ENV QUOTE_REFRESH_FALLBACK_SYMBOLS="SPY,QQQ" (comma-separated) forces a
+  // minimal set even when no user has opened positions or a watchlist. Empty
+  // by default: if nobody is actively trading, we don't hit Yahoo at all.
+  fallbackSymbols: (process.env.QUOTE_REFRESH_FALLBACK_SYMBOLS || '')
+    .split(',').map((s) => s.trim().toUpperCase()).filter(Boolean),
 };
 
 // Job state
@@ -52,17 +45,28 @@ let quoteUpdateTimer = null;
 let cacheCleanupTimer = null;
 
 /**
- * Get all unique symbols from all users' watchlists
- * @returns {Promise<string[]>} Array of unique symbols
+ * Return the union of symbols that are actually being used:
+ *   - open positions across all users (need live P&L for AI trader)
+ *   - custom watchlist entries
+ * Plus any comma-separated fallback set from QUOTE_REFRESH_FALLBACK_SYMBOLS.
+ *
+ * When no user is holding anything and nobody watches anything we return [],
+ * which makes the quote-update cycle short-circuit → zero Yahoo calls.
  */
-async function getAllWatchedSymbols() {
+async function getActiveSymbols() {
   try {
-    const result = await query(
-      `SELECT DISTINCT symbol FROM custom_symbols ORDER BY symbol`
-    );
-    return result.rows.map(row => row.symbol);
+    const [watchlist, positionsRes] = await Promise.all([
+      query(`SELECT DISTINCT symbol FROM custom_symbols`),
+      query(`SELECT DISTINCT symbol FROM positions WHERE closed_at IS NULL`),
+    ]);
+    const union = new Set([
+      ...CONFIG.fallbackSymbols,
+      ...watchlist.rows.map((r) => String(r.symbol).toUpperCase()),
+      ...positionsRes.rows.map((r) => String(r.symbol).toUpperCase()),
+    ]);
+    return Array.from(union).sort();
   } catch (e) {
-    logger.error('[BackgroundJobs] Failed to get watched symbols:', e);
+    logger.error('[BackgroundJobs] Failed to resolve active symbols: ' + e.message);
     return [];
   }
 }
@@ -180,36 +184,28 @@ async function runQuoteUpdateCycle() {
     return;
   }
   
-  logger.info('[BackgroundJobs] Starting quote update cycle...');
   updateStats.cycleCount++;
-  
   try {
-    // Get all watched symbols
-    const userSymbols = await getAllWatchedSymbols();
-    
-    // Combine with default symbols, remove duplicates
-    const allSymbols = [...new Set([...CONFIG.defaultSymbols, ...userSymbols])];
-    
-    // Limit to max symbols per cycle
-    const symbolsToUpdate = allSymbols.slice(0, CONFIG.maxSymbolsPerCycle);
-    
-    logger.info(`[BackgroundJobs] Updating ${symbolsToUpdate.length} symbols`);
-    
-    // Process in batches
+    const activeSymbols = await getActiveSymbols();
+    if (activeSymbols.length === 0) {
+      logger.debug('[BackgroundJobs] No active symbols (no open positions, no watchlist, no fallback) — skipping cycle');
+      return;
+    }
+    const symbolsToUpdate = activeSymbols.slice(0, CONFIG.maxSymbolsPerCycle);
+    logger.info(`[BackgroundJobs] Updating ${symbolsToUpdate.length} active symbols (of ${activeSymbols.length} total)`);
+
     for (let i = 0; i < symbolsToUpdate.length; i += CONFIG.quoteBatchSize) {
       const batch = symbolsToUpdate.slice(i, i + CONFIG.quoteBatchSize);
       await updateQuoteBatch(batch);
-      
-      // Delay between batches
       if (i + CONFIG.quoteBatchSize < symbolsToUpdate.length) {
-        await new Promise(resolve => setTimeout(resolve, CONFIG.batchDelayMs));
+        await new Promise((resolve) => setTimeout(resolve, CONFIG.batchDelayMs));
       }
     }
-    
+
     lastQuoteUpdate = new Date();
-    logger.info(`[BackgroundJobs] Quote update cycle complete. Success: ${updateStats.successfulUpdates}, Failed: ${updateStats.failedUpdates}`);
+    logger.info(`[BackgroundJobs] Cycle done. Success: ${updateStats.successfulUpdates}, Failed: ${updateStats.failedUpdates}`);
   } catch (e) {
-    logger.error('[BackgroundJobs] Quote update cycle error:', e);
+    logger.error(`[BackgroundJobs] Quote update cycle error: ${e.message}`);
     updateStats.lastError = e.message;
   }
 }
