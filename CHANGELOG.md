@@ -43,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **API** `GET /api/provider-usage` — Counts + Restkontingent + Cooldown + Block-/Stale-Counter für alle 10 Provider.
 - **Tests** `backend/tests/providerCall.test.js` — 10/10: Quota-Block, Stale-Fallback, Fresh-Cache-Bypass, Live-Call-Pfad, `allowStale=false` Verhalten, Monats-Cap, Shape-Contract für Status.
 
+### Removed — RL-Legacy-Agents entsorgt (2105-dim obs-space)
+
+- `aggressive_momentum` + `balanced_trader1` Checkpoints + Metadata via `DELETE /agents/{name}` gelöscht (Trainer hat `delete_agent()` + `rmtree` in models- und checkpoints-Volumes). Beide hatten 2105-dim Observation-Space vs. aktueller 2407-dim Env → `predict()` crashte.
+- `PRESET_AGENT_CONFIGS` in [agent_config.py](rl-trading-service/app/agent_config.py) um `aggressive_momentum` + `balanced_trader` entkernt — verhindert, dass ein User neue Agents unter dem tainted Namespace trainiert.
+- DB-Drift-Check: `SELECT ... WHERE personality->>'rlAgentName' IN ('aggressive_momentum','balanced_trader1')` → 0 Zeilen. Bereits alle Trader auf kompatible Agents gemapped.
+- Verbleibende 8 Agents: `conservative_swing0001/1`, `day_trader0001/0002/1/2/3`, `position_investor`. Presets: `conservative_swing`, `day_trader`, `position_investor`.
+
 ### Added — Walk-Forward-CV für Transformer (Parity mit LSTM)
 
 - **`ml-service/app/transformer_model.py`** — `walk_forward_split()` (3 Folds, Purged-Gap=5, min_train_ratio=0.5) + `_prepare_all_sequences()` + `train(use_walk_forward=True)`. Analog zu LSTM: pro Fold wird ein fresh Modell trainiert, die gewichteten Val-Losses werden aggregiert, der beste Fold-Checkpoint wird als finales Modell geladen.

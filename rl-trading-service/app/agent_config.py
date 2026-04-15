@@ -246,19 +246,10 @@ PRESET_AGENT_CONFIGS = {
         take_profit_percent=0.08,
         broker_profile=BrokerProfile.DISCOUNT,
     ),
-    "aggressive_momentum": AgentConfig(
-        name="aggressive_momentum",
-        description="Aggressive momentum trader - high risk, short holding period",
-        holding_period=HoldingPeriod.SWING_SHORT,
-        risk_profile=RiskProfile.AGGRESSIVE,
-        trading_style=TradingStyle.MOMENTUM,
-        max_position_size=0.35,
-        max_positions=5,
-        stop_loss_percent=0.07,
-        take_profit_percent=0.15,
-        broker_profile=BrokerProfile.DISCOUNT,
-        ent_coef=0.02,  # More exploration
-    ),
+    # Legacy presets aggressive_momentum + balanced_trader were removed 2026-04-15
+    # after the 2105→2407 obs-space migration. Old trained checkpoints crashed
+    # `predict()` and new trainings from these names would re-taint the
+    # namespace. Recreate under a fresh name if needed.
     "day_trader": AgentConfig(
         name="day_trader",
         description="Intraday trader - quick trades, mean reversion",
@@ -286,17 +277,5 @@ PRESET_AGENT_CONFIGS = {
         trailing_stop_distance=0.05,
         broker_profile=BrokerProfile.PREMIUM,
         gamma=0.995,  # More weight on long-term rewards
-    ),
-    "balanced_trader": AgentConfig(
-        name="balanced_trader",
-        description="Balanced approach - moderate risk and holding period",
-        holding_period=HoldingPeriod.SWING_SHORT,
-        risk_profile=RiskProfile.MODERATE,
-        trading_style=TradingStyle.MIXED,
-        max_position_size=0.20,
-        max_positions=5,
-        stop_loss_percent=0.05,
-        take_profit_percent=0.10,
-        broker_profile=BrokerProfile.STANDARD,
     ),
 }
