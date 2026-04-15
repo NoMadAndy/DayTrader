@@ -43,6 +43,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **API** `GET /api/provider-usage` — Counts + Restkontingent + Cooldown + Block-/Stale-Counter für alle 10 Provider.
 - **Tests** `backend/tests/providerCall.test.js` — 10/10: Quota-Block, Stale-Fallback, Fresh-Cache-Bypass, Live-Call-Pfad, `allowStale=false` Verhalten, Monats-Cap, Shape-Contract für Status.
 
+### Added — Admin-Widget: Provider-Traffic + LLM-Budget sichtbar (Settings→System)
+
+- **`frontend/src/pages/SettingsPage.tsx`** — zwei neue Panels im System-Tab unterhalb `BackgroundActivitiesPanel`:
+  1. **📊 Provider-Traffic (Free-Tier-Budget)** — Tabelle mit `usedToday/perDay` (Progress-Bar, farbcodiert grün/gelb/rot), `usedThisMonth/perMonth`, `usedThisMinute/perMinute`, `blockedToday`, `staleServedToday`, Relative-Time `lastRequestAt`. 10 Provider.
+  2. **🤖 LLM-Budget (Anthropic Haiku)** — drei Window-Cards today/7d/30d: ✅ OK / ⏭️ Skipped-Trivial / 🔑 No-Key / ❌ Error, Input/Output/Cache-Read Tokens, `~Kosten` in USD (Haiku-Pricing $1/M input, $0.10/M cache-read, $5/M output).
+- `fetchSystemStats` um zwei zusätzliche `fetch()`-Calls zu `/api/provider-usage` + `/api/ai-trader/explanations/usage` erweitert. Auto-Refresh wenn System-Tab aktiv.
+- Types inline (`ProviderUsageResponse`, `ExplanationsUsageResponse`) — kein neuer Service nötig, alles im SettingsPage-Kontext.
+- sw.js `CACHE_NAME` auf `daytrader-v3`.
+- Playwright-Smoke: beide Panels rendern, yahoo zeigt live 369 Requests mit 314 Blocked (perMinute=100 Guard greift sichtbar).
+
 ### Added — Backtest-Transparenz: Gross/Net-P&L + Cost-Parity-Contract
 
 - **`backend/src/aiTrader.js:getDailyReports`** + **`backend/src/aiTraderReports.js:getReports/getReportByDate`** — Reader liefern jetzt pro Report: `net_pnl`, `gross_pnl = net_pnl + fees_paid`, `gross_pnl_percent`, `pnl_is_net: true`. Keine DB-Migration, Single-Source-of-Truth bleibt `positions.realized_pnl` (schon netto). User kann endlich sehen: „wie viel hätte ich ohne Broker-Kosten gemacht?"

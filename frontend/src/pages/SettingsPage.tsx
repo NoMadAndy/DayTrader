@@ -161,6 +161,48 @@ interface ServiceHealth {
   error?: string;
 }
 
+interface ProviderUsageRow {
+  perDay: number | null;
+  usedToday: number;
+  remainingToday: number | null;
+  percentOfDayCap: number;
+  perMinute: number | null;
+  usedThisMinute: number;
+  perMonth: number | null;
+  usedThisMonth: number;
+  percentOfMonthCap: number;
+  cooldownMs: number;
+  cooldownRemainingMs: number;
+  lastRequestAt: string | null;
+  blockedToday: number;
+  staleServedToday: number;
+  canRequest: boolean;
+}
+
+interface ProviderUsageResponse {
+  providers: Record<string, ProviderUsageRow>;
+  generatedAt: string;
+}
+
+interface ExplanationsUsageWindow {
+  window: 'today' | '7d' | '30d';
+  okCount: number;
+  errorCount: number;
+  skippedTrivial: number;
+  skippedNoKey: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheHitRate: number | null;
+}
+
+interface ExplanationsUsageResponse {
+  model: string;
+  dailyCap: number;
+  minPnlPercent: number;
+  windows: ExplanationsUsageWindow[];
+}
+
 export function SettingsPage() {
   const { setConfig } = useDataService();
   const { t, language, currency, setLanguage, setCurrency } = useSettings();
@@ -180,6 +222,8 @@ export function SettingsPage() {
   const [streamStats, setStreamStats] = useState<StreamStats | null>(null);
   const [mlHealth, setMlHealth] = useState<ServiceHealth | null>(null);
   const [rlHealth, setRlHealth] = useState<ServiceHealth | null>(null);
+  const [providerUsage, setProviderUsage] = useState<ProviderUsageResponse | null>(null);
+  const [explanationsUsage, setExplanationsUsage] = useState<ExplanationsUsageResponse | null>(null);
   const [systemLoading, setSystemLoading] = useState(false);
   const [lastSystemRefresh, setLastSystemRefresh] = useState<Date | null>(null);
 
@@ -265,12 +309,14 @@ export function SettingsPage() {
     setSystemLoading(true);
     
     try {
-      const [cacheRes, jobRes, streamRes, mlRes, rlRes] = await Promise.allSettled([
+      const [cacheRes, jobRes, streamRes, mlRes, rlRes, providerRes, explRes] = await Promise.allSettled([
         fetch('/api/cache/stats'),
         fetch('/api/jobs/status'),
         fetch('/api/stream/stats'),
         fetch('/api/ml/health'),
         fetch('/api/rl/health'),
+        fetch('/api/provider-usage'),
+        fetch('/api/ai-trader/explanations/usage'),
       ]);
 
       if (cacheRes.status === 'fulfilled' && cacheRes.value.ok) {
@@ -311,7 +357,15 @@ export function SettingsPage() {
       } else {
         setRlHealth({ status: 'unknown', error: 'Service nicht erreichbar' });
       }
-      
+
+      if (providerRes.status === 'fulfilled' && providerRes.value.ok) {
+        setProviderUsage(await providerRes.value.json());
+      }
+
+      if (explRes.status === 'fulfilled' && explRes.value.ok) {
+        setExplanationsUsage(await explRes.value.json());
+      }
+
       setLastSystemRefresh(new Date());
     } catch (error) {
       log.error('Failed to fetch system stats:', error);
@@ -1406,9 +1460,193 @@ export function SettingsPage() {
 
               {/* Background Activities Overview */}
               <BackgroundActivitiesPanel refreshInterval={10000} />
+
+              {/* Provider-Traffic (RAG Phase D) */}
+              <ProviderUsagePanel data={providerUsage} />
+
+              {/* Anthropic-LLM-Budget (RAG Phase 2 + Governance) */}
+              <ExplanationsUsagePanel data={explanationsUsage} />
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Bar color by percentage of cap used. */
+function capBarClass(pct: number): string {
+  if (pct >= 0.8) return 'bg-red-500';
+  if (pct >= 0.5) return 'bg-yellow-400';
+  return 'bg-green-500';
+}
+
+function formatRelative(iso: string | null): string {
+  if (!iso) return '—';
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 0) return 'gerade eben';
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `vor ${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `vor ${m}min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `vor ${h}h`;
+  return `vor ${Math.floor(h / 24)}d`;
+}
+
+function ProviderUsagePanel({ data }: { data: ProviderUsageResponse | null }) {
+  if (!data) {
+    return (
+      <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
+        <h4 className="font-medium text-white mb-3 flex items-center gap-2">
+          <span>📊</span> Provider-Traffic (Free-Tier-Budget)
+        </h4>
+        <div className="text-sm text-gray-500 italic">Laden…</div>
+      </div>
+    );
+  }
+  const entries = Object.entries(data.providers);
+  return (
+    <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
+      <h4 className="font-medium text-white mb-3 flex items-center gap-2">
+        <span>📊</span> Provider-Traffic (Free-Tier-Budget)
+      </h4>
+      <p className="text-xs text-gray-500 mb-3">
+        Zentraler <code className="text-gray-400">providerCall</code>-Gate. Bei Überschreitung: 429 oder abgelaufener Cache (stale-while-revalidate).
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="text-gray-400 border-b border-slate-700">
+            <tr>
+              <th className="text-left py-1.5 pr-3">Provider</th>
+              <th className="text-left py-1.5 pr-3">Heute</th>
+              <th className="text-left py-1.5 pr-3">Monat</th>
+              <th className="text-right py-1.5 pr-3">min</th>
+              <th className="text-right py-1.5 pr-3">Blocked</th>
+              <th className="text-right py-1.5 pr-3">Stale</th>
+              <th className="text-right py-1.5">Letzter Call</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map(([name, v]) => {
+              const pctDay = v.perDay ? v.percentOfDayCap : 0;
+              const pctMonth = v.perMonth ? v.percentOfMonthCap : 0;
+              return (
+                <tr key={name} className="border-b border-slate-800/50 text-gray-300">
+                  <td className="py-1.5 pr-3 font-medium">{name}</td>
+                  <td className="py-1.5 pr-3">
+                    {v.perDay ? (
+                      <div className="flex items-center gap-2 w-40">
+                        <div className="flex-1 bg-slate-800 rounded h-1.5 overflow-hidden">
+                          <div className={`h-full ${capBarClass(pctDay)}`} style={{ width: `${Math.min(100, pctDay * 100)}%` }} />
+                        </div>
+                        <span className="text-[10px] text-gray-400 tabular-nums">{v.usedToday}/{v.perDay}</span>
+                      </div>
+                    ) : (
+                      <span className="text-gray-500">{v.usedToday} (∞)</span>
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-3">
+                    {v.perMonth ? (
+                      <div className="flex items-center gap-2 w-40">
+                        <div className="flex-1 bg-slate-800 rounded h-1.5 overflow-hidden">
+                          <div className={`h-full ${capBarClass(pctMonth)}`} style={{ width: `${Math.min(100, pctMonth * 100)}%` }} />
+                        </div>
+                        <span className="text-[10px] text-gray-400 tabular-nums">{v.usedThisMonth}/{v.perMonth}</span>
+                      </div>
+                    ) : (
+                      <span className="text-gray-500">—</span>
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">
+                    {v.perMinute ? `${v.usedThisMinute}/${v.perMinute}` : '—'}
+                  </td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">
+                    {v.blockedToday > 0 ? <span className="text-red-400">{v.blockedToday}</span> : '0'}
+                  </td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">
+                    {v.staleServedToday > 0 ? <span className="text-yellow-400">{v.staleServedToday}</span> : '0'}
+                  </td>
+                  <td className="py-1.5 text-right text-gray-400">{formatRelative(v.lastRequestAt)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** Haiku token usage. Rough cost estimate (Anthropic price-card): $1/M input, $5/M output, $0.10/M cache-read. */
+function estimateCostUsd(w: ExplanationsUsageWindow): number {
+  const inTok = w.inputTokens - (w.cacheReadTokens || 0);
+  const cached = w.cacheReadTokens || 0;
+  return (inTok * 1 + cached * 0.1 + w.outputTokens * 5) / 1_000_000;
+}
+
+function ExplanationsUsagePanel({ data }: { data: ExplanationsUsageResponse | null }) {
+  if (!data) {
+    return (
+      <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
+        <h4 className="font-medium text-white mb-3 flex items-center gap-2">
+          <span>🤖</span> LLM-Budget (Anthropic Haiku)
+        </h4>
+        <div className="text-sm text-gray-500 italic">Laden…</div>
+      </div>
+    );
+  }
+  return (
+    <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
+      <h4 className="font-medium text-white mb-1 flex items-center gap-2">
+        <span>🤖</span> LLM-Budget (Anthropic Haiku)
+      </h4>
+      <p className="text-xs text-gray-500 mb-3">
+        Modell <code className="text-gray-400">{data.model}</code> · Daily-Cap {data.dailyCap} · Skip &lt; {data.minPnlPercent}% P&amp;L
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {data.windows.map((w) => (
+          <div key={w.window} className="bg-slate-800/60 rounded-lg p-3 border border-slate-700/60">
+            <div className="text-xs font-medium text-gray-300 uppercase mb-2">
+              {w.window === 'today' ? 'Heute' : w.window === '7d' ? '7 Tage' : '30 Tage'}
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="text-gray-500">✅ OK</div>
+              <div className="text-right tabular-nums text-gray-200">{w.okCount}</div>
+              <div className="text-gray-500">⏭️ Trivial</div>
+              <div className="text-right tabular-nums text-gray-300">{w.skippedTrivial}</div>
+              {w.skippedNoKey > 0 && (
+                <>
+                  <div className="text-gray-500">🔑 No-Key</div>
+                  <div className="text-right tabular-nums text-yellow-400">{w.skippedNoKey}</div>
+                </>
+              )}
+              {w.errorCount > 0 && (
+                <>
+                  <div className="text-gray-500">❌ Fehler</div>
+                  <div className="text-right tabular-nums text-red-400">{w.errorCount}</div>
+                </>
+              )}
+              <div className="text-gray-500">Input Tok</div>
+              <div className="text-right tabular-nums text-gray-300">{w.inputTokens.toLocaleString('de-DE')}</div>
+              <div className="text-gray-500">Output Tok</div>
+              <div className="text-right tabular-nums text-gray-300">{w.outputTokens.toLocaleString('de-DE')}</div>
+              {w.cacheReadTokens > 0 && (
+                <>
+                  <div className="text-gray-500">Cache-Read</div>
+                  <div className="text-right tabular-nums text-green-400">
+                    {w.cacheReadTokens.toLocaleString('de-DE')}{' '}
+                    {w.cacheHitRate != null && <span className="text-[10px]">({(w.cacheHitRate * 100).toFixed(1)}%)</span>}
+                  </div>
+                </>
+              )}
+              <div className="text-gray-500 pt-1 border-t border-slate-700/50 mt-1 col-span-1">~Kosten</div>
+              <div className="text-right tabular-nums text-gray-200 pt-1 border-t border-slate-700/50 mt-1">
+                ${estimateCostUsd(w).toFixed(4)}
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
