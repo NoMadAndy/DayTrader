@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — RAG Phase 2A: Post-Trade-Erklärungen via Haiku (Backend)
+
+- **`backend/src/tradeExplanations.js`** — Poll-basierter Worker: findet geschlossene `ai_trader_decisions` (Close/Sell/Exit + `outcome_pnl IS NOT NULL`) ohne vorhandene Erklärung, claimed via Insert mit UNIQUE-Constraint, baut Prompt aus Decision-Row + RAG-News-Kontext (ml-service `/rag/search/news`, Fenster `[ts-2h, ts+15min]`, Symbol-Filter), ruft Haiku 4.5 mit Prompt-Caching auf System-Prompt, persistiert `explanation`, `input_tokens`, `output_tokens`, `cache_read_tokens`. Soft-Fail bei fehlendem `ANTHROPIC_API_KEY` → Status `skipped_no_api_key`.
+- **DB-Tabelle `trade_explanations`** (init via `initializeTradeExplanations`): `decision_id` UNIQUE FK → `ai_trader_decisions`, `status`, `explanation`, Token-Counters, `generated_at`.
+- **API** — `GET /api/ai-trader/decisions/:id/explanation` liefert den gespeicherten Zustand; keine On-Demand-Generierung (Worker-getrieben).
+- **ENV** — `ANTHROPIC_API_KEY`, `EXPLANATION_MODEL` (default `claude-haiku-4-5-20251001`), `EXPLANATION_MAX_PER_DAY` (500), `EXPLANATION_WORKER_INTERVAL_MS` (15000), `EXPLANATION_WORKER_BATCH` (5), `EXPLANATION_ENABLED` (default on).
+- **`@anthropic-ai/sdk`** zu `backend/package.json`.
+
 ### Added — RAG Phase 1C: News-Cluster-Redundancy als Sentiment-Confidence-Modifier
 
 - **`ml-service/app/news_features.py`** — `compute_news_redundancy(symbol, decision_ts, …)` zieht via Qdrant-Scroll alle News in `[decision_ts - window, decision_ts)` (Look-ahead-Guard hart erzwungen), greedy-clustert per Cosine, liefert `total_articles`, `unique_clusters`, `redundancy = 1 - unique/total`, `cluster_weight = Σ exp(-Δt/τ)`, `latest_published_at`. Defaults via ENV `NEWS_REDUNDANCY_WINDOW_SECONDS`, `NEWS_CLUSTER_THRESHOLD` (0.75 für bge-base, empirisch), `NEWS_DECAY_TAU_SECONDS`.

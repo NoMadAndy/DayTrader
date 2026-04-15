@@ -20,6 +20,7 @@ import backgroundJobs from './backgroundJobs.js';
 import * as sentimentArchive from './sentimentArchive.js';
 import signalIC from './signalIC.js';
 import ragIngest from './ragIngest.js';
+import tradeExplanations from './tradeExplanations.js';
 import { registerUser, loginUser, logoutUser, authMiddleware, optionalAuthMiddleware } from './auth.js';
 import { getUserSettings, updateUserSettings, getCustomSymbols, addCustomSymbol, removeCustomSymbol, syncCustomSymbols } from './userSettings.js';
 import * as trading from './trading.js';
@@ -4966,6 +4967,38 @@ app.delete('/api/ai-traders/:id/decisions/:did', async (req, res) => {
 });
 
 /**
+ * Get LLM-generated explanation for a closed AI-trader decision.
+ * GET /api/ai-trader/decisions/:id/explanation
+ *
+ * Returns the stored explanation (pending|in_progress|ok|error|skipped_no_api_key).
+ * Explanation generation is worker-driven; this endpoint never triggers a generation.
+ */
+app.get('/api/ai-trader/decisions/:id/explanation', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'invalid decision id' });
+    const row = await tradeExplanations.getExplanationForDecision(id);
+    if (!row) return res.json({ decisionId: id, status: 'pending' });
+    res.json({
+      decisionId: row.decision_id,
+      status: row.status,
+      explanation: row.explanation,
+      model: row.model,
+      generatedAt: row.generated_at,
+      error: row.error,
+      usage: {
+        inputTokens: row.input_tokens,
+        outputTokens: row.output_tokens,
+        cacheReadTokens: row.cache_read_tokens,
+      },
+    });
+  } catch (e) {
+    logger.error(`[TradeExplanations] fetch error: ${e.message}`);
+    res.status(500).json({ error: 'internal error' });
+  }
+});
+
+/**
  * Force recalculate stats for all AI traders
  * POST /api/ai-traders/recalculate-stats
  */
@@ -6856,6 +6889,8 @@ const startServer = async () => {
       await aiTrader.initializeAITraderSchema();
       await stockCache.initializeCacheTable();
       await sentimentArchive.initializeSentimentArchive();
+      await tradeExplanations.initializeTradeExplanations();
+      tradeExplanations.startTradeExplanationsWorker();
       logger.info('Database connected and initialized');
       
       // Schedule session cleanup every hour

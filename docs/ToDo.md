@@ -33,9 +33,16 @@ Motivation: News-Signale sollen tradable sein, nicht nur Noise. Ausgangslage sie
 - Event-Typ-Separation (Earnings vs Upgrade vs M&A vs Rumor)
 
 ### Claude-Verhalten / LLM-Integration
-- Post-Trade-Explainability in [backend/src/aiTraderInsights.js](../backend/src/aiTraderInsights.js) mit LLM anreichern → **in Arbeit** (Phase 2 von RAG-Stack, siehe [Plan](../../.claude/plans/curious-sleeping-eagle.md))
-- Prompt-Caching für wiederkehrende Kontexte (Marktregime, Ticker-Profile)
-- RAG-artiger Speicher für historische Trades + Begründungen (Vektor-DB) → Phase 0 ✓ 2026-04-15: Qdrant + bge-base-en-v1.5 (768 dim) + Collections `news/trades/signals/repo` + `/rag/*` Endpoints + 7/7 Tests. Nächste Phasen: (1) News-Redundanz als RL-Feature, (2) Haiku-Post-Trade-Erklärungen default-on, (3) Repo-Research-CLI.
+- Post-Trade-Explainability: **Phase 2A ✓ 2026-04-15** — Backend-Worker `backend/src/tradeExplanations.js` + `/api/ai-trader/decisions/:id/explanation` + `trade_explanations` Tabelle + Haiku-Prompt-Caching. Brauche noch: `ANTHROPIC_API_KEY` in `.env` + Frontend-Panel (Phase 2B).
+- Prompt-Caching für wiederkehrende Kontexte (Marktregime, Ticker-Profile) ✓ 2026-04-15 in Phase-2A-Worker via `cache_control: ephemeral` auf System-Prompt.
+- RAG-Stack (Vektor-DB):
+  - Phase 0 ✓ 2026-04-15: Qdrant + bge-base-en-v1.5 + `/rag/*` Endpoints (`2c63945`).
+  - Phase 1A+B ✓ 2026-04-15: News-Ingest-Hook + Backfill, 3308 Headlines in Qdrant (`6d8dce8`).
+  - Phase 1C ✓ 2026-04-15: `news_cluster_weight` als Sentiment-Confidence-Modifier, 10/10 Tests (`dc594e3`).
+  - Phase 1D **verschoben** bis sentiment_archive ~6+ Monate tief (aktuell zu sparse für RL-Feature-Training).
+  - Phase 2A ✓ 2026-04-15: Backend-Worker für Haiku-Erklärungen.
+  - Phase 2B offen: Frontend-Panel + Playwright-Smoke.
+  - Phase 3 offen: Repo-Research-CLI.
 - Strukturierte Tool-Calls statt Freitext bei Signalgenerierung
 
 ### Backtest- & Evaluations-Hygiene
