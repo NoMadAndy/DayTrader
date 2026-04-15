@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Provider-Traffic-Limiter Phase A (Free-Tier-Governance Infrastruktur)
+
+- **`backend/src/providerCall.js`** — zentraler Gate für alle Outbound-Provider-Calls: Cache-Hit → kein Call, Quota-Check → bei Block Stale-While-Revalidate-Fallback oder `ProviderQuotaError`. Additiv, keine Call-Sites angefasst.
+- **`backend/src/stockCache.js`** — DB-Persistenz für `api_rate_limit_stats`: `recordRequest`, `recordBlock`, `recordStaleServed` schreiben jetzt Counter in die bereits existierende Tabelle; `loadRateLimitStateFromDB()` hydratisiert beim Init → Container-Restart verliert Daily-/Monthly-Counts nicht mehr. Neue Spalten: `requests_this_month`, `month_start`, `blocked_today`, `stale_served_today`. Neu: `checkQuota()` (strukturiert mit `reason`), `getStaleCached()`.
+- **PROVIDER_LIMITS** um Free-Tier-Werte für News-Provider erweitert: `newsapi` (100/d), `newsdata` (200/d), `marketaux` (100/d), `fmp` (250/d), `tiingo` (50k/Monat), `mediastack` (500/Monat). ENV-Overrides per `PROVIDER_LIMIT_<PROVIDER>_{PER_DAY|PER_MINUTE|PER_MONTH|COOLDOWN_MS}`.
+- **Day/Month-Rollover** auf UTC (`Date.UTC`), vorher lokale Zeit.
+- **API** `GET /api/provider-usage` — Counts + Restkontingent + Cooldown + Block-/Stale-Counter für alle 10 Provider.
+- **Tests** `backend/tests/providerCall.test.js` — 10/10: Quota-Block, Stale-Fallback, Fresh-Cache-Bypass, Live-Call-Pfad, `allowStale=false` Verhalten, Monats-Cap, Shape-Contract für Status.
+
 ### Changed — Anthropic-API-Budget-Governance (Andys KRITISCH-Wunsch 2026-04-15)
 
 - **`backend/src/tradeExplanations.js`** — drei neue Guards gegen unnötige/doppelte API-Calls:

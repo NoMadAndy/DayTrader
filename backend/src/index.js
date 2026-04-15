@@ -4999,6 +4999,22 @@ app.get('/api/ai-trader/decisions/:id/explanation', async (req, res) => {
 });
 
 /**
+ * Per-provider outbound call counters + cap utilization.
+ * GET /api/provider-usage
+ *
+ * Used for monitoring free-tier consumption and diagnosing "why is nothing
+ * refreshing" (provider quota-blocked). Pure reader, no outbound calls.
+ */
+app.get('/api/provider-usage', async (req, res) => {
+  try {
+    res.json({ providers: stockCache.getRateLimitStatus(), generatedAt: new Date().toISOString() });
+  } catch (e) {
+    logger.error(`[ProviderUsage] fetch error: ${e.message}`);
+    res.status(500).json({ error: 'internal error' });
+  }
+});
+
+/**
  * Token & call usage for the Anthropic-based explanation worker.
  * GET /api/ai-trader/explanations/usage
  */

@@ -23,25 +23,80 @@ const CACHE_DURATIONS = {
   company_info: 86400, // 24 hours for company info
 };
 
-// Rate limit tracking (in-memory, resets on restart)
-const rateLimitState = {
-  alphaVantage: { requestsToday: 0, requestsThisMinute: 0, lastRequest: 0, dayStart: getDayStart() },
-  twelveData: { requestsToday: 0, requestsThisMinute: 0, lastRequest: 0, dayStart: getDayStart() },
-  finnhub: { requestsThisMinute: 0, lastRequest: 0 },
-  yahoo: { requestsThisMinute: 0, lastRequest: 0 },
-};
-
-// Provider limits
-const PROVIDER_LIMITS = {
-  alphaVantage: { perDay: 25, perMinute: 5, cooldownMs: 12000 },
-  twelveData: { perDay: 800, perMinute: 8, cooldownMs: 8000 },
-  finnhub: { perDay: Infinity, perMinute: 60, cooldownMs: 1000 },
-  yahoo: { perDay: Infinity, perMinute: 100, cooldownMs: 500 },
-};
-
 function getDayStart() {
+  // UTC day-start so counters rollover consistently across timezones/containers.
   const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+}
+
+function getMonthStart() {
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+}
+
+function envInt(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/**
+ * Provider free-tier limits. Override per ENV:
+ *   PROVIDER_LIMIT_<PROVIDER>_PER_DAY
+ *   PROVIDER_LIMIT_<PROVIDER>_PER_MINUTE
+ *   PROVIDER_LIMIT_<PROVIDER>_PER_MONTH
+ *   PROVIDER_LIMIT_<PROVIDER>_COOLDOWN_MS
+ * Use Infinity (pass -1 via ENV) to disable a dimension.
+ */
+function buildLimits(provider, defaults) {
+  const upper = provider.replace(/([A-Z])/g, '_$1').toUpperCase();
+  const raw = (name) => envInt(`PROVIDER_LIMIT_${upper}_${name}`, null);
+  const merge = (envVal, def) => {
+    if (envVal === null) return def;
+    if (envVal < 0) return Infinity;
+    return envVal;
+  };
+  return {
+    perDay: merge(raw('PER_DAY'), defaults.perDay ?? Infinity),
+    perMinute: merge(raw('PER_MINUTE'), defaults.perMinute ?? Infinity),
+    perMonth: merge(raw('PER_MONTH'), defaults.perMonth ?? Infinity),
+    cooldownMs: merge(raw('COOLDOWN_MS'), defaults.cooldownMs ?? 0),
+  };
+}
+
+// Provider limits (free-tier defaults, ENV-overridable)
+const PROVIDER_LIMITS = {
+  alphaVantage: buildLimits('alphaVantage', { perDay: 25, perMinute: 5, cooldownMs: 12000 }),
+  twelveData:   buildLimits('twelveData',   { perDay: 800, perMinute: 8, cooldownMs: 8000 }),
+  finnhub:      buildLimits('finnhub',      { perMinute: 60, cooldownMs: 1000 }),
+  yahoo:        buildLimits('yahoo',        { perMinute: 100, cooldownMs: 500 }),
+  newsapi:      buildLimits('newsapi',      { perDay: 100 }),
+  newsdata:     buildLimits('newsdata',     { perDay: 200 }),
+  marketaux:    buildLimits('marketaux',    { perDay: 100 }),
+  fmp:          buildLimits('fmp',          { perDay: 250 }),
+  tiingo:       buildLimits('tiingo',       { perMonth: 50000 }),
+  mediastack:   buildLimits('mediastack',   { perMonth: 500 }),
+};
+
+function freshState() {
+  return {
+    requestsToday: 0,
+    requestsThisMinute: 0,
+    requestsThisMonth: 0,
+    blockedToday: 0,
+    staleServedToday: 0,
+    lastRequest: 0,
+    minuteWindowStart: 0,
+    dayStart: getDayStart(),
+    monthStart: getMonthStart(),
+  };
+}
+
+// Rate-limit tracking (in-memory write-through; DB is source of truth on startup)
+const rateLimitState = {};
+for (const name of Object.keys(PROVIDER_LIMITS)) {
+  rateLimitState[name] = freshState();
 }
 
 /**
@@ -87,9 +142,22 @@ export async function initializeCacheTable() {
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    // Additive columns for monthly budget + governance counters.
+    await client.query(`
+      ALTER TABLE api_rate_limit_stats
+        ADD COLUMN IF NOT EXISTS requests_this_month INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS month_start TIMESTAMP WITH TIME ZONE,
+        ADD COLUMN IF NOT EXISTS blocked_today INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS stale_served_today INTEGER DEFAULT 0
+    `);
 
     await client.query('COMMIT');
     logger.info('Cache tables initialized successfully');
+
+    // Hydrate in-memory counters from DB (survives container restart).
+    await loadRateLimitStateFromDB().catch((err) => {
+      logger.warn(`[RateLimit] hydrate from DB failed: ${err.message}`);
+    });
   } catch (e) {
     await client.query('ROLLBACK');
     logger.error('Cache table initialization error:', e);
@@ -179,61 +247,180 @@ export async function cleanupExpiredCache() {
   }
 }
 
-/**
- * Check if we can make a request to a provider
- * @param {string} provider - Provider name
- * @returns {boolean}
- */
-export function canMakeRequest(provider) {
-  const limits = PROVIDER_LIMITS[provider];
+function rolloverIfNeeded(provider) {
   const state = rateLimitState[provider];
-  
-  if (!limits || !state) return true;
-  
-  const now = Date.now();
-  
-  // Reset daily counter if new day
-  if (state.dayStart !== getDayStart()) {
+  if (!state) return;
+  const day = getDayStart();
+  const month = getMonthStart();
+  if (state.dayStart !== day) {
     state.requestsToday = 0;
-    state.dayStart = getDayStart();
+    state.blockedToday = 0;
+    state.staleServedToday = 0;
+    state.dayStart = day;
   }
-  
-  // Reset minute counter if more than a minute has passed
-  if (now - state.lastRequest > 60000) {
-    state.requestsThisMinute = 0;
+  if (state.monthStart !== month) {
+    state.requestsThisMonth = 0;
+    state.monthStart = month;
   }
-  
-  // Check limits
-  if (state.requestsToday >= limits.perDay) {
-    logger.warn(`${provider}: Daily limit reached (${limits.perDay})`);
-    return false;
-  }
-  
-  if (state.requestsThisMinute >= limits.perMinute) {
-    logger.warn(`${provider}: Minute limit reached (${limits.perMinute})`);
-    return false;
-  }
-  
-  // Check cooldown
-  if (now - state.lastRequest < limits.cooldownMs) {
-    logger.warn(`${provider}: Cooldown active`);
-    return false;
-  }
-  
-  return true;
 }
 
 /**
- * Record a request to a provider
- * @param {string} provider - Provider name
+ * Hydrate in-memory rate-limit counters from DB so container restarts
+ * don't reset the daily/monthly quota. Silently ignores missing rows.
  */
-export function recordRequest(provider) {
+export async function loadRateLimitStateFromDB() {
+  const { rows } = await db.query(
+    `SELECT provider, requests_today, requests_this_month, blocked_today, stale_served_today,
+            day_start, month_start, last_request
+       FROM api_rate_limit_stats`
+  );
+  const day = getDayStart();
+  const month = getMonthStart();
+  for (const r of rows) {
+    const state = rateLimitState[r.provider];
+    if (!state) continue;
+    const dbDay = r.day_start ? new Date(r.day_start).getTime() : 0;
+    const dbMonth = r.month_start ? new Date(r.month_start).getTime() : 0;
+    state.requestsToday = dbDay === day ? (r.requests_today || 0) : 0;
+    state.blockedToday = dbDay === day ? (r.blocked_today || 0) : 0;
+    state.staleServedToday = dbDay === day ? (r.stale_served_today || 0) : 0;
+    state.dayStart = day;
+    state.requestsThisMonth = dbMonth === month ? (r.requests_this_month || 0) : 0;
+    state.monthStart = month;
+    state.lastRequest = r.last_request ? new Date(r.last_request).getTime() : 0;
+  }
+  logger.info(`[RateLimit] hydrated ${rows.length} provider counters from DB`);
+}
+
+async function persistProviderStats(provider) {
   const state = rateLimitState[provider];
   if (!state) return;
-  
+  try {
+    await db.query(
+      `INSERT INTO api_rate_limit_stats
+         (provider, requests_today, day_start, last_request, updated_at,
+          requests_this_month, month_start, blocked_today, stale_served_today)
+       VALUES ($1, $2, to_timestamp($3 / 1000.0), to_timestamp($4 / 1000.0), CURRENT_TIMESTAMP, $5, to_timestamp($6 / 1000.0), $7, $8)
+       ON CONFLICT (provider) DO UPDATE SET
+         requests_today = EXCLUDED.requests_today,
+         day_start = EXCLUDED.day_start,
+         last_request = EXCLUDED.last_request,
+         updated_at = CURRENT_TIMESTAMP,
+         requests_this_month = EXCLUDED.requests_this_month,
+         month_start = EXCLUDED.month_start,
+         blocked_today = EXCLUDED.blocked_today,
+         stale_served_today = EXCLUDED.stale_served_today`,
+      [
+        provider,
+        state.requestsToday,
+        state.dayStart,
+        state.lastRequest || Date.now(),
+        state.requestsThisMonth,
+        state.monthStart,
+        state.blockedToday,
+        state.staleServedToday,
+      ]
+    );
+  } catch (e) {
+    logger.error(`[RateLimit] persist ${provider} failed: ${e.message}`);
+  }
+}
+
+/**
+ * Check if we can make a request to a provider.
+ * Returns {ok, reason} — reason is one of 'perDay' | 'perMonth' | 'perMinute' | 'cooldown' | null.
+ * The simpler boolean form `canMakeRequest(provider)` is preserved for backward compat.
+ */
+export function checkQuota(provider) {
+  const limits = PROVIDER_LIMITS[provider];
+  const state = rateLimitState[provider];
+  if (!limits || !state) return { ok: true, reason: null };
+
+  rolloverIfNeeded(provider);
+  const now = Date.now();
+  if (now - state.minuteWindowStart > 60_000) {
+    state.requestsThisMinute = 0;
+    state.minuteWindowStart = now;
+  }
+
+  if (state.requestsToday >= limits.perDay) return { ok: false, reason: 'perDay' };
+  if (state.requestsThisMonth >= limits.perMonth) return { ok: false, reason: 'perMonth' };
+  if (state.requestsThisMinute >= limits.perMinute) return { ok: false, reason: 'perMinute' };
+  if (limits.cooldownMs > 0 && now - state.lastRequest < limits.cooldownMs) {
+    return { ok: false, reason: 'cooldown' };
+  }
+  return { ok: true, reason: null };
+}
+
+export function canMakeRequest(provider) {
+  return checkQuota(provider).ok;
+}
+
+/**
+ * Record a successful outbound call to a provider (increments counters +
+ * writes the updated counts to api_rate_limit_stats).
+ */
+export async function recordRequest(provider) {
+  const state = rateLimitState[provider];
+  if (!state) return;
+  rolloverIfNeeded(provider);
+  const now = Date.now();
+  if (now - state.minuteWindowStart > 60_000) {
+    state.requestsThisMinute = 0;
+    state.minuteWindowStart = now;
+  }
   state.requestsToday++;
+  state.requestsThisMonth++;
   state.requestsThisMinute++;
-  state.lastRequest = Date.now();
+  state.lastRequest = now;
+  await persistProviderStats(provider);
+}
+
+/** Counter for "would have called but blocked by quota". */
+export async function recordBlock(provider) {
+  const state = rateLimitState[provider];
+  if (!state) return;
+  rolloverIfNeeded(provider);
+  state.blockedToday++;
+  await persistProviderStats(provider);
+}
+
+/** Counter for "served expired cache because quota blocked us". */
+export async function recordStaleServed(provider) {
+  const state = rateLimitState[provider];
+  if (!state) return;
+  rolloverIfNeeded(provider);
+  state.staleServedToday++;
+  await persistProviderStats(provider);
+}
+
+/**
+ * Stale-While-Revalidate fallback: return the most recent cached row for
+ * this key even if it's expired. Only used by providerCall.js when quota
+ * blocks a live call.
+ */
+export async function getStaleCached(cacheKey) {
+  try {
+    const { rows } = await db.query(
+      `SELECT data, source, created_at, expires_at
+         FROM stock_data_cache
+        WHERE cache_key = $1
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [cacheKey]
+    );
+    if (rows.length === 0) return null;
+    return {
+      data: rows[0].data,
+      source: rows[0].source,
+      cachedAt: rows[0].created_at,
+      expiresAt: rows[0].expires_at,
+      stale: new Date(rows[0].expires_at).getTime() < Date.now(),
+    };
+  } catch (e) {
+    logger.error(`[Cache] getStaleCached error: ${e.message}`);
+    return null;
+  }
 }
 
 /**
@@ -243,30 +430,41 @@ export function recordRequest(provider) {
 export function getRateLimitStatus() {
   const now = Date.now();
   const status = {};
-  
+
   for (const [provider, limits] of Object.entries(PROVIDER_LIMITS)) {
     const state = rateLimitState[provider];
-    
-    // Reset counters for accurate status
-    if (state.dayStart !== getDayStart()) {
-      state.requestsToday = 0;
-      state.dayStart = getDayStart();
-    }
-    if (now - state.lastRequest > 60000) {
+    rolloverIfNeeded(provider);
+    if (now - state.minuteWindowStart > 60_000) {
       state.requestsThisMinute = 0;
+      state.minuteWindowStart = now;
     }
-    
+
+    const pct = (used, cap) => (cap === Infinity ? 0 : cap > 0 ? Number((used / cap).toFixed(3)) : 0);
+    const cooldownRemaining = limits.cooldownMs > 0
+      ? Math.max(0, limits.cooldownMs - (now - state.lastRequest))
+      : 0;
+
     status[provider] = {
-      requestsToday: state.requestsToday,
-      requestsThisMinute: state.requestsThisMinute,
-      limitsPerDay: limits.perDay,
-      limitsPerMinute: limits.perMinute,
-      remainingToday: limits.perDay === Infinity ? Infinity : limits.perDay - state.requestsToday,
-      remainingThisMinute: limits.perMinute - state.requestsThisMinute,
+      perDay: limits.perDay === Infinity ? null : limits.perDay,
+      usedToday: state.requestsToday,
+      remainingToday: limits.perDay === Infinity ? null : Math.max(0, limits.perDay - state.requestsToday),
+      percentOfDayCap: pct(state.requestsToday, limits.perDay),
+      perMinute: limits.perMinute === Infinity ? null : limits.perMinute,
+      usedThisMinute: state.requestsThisMinute,
+      remainingThisMinute: limits.perMinute === Infinity ? null : Math.max(0, limits.perMinute - state.requestsThisMinute),
+      perMonth: limits.perMonth === Infinity ? null : limits.perMonth,
+      usedThisMonth: state.requestsThisMonth,
+      remainingThisMonth: limits.perMonth === Infinity ? null : Math.max(0, limits.perMonth - state.requestsThisMonth),
+      percentOfMonthCap: pct(state.requestsThisMonth, limits.perMonth),
+      cooldownMs: limits.cooldownMs || 0,
+      cooldownRemainingMs: cooldownRemaining,
+      lastRequestAt: state.lastRequest ? new Date(state.lastRequest).toISOString() : null,
+      blockedToday: state.blockedToday,
+      staleServedToday: state.staleServedToday,
       canRequest: canMakeRequest(provider),
     };
   }
-  
+
   return status;
 }
 
@@ -336,9 +534,15 @@ export default {
   setCache,
   cleanupExpiredCache,
   canMakeRequest,
+  checkQuota,
   recordRequest,
+  recordBlock,
+  recordStaleServed,
   getRateLimitStatus,
+  getStaleCached,
   getCacheStats,
   invalidateSymbol,
+  loadRateLimitStateFromDB,
   CACHE_DURATIONS,
+  PROVIDER_LIMITS,
 };
