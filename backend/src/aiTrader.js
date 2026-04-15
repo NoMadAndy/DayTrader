@@ -1065,7 +1065,22 @@ export async function getDailyReports(aiTraderId, startDate = null, endDate = nu
   sql += ' ORDER BY report_date DESC';
 
   const result = await query(sql, params);
-  return result.rows;
+  // DB stores pnl already NET of fees (positions.realized_pnl subtracts fees
+  // at close, see trading.js:1084). Expose net/gross derivates so API
+  // consumers can tell which is which without re-reading trading.js.
+  return result.rows.map((row) => {
+    const netPnl = parseFloat(row.pnl || 0);
+    const fees = parseFloat(row.fees_paid || 0);
+    const startValue = parseFloat(row.start_value || 0);
+    const grossPnl = netPnl + fees;
+    return {
+      ...row,
+      net_pnl: netPnl,
+      gross_pnl: grossPnl,
+      gross_pnl_percent: startValue > 0 ? (grossPnl / startValue) * 100 : 0,
+      pnl_is_net: true,
+    };
+  });
 }
 
 /**

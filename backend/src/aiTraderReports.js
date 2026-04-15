@@ -433,7 +433,7 @@ export async function getReports(traderId, limit = 30, offset = 0) {
      LIMIT $2 OFFSET $3`,
     [traderId, limit, offset]
   );
-  return result.rows;
+  return result.rows.map(enrichWithGrossPnl);
 }
 
 /**
@@ -448,7 +448,27 @@ export async function getReportByDate(traderId, date) {
      WHERE ai_trader_id = $1 AND report_date = $2`,
     [traderId, date]
   );
-  return result.rows[0] || null;
+  return result.rows[0] ? enrichWithGrossPnl(result.rows[0]) : null;
+}
+
+/**
+ * DB stores `pnl` as NET-P&L (already fee-adjusted in positions.realized_pnl —
+ * see trading.js:1084). Users frequently want to see the gross counterpart
+ * ("what would I have made without broker costs?"). We compute it on the fly
+ * to avoid a migration + keep the DB single-source-of-truth on net.
+ */
+function enrichWithGrossPnl(row) {
+  const netPnl = parseFloat(row.pnl || 0);
+  const fees = parseFloat(row.fees_paid || 0);
+  const startValue = parseFloat(row.start_value || 0);
+  const grossPnl = netPnl + fees;
+  return {
+    ...row,
+    net_pnl: netPnl,
+    gross_pnl: grossPnl,
+    gross_pnl_percent: startValue > 0 ? (grossPnl / startValue) * 100 : 0,
+    pnl_is_net: true,
+  };
 }
 
 /**

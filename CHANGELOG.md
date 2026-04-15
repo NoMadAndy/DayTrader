@@ -43,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **API** `GET /api/provider-usage` — Counts + Restkontingent + Cooldown + Block-/Stale-Counter für alle 10 Provider.
 - **Tests** `backend/tests/providerCall.test.js` — 10/10: Quota-Block, Stale-Fallback, Fresh-Cache-Bypass, Live-Call-Pfad, `allowStale=false` Verhalten, Monats-Cap, Shape-Contract für Status.
 
+### Added — Backtest-Transparenz: Gross/Net-P&L + Cost-Parity-Contract
+
+- **`backend/src/aiTrader.js:getDailyReports`** + **`backend/src/aiTraderReports.js:getReports/getReportByDate`** — Reader liefern jetzt pro Report: `net_pnl`, `gross_pnl = net_pnl + fees_paid`, `gross_pnl_percent`, `pnl_is_net: true`. Keine DB-Migration, Single-Source-of-Truth bleibt `positions.realized_pnl` (schon netto). User kann endlich sehen: „wie viel hätte ich ohne Broker-Kosten gemacht?"
+- **`backend/tests/cost_parity.test.js`** — Hand-berechnete Fee-Soll-Werte für `standard` + `ingdiba` Profile. Lockt Parity zwischen `backend/src/trading.js::calculateFees` und `rl-trading-service/app/trading_env.py::_calculate_transaction_cost`. 7/7 Tests grün.
+- **`docs/cost-model.md`** (neu) — Dokumentiert Broker-Profile, Formel, Einheitenkonvention (Backend: Prozent; RL-Env: Dezimal), explizit: `realized_pnl` ist netto. Änderungen am Modell müssen an beiden Stellen erfolgen + Parity-Test aktualisieren.
+- Live-verifiziert: trader 4 report 2026-04-15 → net_pnl -510.95, fees_paid 146.66, gross_pnl -364.29 (ohne Broker-Kosten ~28% kleinerer Verlust).
+
 ### Changed — Anthropic-API-Budget-Governance (Andys KRITISCH-Wunsch 2026-04-15)
 
 - **`backend/src/tradeExplanations.js`** — drei neue Guards gegen unnötige/doppelte API-Calls:
