@@ -5,7 +5,7 @@
  * and performance metrics for each training session.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getTrainingHistory, getTrainingStats, type TrainingHistoryEntry, type TrainingStats } from '../services/aiTraderService';
 
 interface AITraderTrainingHistoryProps {
@@ -21,15 +21,7 @@ export function AITraderTrainingHistory({ traderId, compact = false, className =
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  useEffect(() => {
-    loadData();
-    
-    // Refresh every 60 seconds
-    const interval = setInterval(loadData, 60000);
-    return () => clearInterval(interval);
-  }, [traderId]);
-
-  async function loadData() {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
       const [historyData, statsData] = await Promise.all([
@@ -44,7 +36,13 @@ export function AITraderTrainingHistory({ traderId, compact = false, className =
     } finally {
       setLoading(false);
     }
-  }
+  }, [traderId, compact]);
+
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(loadData, 60000);
+    return () => clearInterval(interval);
+  }, [loadData]);
 
   if (loading && history.length === 0) {
     return (

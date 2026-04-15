@@ -5,7 +5,7 @@
  * Uses the unified AITraderConfigModal for creating new traders.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getAuthState, subscribeToAuth, type AuthState } from '../services/authService';
 import { getAITraders, deleteAITrader } from '../services/aiTraderService';
@@ -36,39 +36,22 @@ export default function AITradersPage() {
     return subscribeToAuth(setAuthState);
   }, []);
 
-  useEffect(() => {
-    loadTraders();
-  }, []);
-  
-  // Auto-refresh traders list every 30 seconds to update status
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      refreshTraders();
-    }, 30000);
-    
-    return () => clearInterval(intervalId);
-  }, []);
-  
-  // Silent refresh (no loading spinner)
-  const refreshTraders = async () => {
+  const refreshTraders = useCallback(async () => {
     try {
       const traderList = await getAITraders();
       setTraders(traderList);
     } catch (err) {
       log.error('Failed to refresh AI traders:', err);
     }
-  };
+  }, []);
 
-  const loadTraders = async () => {
+  const loadTraders = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      
-      // Trigger stats recalculation before loading to ensure fresh data
       try {
         await fetch('/api/ai-traders/recalculate-stats', { method: 'POST' });
       } catch (_e) { /* non-critical */ }
-      
       const traderList = await getAITraders();
       setTraders(traderList);
     } catch (err) {
@@ -77,7 +60,18 @@ export default function AITradersPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [t]);
+
+  useEffect(() => {
+    loadTraders();
+  }, [loadTraders]);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      refreshTraders();
+    }, 30000);
+    return () => clearInterval(intervalId);
+  }, [refreshTraders]);
 
   const handleDeleteTrader = async (trader: AITrader) => {
     if (!confirm(t('aiTraders.confirmDelete').replace('{name}', trader.name))) {

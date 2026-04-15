@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **API** `GET /api/provider-usage` — Counts + Restkontingent + Cooldown + Block-/Stale-Counter für alle 10 Provider.
 - **Tests** `backend/tests/providerCall.test.js` — 10/10: Quota-Block, Stale-Fallback, Fresh-Cache-Bypass, Live-Call-Pfad, `allowStale=false` Verhalten, Monats-Cap, Shape-Contract für Status.
 
+### Fixed — Lint-Debt Phase V.a (Teilschritt 1 — useCallback-Pattern)
+
+- `useAITraderReports.ts` + `AITraderTrainingStatus.tsx` + `AITraderTrainingHistory.tsx` + `AITradersPage.tsx` — Loader-Funktionen in `useCallback` gewrappt, Deps korrekt propagiert, useEffect-Arrays mit `[loader]` ergänzt. Keine funktionale Änderung, nur React-Hooks-Correctness.
+- 24 → 20 `exhaustive-deps` Warnings. Verbleibende 20 werden in Folge-Commits behandelt.
+
 ### Removed — RL-Legacy-Agents entsorgt (2105-dim obs-space)
 
 - `aggressive_momentum` + `balanced_trader1` Checkpoints + Metadata via `DELETE /agents/{name}` gelöscht (Trainer hat `delete_agent()` + `rmtree` in models- und checkpoints-Volumes). Beide hatten 2105-dim Observation-Space vs. aktueller 2407-dim Env → `predict()` crashte.

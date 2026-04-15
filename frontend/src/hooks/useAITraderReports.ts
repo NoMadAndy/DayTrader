@@ -4,7 +4,7 @@
  * Custom hook for fetching and managing AI trader reports.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   getAITraderReports,
   getAITraderReportByDate,
@@ -18,9 +18,8 @@ export function useAITraderReports(traderId: number | undefined) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchReports = async () => {
+  const fetchReports = useCallback(async () => {
     if (!traderId) return;
-    
     try {
       setLoading(true);
       setError(null);
@@ -32,36 +31,33 @@ export function useAITraderReports(traderId: number | undefined) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [traderId]);
 
-  const getReportByDate = async (date: string) => {
+  const getReportByDate = useCallback(async (date: string) => {
     if (!traderId) return null;
-    
     try {
       return await getAITraderReportByDate(traderId, date);
     } catch (err) {
       log.error('Error fetching report by date:', err);
       return null;
     }
-  };
+  }, [traderId]);
 
-  const generateReport = async (date?: string) => {
+  const generateReport = useCallback(async (date?: string) => {
     if (!traderId) return null;
-    
     try {
       const report = await generateAITraderReport(traderId, date);
-      // Refresh reports after generating
       await fetchReports();
       return report;
     } catch (err) {
       log.error('Error generating report:', err);
       return null;
     }
-  };
+  }, [traderId, fetchReports]);
 
   useEffect(() => {
     fetchReports();
-  }, [traderId]);
+  }, [fetchReports]);
 
   return {
     reports,

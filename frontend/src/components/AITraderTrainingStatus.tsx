@@ -5,7 +5,7 @@
  * RL agent and learning configuration.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getTraderTrainingStatus, type TraderTrainingStatus } from '../services/aiTraderService';
 
 interface AITraderTrainingStatusProps {
@@ -18,15 +18,7 @@ export function AITraderTrainingStatus({ traderId, compact = false }: AITraderTr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadStatus();
-    
-    // Refresh every 60 seconds
-    const interval = setInterval(loadStatus, 60000);
-    return () => clearInterval(interval);
-  }, [traderId]);
-
-  async function loadStatus() {
+  const loadStatus = useCallback(async () => {
     try {
       setLoading(true);
       const data = await getTraderTrainingStatus(traderId);
@@ -37,7 +29,13 @@ export function AITraderTrainingStatus({ traderId, compact = false }: AITraderTr
     } finally {
       setLoading(false);
     }
-  }
+  }, [traderId]);
+
+  useEffect(() => {
+    loadStatus();
+    const interval = setInterval(loadStatus, 60000);
+    return () => clearInterval(interval);
+  }, [loadStatus]);
 
   if (loading && !status) {
     return (
