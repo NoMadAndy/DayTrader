@@ -28,7 +28,7 @@ export default defineConfig([
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_|^err$|^e$|^error$' },
       ],
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-explicit-any': 'error',
       'react-hooks/exhaustive-deps': 'error',
       'react-hooks/set-state-in-effect': 'error',
       'react-hooks/immutability': 'error',

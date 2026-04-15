@@ -13,7 +13,7 @@ import { useStockData, useSimpleAutoRefresh } from '../hooks';
 import { generateForecast } from '../utils/forecast';
 import { getAuthState, subscribeToAuth, type AuthState } from '../services/authService';
 import { 
-  getOrCreatePortfolio, executeMarketOrder, getPortfolioMetrics, getHistoricalPrices,
+  getOrCreatePortfolio, executeMarketOrder, getPortfolioMetrics, getHistoricalPrices, type HistoricalPrice,
   createBacktestSession, getBacktestSessions, getBacktestSession,
   executeBacktestOrder, closeBacktestPosition, advanceBacktestTime,
   getBacktestResults, deleteBacktestSession,
@@ -39,6 +39,12 @@ interface MLPrediction {
   predicted_price: number;
   confidence: number;
   change_pct: number;
+}
+
+interface BacktestTriggeredPosition {
+  symbol: string;
+  reason: 'stop_loss' | 'take_profit' | 'knockout' | 'margin_call';
+  triggerPrice: number;
 }
 
 interface DashboardPageProps {
@@ -511,7 +517,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
   const [backtestTradeSide, setBacktestTradeSide] = useState<'buy' | 'sell'>('buy');
   const [backtestTradeQuantity, setBacktestTradeQuantity] = useState(10);
   const [backtestCurrentPrice, setBacktestCurrentPrice] = useState<number | null>(null);
-  const [historicalData, setHistoricalData] = useState<any[]>([]);
+  const [historicalData, setHistoricalData] = useState<HistoricalPrice[]>([]);
 
   const allSymbols = useMemo(() => {
     const popularSymbols = POPULAR_STOCKS.map(s => s.symbol);
@@ -634,7 +640,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
       const response = await getHistoricalPrices(backtestSymbol, startDateStr, endDateStr);
       if (response?.prices && response.prices.length > 0) {
         setHistoricalData(response.prices);
-        const currentDateData = response.prices.find((d: any) => d.date === activeSession.currentDate);
+        const currentDateData = response.prices.find((d) => d.date === activeSession.currentDate);
         setBacktestCurrentPrice(currentDateData?.close || null);
       } else {
         setHistoricalData([]);
@@ -650,8 +656,8 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
 
   const backtestChartData: OHLCV[] = useMemo(() => {
     if (!activeSession || historicalData.length === 0) return [];
-    const dataUntilNow = historicalData.filter((d: any) => d.date <= activeSession.currentDate);
-    return dataUntilNow.map((d: any) => ({
+    const dataUntilNow = historicalData.filter((d) => d.date <= activeSession.currentDate);
+    return dataUntilNow.map((d) => ({
       time: Math.floor(new Date(d.date).getTime() / 1000),
       open: d.open,
       high: d.high,
@@ -687,8 +693,8 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
       setNewStartDate('');
       setNewEndDate('');
       setSuccessMessage('Backtest-Session erstellt!');
-    } catch (e: any) {
-      setBacktestError(e.message || 'Fehler beim Erstellen der Session');
+    } catch (e) {
+      setBacktestError((e instanceof Error ? e.message : null) || 'Fehler beim Erstellen der Session');
     } finally {
       setBacktestLoading(false);
     }
@@ -714,8 +720,8 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
       } else {
         setBacktestError(result.error || 'Order fehlgeschlagen');
       }
-    } catch (e: any) {
-      setBacktestError(e.message || 'Fehler beim Ausführen der Order');
+    } catch (e) {
+      setBacktestError((e instanceof Error ? e.message : null) || 'Fehler beim Ausführen der Order');
     } finally {
       setBacktestLoading(false);
     }
@@ -734,8 +740,8 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
       } else {
         setBacktestError(result.error || 'Fehler beim Schließen');
       }
-    } catch (e: any) {
-      setBacktestError(e.message || 'Fehler beim Schließen der Position');
+    } catch (e) {
+      setBacktestError((e instanceof Error ? e.message : null) || 'Fehler beim Schließen der Position');
     } finally {
       setBacktestLoading(false);
     }
@@ -754,10 +760,10 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
       const priceUpdates: Record<string, number> = {};
       const openPositions = activeSession.positions?.filter((p: BacktestPosition) => p.isOpen) || [];
       for (const pos of openPositions) {
-        const posData = historicalData.find((d: any) => d.date === newDate);
+        const posData = historicalData.find((d) => d.date === newDate);
         if (posData) priceUpdates[pos.symbol] = posData.close;
       }
-      const newDateData = historicalData.find((d: any) => d.date === newDate);
+      const newDateData = historicalData.find((d) => d.date === newDate);
       if (newDateData) {
         priceUpdates[backtestSymbol] = newDateData.close;
         setBacktestCurrentPrice(newDateData.close);
@@ -773,7 +779,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
         } else {
           setActiveSession(prev => prev ? { ...prev, currentDate: newDate } : null);
           if (result.triggeredPositions && result.triggeredPositions.length > 0) {
-            const triggers = result.triggeredPositions.map((t: any) => 
+            const triggers = (result.triggeredPositions as BacktestTriggeredPosition[]).map((t) =>
               `${t.symbol}: ${t.reason === 'stop_loss' ? 'Stop-Loss' : 'Take-Profit'} @ ${formatCurrencyBacktest(t.triggerPrice)}`
             ).join(', ');
             setSuccessMessage(`Ausgelöst: ${triggers}`);
@@ -784,8 +790,8 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
         setBacktestError(result.error || 'Fehler beim Zeitfortschritt');
         setIsAutoPlaying(false);
       }
-    } catch (e: any) {
-      setBacktestError(e.message || 'Fehler beim Zeitfortschritt');
+    } catch (e) {
+      setBacktestError((e instanceof Error ? e.message : null) || 'Fehler beim Zeitfortschritt');
       setIsAutoPlaying(false);
     }
   }, [activeSession, historicalData, backtestSymbol]);
@@ -801,8 +807,8 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
         setResults(null);
       }
       setSuccessMessage('Session gelöscht');
-    } catch (e: any) {
-      setBacktestError(e.message || 'Fehler beim Löschen');
+    } catch (e) {
+      setBacktestError((e instanceof Error ? e.message : null) || 'Fehler beim Löschen');
     }
   };
 
@@ -1591,7 +1597,7 @@ export function DashboardPage({ selectedSymbol, onSymbolChange }: DashboardPageP
                               <div className="h-48 bg-slate-900/50 rounded-lg p-4">
                                 <svg viewBox="0 0 100 50" className="w-full h-full" preserveAspectRatio="none">
                                   {(() => {
-                                    const values = results.equityCurve.map((p: any) => p.totalValue);
+                                    const values = results.equityCurve.map((p) => p.totalValue);
                                     const min = Math.min(...values);
                                     const max = Math.max(...values);
                                     const range = max - min || 1;

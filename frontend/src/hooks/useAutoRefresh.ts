@@ -263,7 +263,7 @@ export function useAutoRefresh(config: AutoRefreshConfig): [AutoRefreshState, Au
         const swQuotes = event.data.quotes;
         const newQuotes = new Map<string, QuoteData>();
         
-        Object.entries(swQuotes).forEach(([symbol, data]: [string, any]) => {
+        Object.entries(swQuotes as Record<string, { data?: QuoteData }>).forEach(([symbol, data]) => {
           if (data.data) {
             newQuotes.set(symbol, data.data);
           }

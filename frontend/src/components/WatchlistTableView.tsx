@@ -4,9 +4,9 @@
  * Compact table layout for better space utilization on desktop screens
  */
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { TradingSignalSummary } from '../utils/tradingSignals';
+import type { TradingSignalSummary, SignalContribution } from '../utils/tradingSignals';
 import type { CompanyInfo } from '../services/companyInfoService';
 import { detectExchange } from '../utils/exchanges';
 import { OptionChainPanel } from './OptionChainPanel';
@@ -59,9 +59,15 @@ interface WatchlistTableViewProps {
   onTradeSymbol?: (symbol: string) => void;
   onSetFilterPeriod?: (period: 'hourly' | 'daily' | 'weekly' | 'longTerm') => void;
   getFilteredScoreForPeriod: (signals: TradingSignalSummary | undefined, period: string) => number;
-  getSignalDisplayFromScore: (score: number) => any;
-  SignalBadge: any;
-  SignalSourceBadges: any;
+  getSignalDisplayFromScore: (score: number) => {
+    label: string;
+    labelDe: string;
+    emoji: string;
+    color: string;
+    bgColor: string;
+  };
+  SignalBadge: React.ComponentType<{ signal?: TradingSignalSummary; period?: string; small?: boolean }>;
+  SignalSourceBadges: React.ComponentType<{ contributions?: SignalContribution[]; compact?: boolean }>;
   isAuthenticated: boolean;
   onExecuteWarrantTrade?: (params: WarrantTradeParams) => Promise<{ success: boolean; message: string }>;
 }
