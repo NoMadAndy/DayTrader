@@ -101,7 +101,7 @@ class TrainRequest(BaseModel):
     model_type: Optional[str] = Field(None, description="Model type: 'lstm', 'transformer', or 'ensemble' (default from config)")
     use_cross_asset_features: Optional[bool] = Field(None, description="Enrich features with cross-asset market data")
     use_feature_selection: Optional[bool] = Field(None, description="Automatically prune redundant features before training")
-    use_walk_forward: Optional[bool] = Field(True, description="Purged walk-forward CV on LSTM (default True). Transformer ignores this for now and uses a single chronological split with train-only scaling.")
+    use_walk_forward: Optional[bool] = Field(True, description="3-fold purged walk-forward CV (default True). Applies to both LSTM and Transformer since parity sprint.")
 
 
 class PredictRequest(BaseModel):
@@ -409,10 +409,8 @@ async def train_model_background(
             forecast_days=forecast_days,
             progress_callback=on_progress,
         )
-        # Walk-forward CV supported only by LSTM today; Transformer leakage-free
-        # single-split path is fine until WF parity is implemented (Sprint B P0c).
-        if model_type != "transformer":
-            train_kwargs["use_walk_forward"] = use_walk_forward
+        # Walk-forward CV now supported by both architectures — parity lock.
+        train_kwargs["use_walk_forward"] = use_walk_forward
 
         result = predictor.train(ohlcv_data, **train_kwargs)
         

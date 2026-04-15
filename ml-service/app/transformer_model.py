@@ -29,7 +29,7 @@ import torch.nn.functional as F
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
-from typing import Tuple, List, Optional, Dict
+from typing import Tuple, List, Optional, Dict, Iterator
 import os
 import json
 import logging
@@ -477,6 +477,91 @@ class TransformerStockPredictor:
             y_seq.append(y[i + sequence_length : i + sequence_length + forecast_days])
         return np.array(X_seq), np.array(y_seq)
 
+    @staticmethod
+    def walk_forward_split(
+        n_samples: int,
+        n_splits: int = 3,
+        gap: int = 5,
+        min_train_ratio: float = 0.5,
+    ) -> Iterator[Tuple[slice, slice]]:
+        """
+        Purged Walk-Forward CV — parity mit StockPredictor.walk_forward_split.
+        Signatur identisch, um den Parity-Contract zwischen LSTM und Transformer
+        zu halten. Siehe docs/cost-model.md-ähnlich: eine Änderung muss an
+        beiden Stellen erfolgen.
+        """
+        val_size = int(n_samples * (1 - min_train_ratio) / n_splits)
+        for i in range(n_splits):
+            val_end = n_samples - (n_splits - 1 - i) * val_size
+            val_start = val_end - val_size
+            train_end = val_start - gap
+            if train_end < int(n_samples * 0.3):
+                continue
+            yield (slice(0, train_end), slice(val_start, val_end))
+
+    def _prepare_all_sequences(
+        self,
+        ohlcv_data: List[dict],
+        sequence_length: Optional[int] = None,
+        forecast_days: Optional[int] = None,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Prepare all (X_seq, y_seq) for walk-forward CV without a chronological
+        split — walk_forward_split owns the fold boundaries. Scaler + optional
+        feature selector are fitted on the initial 80 % of raw data to prevent
+        future-information leakage (same rule as in prepare_data).
+        """
+        seq_len = sequence_length or settings.sequence_length
+        fc_days = forecast_days or settings.forecast_days
+
+        df = pd.DataFrame(ohlcv_data)
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df = df.sort_values("timestamp").reset_index(drop=True)
+
+        X, self.feature_names = self._prepare_features(df)
+        close_idx = self.feature_names.index("close")
+        y = X[:, close_idx]
+
+        # Fit scaler/selector on the initial training portion only (no leakage).
+        init_train_end = int(len(X) * 0.8)
+        X_train_init = X[:init_train_end]
+        y_train_init = y[:init_train_end]
+
+        if self.use_feature_selection:
+            try:
+                max_f = settings.feature_selection_max_features or None
+                corr_t = settings.feature_selection_correlation_threshold
+                self._feature_selector = FeatureSelector(
+                    correlation_threshold=corr_t,
+                    max_features=max_f,
+                )
+                X_train_init, selected_names = self._feature_selector.fit_transform(
+                    X_train_init, y_train_init, self.feature_names
+                )
+                X, _ = self._feature_selector.transform(X, self.feature_names)
+                self.feature_names = selected_names
+            except Exception as exc:
+                logger.warning(
+                    f"TransformerStockPredictor: walk-forward feature selection failed: {exc}"
+                )
+                self._feature_selector = None
+
+        self.scaler_X.fit(X_train_init)
+        self.scaler_y.fit(y_train_init.reshape(-1, 1))
+
+        X_scaled = self.scaler_X.transform(X)
+        y_scaled = self.scaler_y.transform(y.reshape(-1, 1)).flatten()
+
+        # Build (seq_len)-windowed input X_seq and (fc_days)-target y_seq.
+        n = len(X_scaled) - seq_len - fc_days + 1
+        if n <= 0:
+            raise ValueError(
+                f"Not enough samples for seq_len={seq_len}, fc_days={fc_days}; need > {seq_len + fc_days}, got {len(X_scaled)}"
+            )
+        X_seq = np.stack([X_scaled[i : i + seq_len] for i in range(n)], axis=0)
+        y_seq = np.stack([y_scaled[i + seq_len : i + seq_len + fc_days] for i in range(n)], axis=0)
+        return X_seq, y_seq
+
     def prepare_data(
         self,
         ohlcv_data: List[dict],
@@ -571,14 +656,18 @@ class TransformerStockPredictor:
         forecast_days: Optional[int] = None,
         early_stopping_patience: int = 15,
         progress_callback=None,
+        use_walk_forward: bool = False,
     ) -> dict:
         """
         Train the Transformer model on historical data.
         Same interface as StockPredictor.train().
-        
+
         Args:
             progress_callback: Optional callable(epoch, total_epochs, train_loss, val_loss)
                                for reporting training progress to the API.
+            use_walk_forward: When True, use 3-fold purged walk-forward CV (same
+                              rule as LSTM). The final model is the best-fold
+                              checkpoint; aggregate metrics are in fold_results.
         """
         epochs = epochs or settings.epochs
         learning_rate = learning_rate or settings.learning_rate
@@ -589,14 +678,172 @@ class TransformerStockPredictor:
         print(
             f"[ML Transformer Training] symbol={self.symbol}, epochs={epochs}, "
             f"lr={learning_rate}, seq_len={self._train_sequence_length}, "
-            f"forecast_days={self._train_forecast_days}, device={self.device}"
+            f"forecast_days={self._train_forecast_days}, device={self.device}, "
+            f"walk_forward={use_walk_forward}"
         )
         print(
             f"[ML Transformer Training] Architecture: d_model={self.d_model}, "
             f"n_heads={self.n_heads}, n_layers={self.n_layers}, d_ff={self.d_ff}"
         )
 
-        # Prepare data
+        criterion = nn.MSELoss()
+        training_start = datetime.now()
+        self.training_history = []
+        fold_results: List[dict] = []
+
+        if use_walk_forward:
+            # ----------------------------------------------------------------
+            # Walk-forward CV path — parity mit StockPredictor.train
+            # ----------------------------------------------------------------
+            X_seq, y_seq = self._prepare_all_sequences(
+                ohlcv_data,
+                sequence_length=self._train_sequence_length,
+                forecast_days=self._train_forecast_days,
+            )
+            input_size = X_seq.shape[2]
+
+            best_overall_val_loss = float("inf")
+            best_overall_model_state = None
+
+            for fold_idx, (train_sl, val_sl) in enumerate(
+                self.walk_forward_split(len(X_seq))
+            ):
+                X_train_f = torch.FloatTensor(X_seq[train_sl]).to(self.device)
+                y_train_f = torch.FloatTensor(y_seq[train_sl]).to(self.device)
+                X_val_f = torch.FloatTensor(X_seq[val_sl]).to(self.device)
+                y_val_f = torch.FloatTensor(y_seq[val_sl]).to(self.device)
+
+                fold_model = TransformerPricePredictionModel(
+                    input_size=input_size,
+                    d_model=self.d_model,
+                    n_heads=self.n_heads,
+                    n_layers=self.n_layers,
+                    d_ff=self.d_ff,
+                    dropout=self.transformer_dropout,
+                    output_size=self._train_forecast_days,
+                    seq_len=self._train_sequence_length,
+                ).to(self.device)
+
+                fold_optimizer = torch.optim.AdamW(
+                    fold_model.parameters(), lr=learning_rate, weight_decay=1e-5,
+                )
+                fold_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                    fold_optimizer, T_0=20, T_mult=2, eta_min=learning_rate * 0.01,
+                )
+
+                best_fold_loss = float("inf")
+                fold_patience = 0
+                best_fold_state = None
+
+                for epoch in range(epochs):
+                    fold_model.train()
+                    fold_optimizer.zero_grad()
+                    train_pred = fold_model(X_train_f)
+                    train_loss = criterion(train_pred, y_train_f)
+                    train_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(fold_model.parameters(), max_norm=1.0)
+                    fold_optimizer.step()
+                    fold_scheduler.step(epoch + train_loss.item())
+
+                    fold_model.eval()
+                    with torch.no_grad():
+                        val_pred = fold_model(X_val_f)
+                        val_loss = criterion(val_pred, y_val_f)
+
+                    self.training_history.append({
+                        "fold": fold_idx + 1,
+                        "epoch": epoch + 1,
+                        "train_loss": train_loss.item(),
+                        "val_loss": val_loss.item(),
+                        "lr": fold_optimizer.param_groups[0]["lr"],
+                    })
+                    if progress_callback:
+                        try:
+                            progress_callback(epoch + 1, epochs, train_loss.item(), val_loss.item())
+                        except Exception:
+                            pass
+
+                    if val_loss.item() < best_fold_loss:
+                        best_fold_loss = val_loss.item()
+                        fold_patience = 0
+                        best_fold_state = {k: v.clone() for k, v in fold_model.state_dict().items()}
+                    else:
+                        fold_patience += 1
+                    if fold_patience >= early_stopping_patience:
+                        print(f"[ML Transformer] Fold {fold_idx + 1}: early stopping at epoch {epoch + 1}")
+                        break
+
+                fold_results.append({
+                    "fold": fold_idx + 1,
+                    "best_val_loss": best_fold_loss,
+                    "train_size": train_sl.stop,
+                    "val_size": val_sl.stop - val_sl.start,
+                })
+                if best_fold_loss < best_overall_val_loss:
+                    best_overall_val_loss = best_fold_loss
+                    best_overall_model_state = best_fold_state
+
+            # Rebuild the final model from the best fold's weights.
+            self.model = TransformerPricePredictionModel(
+                input_size=input_size,
+                d_model=self.d_model,
+                n_heads=self.n_heads,
+                n_layers=self.n_layers,
+                d_ff=self.d_ff,
+                dropout=self.transformer_dropout,
+                output_size=self._train_forecast_days,
+                seq_len=self._train_sequence_length,
+            ).to(self.device)
+            if best_overall_model_state is not None:
+                self.model.load_state_dict(best_overall_model_state)
+            self.model.eval()
+            best_val_loss = best_overall_val_loss
+            # Skip the single-split post-loop since we're done.
+            self.is_trained = True
+            training_end = datetime.now()
+            avg_val_loss = (
+                sum(f["best_val_loss"] for f in fold_results) / len(fold_results)
+                if fold_results else best_val_loss
+            )
+            self.model_metadata = {
+                "symbol": self.symbol,
+                "type": "transformer",
+                "trained_at": training_end.isoformat(),
+                "training_duration_seconds": (training_end - training_start).total_seconds(),
+                "epochs_completed": len(self.training_history),
+                "best_val_loss": best_val_loss,
+                "avg_val_loss": avg_val_loss,
+                "walk_forward": True,
+                "fold_results": fold_results,
+                "device": str(self.device),
+                "input_features": self.feature_names,
+                "sequence_length": self._train_sequence_length,
+                "forecast_days": self._train_forecast_days,
+                "data_points": len(ohlcv_data),
+                "architecture": {
+                    "d_model": self.d_model,
+                    "n_heads": self.n_heads,
+                    "n_layers": self.n_layers,
+                    "d_ff": self.d_ff,
+                    "dropout": self.transformer_dropout,
+                    "parameters": self.model.get_parameter_count(),
+                },
+                "use_cross_asset_features": self.use_cross_asset_features,
+                "use_feature_selection": self.use_feature_selection,
+                "feature_selection_report": (
+                    self._feature_selector.get_report()
+                    if self._feature_selector is not None
+                    else None
+                ),
+            }
+            return {
+                "success": True,
+                "metadata": self.model_metadata,
+                "history": self.training_history,
+                "fold_results": fold_results,
+            }
+
+        # Prepare data (single split path)
         X_train, y_train, X_val, y_val = self.prepare_data(
             ohlcv_data,
             sequence_length=self._train_sequence_length,
@@ -621,7 +868,6 @@ class TransformerStockPredictor:
         print(f"[ML Transformer Training] Parameters: {param_count['total']:,} total")
 
         # Loss, optimizer, scheduler
-        criterion = nn.MSELoss()
         optimizer = torch.optim.AdamW(
             self.model.parameters(),
             lr=learning_rate,
@@ -631,13 +877,9 @@ class TransformerStockPredictor:
             optimizer, T_0=20, T_mult=2, eta_min=learning_rate * 0.01
         )
 
-        # Training loop
-        self.training_history = []
         best_val_loss = float("inf")
         patience_counter = 0
         best_model_state = None
-
-        training_start = datetime.now()
 
         for epoch in range(epochs):
             # Training phase

@@ -43,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **API** `GET /api/provider-usage` — Counts + Restkontingent + Cooldown + Block-/Stale-Counter für alle 10 Provider.
 - **Tests** `backend/tests/providerCall.test.js` — 10/10: Quota-Block, Stale-Fallback, Fresh-Cache-Bypass, Live-Call-Pfad, `allowStale=false` Verhalten, Monats-Cap, Shape-Contract für Status.
 
+### Added — Walk-Forward-CV für Transformer (Parity mit LSTM)
+
+- **`ml-service/app/transformer_model.py`** — `walk_forward_split()` (3 Folds, Purged-Gap=5, min_train_ratio=0.5) + `_prepare_all_sequences()` + `train(use_walk_forward=True)`. Analog zu LSTM: pro Fold wird ein fresh Modell trainiert, die gewichteten Val-Losses werden aggregiert, der beste Fold-Checkpoint wird als finales Modell geladen.
+- **`ml-service/app/main.py`** — Transformer erhält `use_walk_forward`-Parameter jetzt ebenfalls (vorher: conditional skip). Field-Description aktualisiert.
+- **`ml-service/tests/test_walk_forward_transformer.py`** — 2 Regressions-Tests: (a) 3 Folds laufen durch, finite Val-Losses, korrekte `fold_results`-Struktur, `walk_forward: true` in Metadata; (b) `walk_forward_split` liefert identische Slices wie LSTM für gleiche Argumente.
+- Retrain kann User selbst auslösen (`POST /api/ml/train` mit `model_type=transformer, use_walk_forward=true`). 2/2 Tests grün.
+
 ### Added — Admin-Widget: Provider-Traffic + LLM-Budget sichtbar (Settings→System)
 
 - **`frontend/src/pages/SettingsPage.tsx`** — zwei neue Panels im System-Tab unterhalb `BackgroundActivitiesPanel`:
