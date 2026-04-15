@@ -906,82 +906,62 @@ function convertToYahooChartFormat(symbol, prices) {
 app.get('/api/yahoo/quote/:symbols', async (req, res) => {
   const { symbols } = req.params;
   const cacheKey = `yahoo:quote:${symbols}`;
-  
-  // Check cache first (if database is configured)
-  if (process.env.DATABASE_URL) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      return res.json({
-        ...cached.data,
-        _cache: { fromCache: true, cachedAt: cached.cachedAt, source: cached.source }
-      });
-    }
-  }
-  
   try {
-    // v6 quote API is deprecated — use v8 chart API and transform response
-    const symbolList = symbols.split(',').map(s => normalizeYahooSymbol(s.trim()));
-    const results = [];
-    
-    for (const sym of symbolList) {
-      try {
-        const url = `${YAHOO_CHART_URL}/${encodeURIComponent(sym)}?interval=1d&range=1d`;
-        const response = await fetch(url, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; DayTrader/1.0)',
-            'Accept': 'application/json',
-          },
-        });
-        
-        if (!response.ok) {
-          logger.warn(`[Yahoo Quote] ${sym} returned ${response.status}`);
-          continue;
+    const symbolList = symbols.split(',').map((s) => normalizeYahooSymbol(s.trim()));
+    const { data, fromCache, stale } = await providerCall('yahoo', async () => {
+      const results = [];
+      for (const sym of symbolList) {
+        try {
+          const url = `${YAHOO_CHART_URL}/${encodeURIComponent(sym)}?interval=1d&range=1d`;
+          const response = await fetch(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DayTrader/1.0)', 'Accept': 'application/json' },
+          });
+          if (!response.ok) { logger.warn(`[Yahoo Quote] ${sym} returned ${response.status}`); continue; }
+          const chartData = await response.json();
+          const meta = chartData?.chart?.result?.[0]?.meta;
+          if (!meta) continue;
+          const previousClose = meta.chartPreviousClose || meta.previousClose;
+          const currentPrice = meta.regularMarketPrice;
+          const change = previousClose ? currentPrice - previousClose : 0;
+          const changePercent = previousClose ? (change / previousClose) * 100 : 0;
+          results.push({
+            symbol: meta.symbol || sym,
+            longName: meta.longName,
+            shortName: meta.shortName,
+            currency: meta.currency,
+            exchange: meta.exchangeName,
+            fullExchangeName: meta.fullExchangeName,
+            regularMarketPrice: currentPrice,
+            regularMarketDayHigh: meta.regularMarketDayHigh,
+            regularMarketDayLow: meta.regularMarketDayLow,
+            regularMarketVolume: meta.regularMarketVolume,
+            regularMarketChange: Math.round(change * 100) / 100,
+            regularMarketChangePercent: Math.round(changePercent * 100) / 100,
+            fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
+            fiftyTwoWeekLow: meta.fiftyTwoWeekLow,
+          });
+        } catch (err) {
+          logger.warn(`[Yahoo Quote] Failed to fetch ${sym}: ${err.message}`);
         }
-        
-        const chartData = await response.json();
-        const meta = chartData?.chart?.result?.[0]?.meta;
-        if (!meta) continue;
-        
-        const previousClose = meta.chartPreviousClose || meta.previousClose;
-        const currentPrice = meta.regularMarketPrice;
-        const change = previousClose ? currentPrice - previousClose : 0;
-        const changePercent = previousClose ? (change / previousClose) * 100 : 0;
-        
-        results.push({
-          symbol: meta.symbol || sym,
-          longName: meta.longName,
-          shortName: meta.shortName,
-          currency: meta.currency,
-          exchange: meta.exchangeName,
-          fullExchangeName: meta.fullExchangeName,
-          regularMarketPrice: currentPrice,
-          regularMarketDayHigh: meta.regularMarketDayHigh,
-          regularMarketDayLow: meta.regularMarketDayLow,
-          regularMarketVolume: meta.regularMarketVolume,
-          regularMarketChange: Math.round(change * 100) / 100,
-          regularMarketChangePercent: Math.round(changePercent * 100) / 100,
-          fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
-          fiftyTwoWeekLow: meta.fiftyTwoWeekLow,
-        });
-      } catch (err) {
-        logger.warn(`[Yahoo Quote] Failed to fetch ${sym}: ${err.message}`);
       }
-    }
-    
-    const data = { quoteResponse: { result: results, error: null } };
-    
-    // Cache the response (short TTL for quotes)
-    if (process.env.DATABASE_URL && results.length > 0) {
-      await stockCache.setCache(cacheKey, 'quote', symbolList[0].toUpperCase(), data, 'yahoo', stockCache.CACHE_DURATIONS.quote);
-    }
-    
-    res.json(data);
-  } catch (error) {
-    logger.error('Yahoo Finance quote proxy error:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch quote from Yahoo Finance',
-      message: error.message 
+      if (results.length === 0) throw new Error('All Yahoo symbols failed');
+      return { quoteResponse: { result: results, error: null } };
+    }, {
+      cacheKey,
+      cacheType: 'quote',
+      symbol: symbolList[0].toUpperCase(),
+      source: 'yahoo',
+      ttlSeconds: stockCache.CACHE_DURATIONS.quote,
+      allowStale: false,
     });
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cache: { fromCache, stale, source: 'yahoo' } });
+  } catch (error) {
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: 'yahoo quota exhausted', reason: error.reason });
+    }
+    logger.error(`Yahoo Finance quote proxy error: ${error.message}`);
+    res.status(500).json({ error: 'Failed to fetch quote from Yahoo Finance', message: error.message });
   }
 });
 
@@ -1059,51 +1039,31 @@ app.get('/api/yahoo/chart/:symbol', async (req, res) => {
     }
   }
   
-  // Check short-term cache for non-daily intervals or as fallback
-  if (process.env.DATABASE_URL) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      return res.json({
-        ...cached.data,
-        _cache: { fromCache: true, cachedAt: cached.cachedAt, source: cached.source }
-      });
-    }
-  }
-  
   try {
     const url = `${YAHOO_CHART_URL}/${encodeURIComponent(symbol)}?interval=${interval}&range=${effectiveRange}`;
-    
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; DayTrader/1.0)',
-        'Accept': 'application/json',
-      },
-    });
-    
-    if (!response.ok) {
-      logger.error(`Yahoo Finance API error: ${response.status} ${response.statusText}`);
-      return res.status(response.status).json({ 
-        error: 'Yahoo Finance API error',
-        status: response.status,
-        message: response.statusText
+    const ttl = interval === '1d' ? stockCache.CACHE_DURATIONS.candles_daily : stockCache.CACHE_DURATIONS.candles_intraday;
+    const { data, fromCache, stale } = await providerCall('yahoo', async () => {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DayTrader/1.0)', 'Accept': 'application/json' },
       });
-    }
-    
-    const data = await response.json();
-    
-    // Cache the response (short-term)
-    if (process.env.DATABASE_URL) {
-      const ttl = interval === '1d' ? stockCache.CACHE_DURATIONS.candles_daily : stockCache.CACHE_DURATIONS.candles_intraday;
-      await stockCache.setCache(cacheKey, 'candles', symbol.toUpperCase(), data, 'yahoo', ttl);
-    }
-    
-    res.json(data);
-  } catch (error) {
-    logger.error('Yahoo Finance proxy error:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch from Yahoo Finance',
-      message: error.message 
+      if (!response.ok) throw new Error(`Yahoo HTTP ${response.status}: ${response.statusText}`);
+      return response.json();
+    }, {
+      cacheKey,
+      cacheType: interval === '1d' ? 'candles_daily' : 'candles_intraday',
+      symbol: symbol.toUpperCase(),
+      source: 'yahoo',
+      ttlSeconds: ttl,
+      allowStale: true,
     });
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cache: { fromCache, stale, source: 'yahoo' } });
+  } catch (error) {
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: 'yahoo quota exhausted', reason: error.reason });
+    }
+    logger.error(`Yahoo Finance proxy error: ${error.message}`);
+    res.status(500).json({ error: 'Failed to fetch from Yahoo Finance', message: error.message });
   }
 });
 
@@ -1121,51 +1081,30 @@ app.get('/api/yahoo/quoteSummary/:symbol', async (req, res) => {
   const { symbol } = req.params;
   const { modules = 'summaryDetail,price,defaultKeyStatistics' } = req.query;
   const cacheKey = `yahoo:summary:${symbol}:${modules}`;
-  
-  // Check cache first (if database is configured)
-  if (process.env.DATABASE_URL) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      return res.json({
-        ...cached.data,
-        _cache: { fromCache: true, cachedAt: cached.cachedAt, source: cached.source }
-      });
-    }
-  }
-  
   try {
     const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${modules}`;
-    
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; DayTrader/1.0)',
-        'Accept': 'application/json',
-      },
-    });
-    
-    if (!response.ok) {
-      logger.error(`Yahoo Finance quoteSummary error: ${response.status} ${response.statusText}`);
-      return res.status(response.status).json({ 
-        error: 'Yahoo Finance quoteSummary error',
-        status: response.status,
-        message: response.statusText
+    const { data, fromCache, stale } = await providerCall('yahoo', async () => {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DayTrader/1.0)', 'Accept': 'application/json' },
       });
-    }
-    
-    const data = await response.json();
-    
-    // Cache company info longer (it changes rarely)
-    if (process.env.DATABASE_URL) {
-      await stockCache.setCache(cacheKey, 'company_info', symbol.toUpperCase(), data, 'yahoo', stockCache.CACHE_DURATIONS.company_info);
-    }
-    
-    res.json(data);
-  } catch (error) {
-    logger.error('Yahoo Finance quoteSummary proxy error:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch quote summary from Yahoo Finance',
-      message: error.message 
+      if (!response.ok) throw new Error(`Yahoo HTTP ${response.status}: ${response.statusText}`);
+      return response.json();
+    }, {
+      cacheKey,
+      cacheType: 'company_info',
+      symbol: symbol.toUpperCase(),
+      source: 'yahoo',
+      ttlSeconds: stockCache.CACHE_DURATIONS.company_info,
+      allowStale: true,
     });
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cache: { fromCache, stale, source: 'yahoo' } });
+  } catch (error) {
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: 'yahoo quota exhausted', reason: error.reason });
+    }
+    logger.error(`Yahoo Finance quoteSummary proxy error: ${error.message}`);
+    res.status(500).json({ error: 'Failed to fetch quote summary from Yahoo Finance', message: error.message });
   }
 });
 
@@ -1212,37 +1151,34 @@ app.get('/api/forex/eurusd', async (req, res) => {
  */
 app.get('/api/yahoo/search', async (req, res) => {
   const { q } = req.query;
-  
-  if (!q) {
-    return res.status(400).json({ error: 'Search query (q) is required' });
-  }
-  
+  if (!q) return res.status(400).json({ error: 'Search query (q) is required' });
+  const cacheKey = `yahoo:search:${String(q).toLowerCase()}`;
   try {
     const url = `${YAHOO_SEARCH_URL}?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0`;
-    
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; DayTrader/1.0)',
-        'Accept': 'application/json',
-      },
-    });
-    
-    if (!response.ok) {
-      logger.error(`Yahoo Finance search error: ${response.status} ${response.statusText}`);
-      return res.status(response.status).json({ 
-        error: 'Yahoo Finance search error',
-        status: response.status,
-        message: response.statusText
+    const { data, fromCache, stale } = await providerCall('yahoo', async () => {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DayTrader/1.0)', 'Accept': 'application/json' },
       });
-    }
-    
-    const data = await response.json();
-    res.json(data);
+      if (!response.ok) throw new Error(`Yahoo HTTP ${response.status}: ${response.statusText}`);
+      return response.json();
+    }, {
+      cacheKey,
+      cacheType: 'search',
+      symbol: String(q).toUpperCase(),
+      source: 'yahoo',
+      ttlSeconds: stockCache.CACHE_DURATIONS.search,
+      allowStale: true,
+    });
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cache: { fromCache, stale, source: 'yahoo' } });
   } catch (error) {
-    logger.error('Yahoo Finance search proxy error:', error);
-    res.status(500).json({ 
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: 'yahoo quota exhausted', reason: error.reason });
+    }
+    logger.error(`Yahoo Finance search proxy error: ${error.message}`);
+    res.status(500).json({
       error: 'Failed to search Yahoo Finance',
-      message: error.message 
+      message: error.message,
     });
   }
 });
@@ -1320,50 +1256,34 @@ const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
 app.get('/api/finnhub/quote/:symbol', optionalAuthMiddleware, async (req, res) => {
   const { symbol } = req.params;
   const apiKey = await resolveProviderKey(req, 'finnhub');
+  if (!apiKey) return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
+
   const cacheKey = `finnhub:quote:${symbol.toUpperCase()}`;
-  
-  // Check cache first (shared across all users)
-  if (process.env.DATABASE_URL) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      // Negative cache: return empty data (200) to avoid console errors
-      if (cached.data._finnhub_unavailable) return res.json({});
-      logger.info(`[Finnhub] Cache hit for quote ${symbol}`);
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-  }
-  
-  if (!apiKey) {
-    return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
-  }
-  
   try {
     const url = `${FINNHUB_BASE_URL}/quote?symbol=${encodeURIComponent(symbol)}&token=${apiKey}`;
-    const response = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
-    });
-    
-    if (!response.ok) {
-      // Cache 403/401 (API key limitation) as negative result to prevent repeated failing requests
-      if ((response.status === 403 || response.status === 401) && process.env.DATABASE_URL) {
-        logger.info(`[Finnhub] ${response.status} for quote ${symbol} — caching negative result`);
-        await stockCache.setCache(cacheKey, 'quote', symbol.toUpperCase(), { _finnhub_unavailable: true }, 'finnhub', 60 * 60 * 1000);
-        return res.json({});
+    const { data, fromCache, stale } = await providerCall('finnhub', async () => {
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (r.status === 403 || r.status === 401) {
+        return { _finnhub_unavailable: true, _status: r.status };
       }
-      return res.status(response.status).json({ error: `Finnhub error: ${response.statusText}` });
-    }
-    
-    const data = await response.json();
-    
-    // Cache the result for all users
-    if (process.env.DATABASE_URL && data && data.c !== 0) {
-      await stockCache.setCache(cacheKey, 'quote', symbol.toUpperCase(), data, 'finnhub', stockCache.CACHE_DURATIONS.quote);
-      logger.info(`[Finnhub] Cached quote for ${symbol}`);
-    }
-    
-    res.json(data);
+      if (!r.ok) throw new Error(`Finnhub HTTP ${r.status}: ${r.statusText}`);
+      return r.json();
+    }, {
+      cacheKey,
+      cacheType: 'quote',
+      symbol: symbol.toUpperCase(),
+      source: 'finnhub',
+      ttlSeconds: stockCache.CACHE_DURATIONS.quote,
+      allowStale: false,
+    });
+    if (data._finnhub_unavailable) return res.json({});
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('Finnhub quote proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `finnhub quota exhausted`, reason: error.reason });
+    }
+    logger.error(`Finnhub quote proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch from Finnhub', message: error.message });
   }
 });
@@ -1378,43 +1298,31 @@ app.get('/api/finnhub/candles/:symbol', optionalAuthMiddleware, async (req, res)
   const { symbol } = req.params;
   const { resolution = 'D', from, to } = req.query;
   const apiKey = await resolveProviderKey(req, 'finnhub');
+  if (!apiKey) return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
+
+  const ttl = resolution === 'D' ? stockCache.CACHE_DURATIONS.candles_daily : stockCache.CACHE_DURATIONS.candles_intraday;
   const cacheKey = `finnhub:candles:${symbol.toUpperCase()}:${resolution}:${from}:${to}`;
-  
-  // Check cache first
-  if (process.env.DATABASE_URL) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      logger.info(`[Finnhub] Cache hit for candles ${symbol}`);
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-  }
-  
-  if (!apiKey) {
-    return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
-  }
-  
   try {
     const url = `${FINNHUB_BASE_URL}/stock/candle?symbol=${encodeURIComponent(symbol)}&resolution=${resolution}&from=${from}&to=${to}&token=${apiKey}`;
-    const response = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
+    const { data, fromCache, stale } = await providerCall('finnhub', async () => {
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!r.ok) throw new Error(`Finnhub HTTP ${r.status}: ${r.statusText}`);
+      return r.json();
+    }, {
+      cacheKey,
+      cacheType: resolution === 'D' ? 'candles_daily' : 'candles_intraday',
+      symbol: symbol.toUpperCase(),
+      source: 'finnhub',
+      ttlSeconds: ttl,
+      allowStale: true,
     });
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ error: `Finnhub error: ${response.statusText}` });
-    }
-    
-    const data = await response.json();
-    
-    // Cache candles (longer TTL)
-    if (process.env.DATABASE_URL && data && data.s === 'ok') {
-      const ttl = resolution === 'D' ? stockCache.CACHE_DURATIONS.candles_daily : stockCache.CACHE_DURATIONS.candles_intraday;
-      await stockCache.setCache(cacheKey, 'candles', symbol.toUpperCase(), data, 'finnhub', ttl);
-      logger.info(`[Finnhub] Cached candles for ${symbol}`);
-    }
-    
-    res.json(data);
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('Finnhub candles proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `finnhub quota exhausted`, reason: error.reason });
+    }
+    logger.error(`Finnhub candles proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch candles from Finnhub', message: error.message });
   }
 });
@@ -1427,48 +1335,32 @@ app.get('/api/finnhub/candles/:symbol', optionalAuthMiddleware, async (req, res)
 app.get('/api/finnhub/profile/:symbol', optionalAuthMiddleware, async (req, res) => {
   const { symbol } = req.params;
   const apiKey = await resolveProviderKey(req, 'finnhub');
+  if (!apiKey) return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
+
   const cacheKey = `finnhub:profile:${symbol.toUpperCase()}`;
-  
-  // Check cache first (company info cached for 24h)
-  if (process.env.DATABASE_URL) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      if (cached.data._finnhub_unavailable) return res.json({});
-      logger.info(`[Finnhub] Cache hit for profile ${symbol}`);
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-  }
-  
-  if (!apiKey) {
-    return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
-  }
-  
   try {
     const url = `${FINNHUB_BASE_URL}/stock/profile2?symbol=${encodeURIComponent(symbol)}&token=${apiKey}`;
-    const response = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
+    const { data, fromCache, stale } = await providerCall('finnhub', async () => {
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (r.status === 403 || r.status === 401) return { _finnhub_unavailable: true, _status: r.status };
+      if (!r.ok) throw new Error(`Finnhub HTTP ${r.status}: ${r.statusText}`);
+      return r.json();
+    }, {
+      cacheKey,
+      cacheType: 'company_info',
+      symbol: symbol.toUpperCase(),
+      source: 'finnhub',
+      ttlSeconds: stockCache.CACHE_DURATIONS.company_info,
+      allowStale: true,
     });
-    
-    if (!response.ok) {
-      if ((response.status === 403 || response.status === 401) && process.env.DATABASE_URL) {
-        logger.info(`[Finnhub] ${response.status} for profile ${symbol} — caching negative result`);
-        await stockCache.setCache(cacheKey, 'company_info', symbol.toUpperCase(), { _finnhub_unavailable: true }, 'finnhub', 60 * 60 * 1000);
-        return res.json({});
-      }
-      return res.status(response.status).json({ error: `Finnhub error: ${response.statusText}` });
-    }
-    
-    const data = await response.json();
-    
-    // Cache company info for 24 hours
-    if (process.env.DATABASE_URL && data && data.name) {
-      await stockCache.setCache(cacheKey, 'company_info', symbol.toUpperCase(), data, 'finnhub', stockCache.CACHE_DURATIONS.company_info);
-      logger.info(`[Finnhub] Cached profile for ${symbol}`);
-    }
-    
-    res.json(data);
+    if (data._finnhub_unavailable) return res.json({});
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('Finnhub profile proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `finnhub quota exhausted`, reason: error.reason });
+    }
+    logger.error(`Finnhub profile proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch profile from Finnhub', message: error.message });
   }
 });
@@ -1481,46 +1373,32 @@ app.get('/api/finnhub/profile/:symbol', optionalAuthMiddleware, async (req, res)
 app.get('/api/finnhub/metrics/:symbol', optionalAuthMiddleware, async (req, res) => {
   const { symbol } = req.params;
   const apiKey = await resolveProviderKey(req, 'finnhub');
+  if (!apiKey) return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
+
   const cacheKey = `finnhub:metrics:${symbol.toUpperCase()}`;
-  
-  if (process.env.DATABASE_URL) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      if (cached.data._finnhub_unavailable) return res.json({});
-      logger.info(`[Finnhub] Cache hit for metrics ${symbol}`);
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-  }
-  
-  if (!apiKey) {
-    return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
-  }
-  
   try {
     const url = `${FINNHUB_BASE_URL}/stock/metric?symbol=${encodeURIComponent(symbol)}&metric=all&token=${apiKey}`;
-    const response = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
+    const { data, fromCache, stale } = await providerCall('finnhub', async () => {
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (r.status === 403 || r.status === 401) return { _finnhub_unavailable: true, _status: r.status };
+      if (!r.ok) throw new Error(`Finnhub HTTP ${r.status}: ${r.statusText}`);
+      return r.json();
+    }, {
+      cacheKey,
+      cacheType: 'company_info',
+      symbol: symbol.toUpperCase(),
+      source: 'finnhub',
+      ttlSeconds: stockCache.CACHE_DURATIONS.company_info,
+      allowStale: true,
     });
-    
-    if (!response.ok) {
-      if ((response.status === 403 || response.status === 401) && process.env.DATABASE_URL) {
-        logger.info(`[Finnhub] ${response.status} for metrics ${symbol} — caching negative result`);
-        await stockCache.setCache(cacheKey, 'company_info', symbol.toUpperCase(), { _finnhub_unavailable: true }, 'finnhub', 60 * 60 * 1000);
-        return res.json({});
-      }
-      return res.status(response.status).json({ error: `Finnhub error: ${response.statusText}` });
-    }
-    
-    const data = await response.json();
-    
-    if (process.env.DATABASE_URL && data && data.metric) {
-      await stockCache.setCache(cacheKey, 'company_info', symbol.toUpperCase(), data, 'finnhub', stockCache.CACHE_DURATIONS.company_info);
-      logger.info(`[Finnhub] Cached metrics for ${symbol}`);
-    }
-    
-    res.json(data);
+    if (data._finnhub_unavailable) return res.json({});
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('Finnhub metrics proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `finnhub quota exhausted`, reason: error.reason });
+    }
+    logger.error(`Finnhub metrics proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch metrics from Finnhub', message: error.message });
   }
 });
@@ -1534,48 +1412,35 @@ app.get('/api/finnhub/metrics/:symbol', optionalAuthMiddleware, async (req, res)
 app.get('/api/finnhub/news/:symbol', optionalAuthMiddleware, async (req, res) => {
   const { symbol } = req.params;
   const apiKey = await resolveProviderKey(req, 'finnhub');
-  
-  // Default to last 7 days if from/to not provided
+  if (!apiKey) return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
+
   const now = new Date();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const from = req.query.from || sevenDaysAgo.toISOString().split('T')[0];
   const to = req.query.to || now.toISOString().split('T')[0];
-  
   const cacheKey = `finnhub:news:${symbol.toUpperCase()}:${from}:${to}`;
-  
-  if (process.env.DATABASE_URL) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      logger.info(`[Finnhub] Cache hit for news ${symbol}`);
-      return res.json({ data: cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-  }
-  
-  if (!apiKey) {
-    return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
-  }
-  
   try {
     const url = `${FINNHUB_BASE_URL}/company-news?symbol=${encodeURIComponent(symbol)}&from=${from}&to=${to}&token=${apiKey}`;
-    const response = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
+    const { data, fromCache, stale } = await providerCall('finnhub', async () => {
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!r.ok) throw new Error(`Finnhub HTTP ${r.status}: ${r.statusText}`);
+      return r.json();
+    }, {
+      cacheKey,
+      cacheType: 'news',
+      symbol: symbol.toUpperCase(),
+      source: 'finnhub',
+      ttlSeconds: 300,
+      allowStale: true,
     });
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ error: `Finnhub error: ${response.statusText}` });
-    }
-    
-    const data = await response.json();
-    
-    // Cache news for 5 minutes
-    if (process.env.DATABASE_URL && Array.isArray(data)) {
-      await stockCache.setCache(cacheKey, 'news', symbol.toUpperCase(), data, 'finnhub', 300);
-      logger.info(`[Finnhub] Cached news for ${symbol}`);
-    }
-    
-    res.json(data);
+    if (stale) res.set('X-Cache-Stale', 'true');
+    // Preserve legacy response shape { data, _cached, _cachedAt }
+    res.json({ data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('Finnhub news proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `finnhub quota exhausted`, reason: error.reason });
+    }
+    logger.error(`Finnhub news proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch news from Finnhub', message: error.message });
   }
 });
@@ -1588,46 +1453,32 @@ app.get('/api/finnhub/news/:symbol', optionalAuthMiddleware, async (req, res) =>
  */
 app.get('/api/finnhub/search', optionalAuthMiddleware, async (req, res) => {
   const { q } = req.query;
+  if (!q) return res.status(400).json({ error: 'Search query (q) is required' });
   const apiKey = await resolveProviderKey(req, 'finnhub');
-  const cacheKey = `finnhub:search:${q?.toLowerCase()}`;
-  
-  if (process.env.DATABASE_URL && q) {
-    const cached = await stockCache.getCached(cacheKey);
-    if (cached) {
-      logger.info(`[Finnhub] Cache hit for search ${q}`);
-      return res.json({ ...cached.data, _cached: true, _cachedAt: cached.cachedAt });
-    }
-  }
-  
-  if (!apiKey) {
-    return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
-  }
-  
-  if (!q) {
-    return res.status(400).json({ error: 'Search query (q) is required' });
-  }
-  
+  if (!apiKey) return res.status(400).json({ error: 'Finnhub API key required (X-Finnhub-Token header)' });
+
+  const cacheKey = `finnhub:search:${String(q).toLowerCase()}`;
   try {
     const url = `${FINNHUB_BASE_URL}/search?q=${encodeURIComponent(q)}&token=${apiKey}`;
-    const response = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
+    const { data, fromCache, stale } = await providerCall('finnhub', async () => {
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!r.ok) throw new Error(`Finnhub HTTP ${r.status}: ${r.statusText}`);
+      return r.json();
+    }, {
+      cacheKey,
+      cacheType: 'search',
+      symbol: String(q).toUpperCase(),
+      source: 'finnhub',
+      ttlSeconds: stockCache.CACHE_DURATIONS.search,
+      allowStale: true,
     });
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ error: `Finnhub error: ${response.statusText}` });
-    }
-    
-    const data = await response.json();
-    
-    // Cache search results for 24 hours
-    if (process.env.DATABASE_URL && data && data.result) {
-      await stockCache.setCache(cacheKey, 'search', q.toUpperCase(), data, 'finnhub', stockCache.CACHE_DURATIONS.search);
-      logger.info(`[Finnhub] Cached search for ${q}`);
-    }
-    
-    res.json(data);
+    if (stale) res.set('X-Cache-Stale', 'true');
+    res.json({ ...data, _cached: fromCache, _stale: stale });
   } catch (error) {
-    logger.error('Finnhub search proxy error:', error);
+    if (error instanceof ProviderQuotaError) {
+      return res.status(429).json({ error: `finnhub quota exhausted`, reason: error.reason });
+    }
+    logger.error(`Finnhub search proxy error: ${error.message}`);
     res.status(500).json({ error: 'Failed to search Finnhub', message: error.message });
   }
 });

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Provider-Traffic-Limiter Phase D (Yahoo + Finnhub migriert)
+
+10 Routes + der Background-Job auf `providerCall`-Gate umgezogen. Alle Outbound-Calls gehen jetzt durch Cache + Quota + Stale-While-Revalidate:
+
+- **Yahoo** (4 Routes): `/api/yahoo/{quote,chart,quoteSummary,search}`. Quote: `allowStale: false`.
+- **Background-Job** `fetchYahooQuotes`: pro-Symbol durch `providerCall`, bei `ProviderQuotaError` Cycle-Abbruch statt wildem Fetch-Loop.
+- **Finnhub** (6 Routes): `/api/finnhub/{quote,candles,profile,metrics,news,search}`. Legacy "`_finnhub_unavailable`"-Negative-Cache-Pattern für 403/401 erhalten (Plan-Limit → 1h negative Cache, weiter gültig). Quote: `allowStale: false`.
+- Yahoo-Counter ging nach Restart von 0 → 3 Live (Background-Tick), twelveData=1 nach früherem Smoke.
+
+**Not migrated (dokumentiert für Follow-up)**: `backend/src/historicalPrices.js:99` (On-Demand-Backfill in Historical-Prices-Tabelle, seltene Calls, eigener Store — niedrige Prio).
+
 ### Changed — Provider-Traffic-Limiter Phase C (Background-Job-Disziplin)
 
 - **`backend/src/backgroundJobs.js`** — Quote-Refresh-Zyklus holt jetzt ausschließlich *aktiv genutzte* Symbole (Union aus offenen `positions` + `custom_symbols` + optionalem `QUOTE_REFRESH_FALLBACK_SYMBOLS`-ENV). Fixer 10-Symbol-Default-Block entfernt.

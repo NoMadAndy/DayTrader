@@ -14,6 +14,7 @@ import { query } from './db.js';
 import stockCache from './stockCache.js';
 import logger from './logger.js';
 import signalIC from './signalIC.js';
+import { providerCall, ProviderQuotaError } from './providerCall.js';
 
 // Configuration
 const CONFIG = {
@@ -78,28 +79,33 @@ async function getActiveSymbols() {
  */
 async function fetchYahooQuotes(symbols) {
   const results = [];
-  
-  // Yahoo Chart API only supports one symbol at a time
+
   for (const symbol of symbols) {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
-    
+    const cacheKey = `yahoo:bg-quote:${symbol}`;
+
     try {
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'application/json',
-          'Accept-Language': 'en-US,en;q=0.9',
-        },
+      const { data } = await providerCall('yahoo', async () => {
+        const response = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
+          },
+        });
+        if (!response.ok) throw new Error(`Yahoo HTTP ${response.status}`);
+        return response.json();
+      }, {
+        cacheKey,
+        cacheType: 'quote',
+        symbol,
+        source: 'yahoo-background',
+        ttlSeconds: stockCache.CACHE_DURATIONS.quote,
+        // Background-Refresh darf nicht auf stale fallback — dann wäre der Job
+        // wertlos. Bei Quota-Block einfach skip (ProviderQuotaError → catch).
+        allowStale: false,
       });
-      
-      if (!response.ok) {
-        logger.error(`[BackgroundJobs] Yahoo quote error for ${symbol}: ${response.status}`);
-        continue;
-      }
-      
-      const data = await response.json();
-      const chartResult = data.chart?.result?.[0];
-      
+      const chartResult = data?.chart?.result?.[0];
       if (chartResult?.meta) {
         const meta = chartResult.meta;
         results.push({
@@ -112,14 +118,16 @@ async function fetchYahooQuotes(symbols) {
           exchangeName: meta.exchangeName,
         });
       }
-      
-      // Small delay between requests
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 200));
     } catch (e) {
-      logger.error(`[BackgroundJobs] Yahoo fetch error for ${symbol}:`, e.message);
+      if (e instanceof ProviderQuotaError) {
+        logger.warn(`[BackgroundJobs] yahoo ${e.reason} — skip ${symbol}`);
+        return results.length > 0 ? { quoteResponse: { result: results } } : null;
+      }
+      logger.error(`[BackgroundJobs] Yahoo fetch error for ${symbol}: ${e.message}`);
     }
   }
-  
+
   return results.length > 0 ? { quoteResponse: { result: results } } : null;
 }
 
