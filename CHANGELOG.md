@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — RAG Phase 1A+B: News-Ingest-Hook + Backfill
+
+- **`backend/src/ragIngest.js`** — `ingestNewsHeadlines(symbol, sources)`: fire-and-forget POST an `ml-service /rag/ingest/news` mit stabilen UUID-IDs (sha1-Hash über `symbol|url||headline`) → idempotent bei Re-Ingest. AbortController-Timeout (default 4 s, ENV `RAG_INGEST_TIMEOUT_MS`). Failures werden geloggt, blocken nie die Sentiment-Response.
+- **`backend/src/index.js`** — Hook nach `archiveSentiment(result)` im `/api/ml/sentiment`-Pfad, ingestiert die volle pre-slice `sources`-Liste (nicht nur die Top-5 für die Client-Response).
+- **`backend/scripts/backfillNewsEmbeddings.js`** — resumable Backfill aus `sentiment_archive`. Argumente: `--since=ISO-Date`, `--limit=N`, `--batch=N`. Initial-Run: 5000 Archive-Rows → 3308 unique Headlines in Qdrant in ~2.5 min (CPU-Embedder).
+- **`backend/Dockerfile`** — `scripts/` jetzt im Image.
+
 ### Added — RAG Phase 0: Qdrant + bge-base Embedder
 
 - **`ml-service/app/embeddings.py`** — Singleton-Wrapper um `sentence-transformers` mit `BAAI/bge-base-en-v1.5` (768 dim, cosine-normalisiert). ENV `EMBEDDER_MODEL`, `EMBEDDER_DEVICE` (default `cpu`, damit FinBERT auf GPU nicht konkurriert), `EMBEDDER_BATCH_SIZE`.

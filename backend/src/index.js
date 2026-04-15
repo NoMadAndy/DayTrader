@@ -19,6 +19,7 @@ import stockCache from './stockCache.js';
 import backgroundJobs from './backgroundJobs.js';
 import * as sentimentArchive from './sentimentArchive.js';
 import signalIC from './signalIC.js';
+import ragIngest from './ragIngest.js';
 import { registerUser, loginUser, logoutUser, authMiddleware, optionalAuthMiddleware } from './auth.js';
 import { getUserSettings, updateUserSettings, getCustomSymbols, addCustomSymbol, removeCustomSymbol, syncCustomSymbols } from './userSettings.js';
 import * as trading from './trading.js';
@@ -2767,6 +2768,11 @@ app.get('/api/ml/sentiment/:symbol', async (req, res) => {
     } catch (archiveError) {
       logger.warn(`[Sentiment] Failed to archive sentiment: ${archiveError.message}`);
     }
+
+    // Push headlines into Qdrant `news` collection (fire-and-forget).
+    // Uses the full pre-slice sources list so the vector store has the complete
+    // batch, not just the top-5 echoed back to the client.
+    ragIngest.ingestNewsHeadlines(symbol, sources);
 
     // Log raw score for IC-Tracking (Sprint C6B). Fire-and-forget.
     signalIC.logSignalScore('sentiment', symbol, avgScore);

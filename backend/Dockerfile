@@ -25,6 +25,9 @@ RUN npm install --omit=dev
 # Copy source code
 COPY src/ ./src/
 
+# Copy maintenance/backfill scripts (CLI utilities)
+COPY scripts/ ./scripts/
+
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001 && \
